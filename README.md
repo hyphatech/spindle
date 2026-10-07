@@ -32,18 +32,18 @@ opam pin add https://github.com/hyphatech/spindle.git
 ```ocaml
 open Spindle.Syntax
 
-type greeting = { text : string } [@@deriving wiretype]
+type reading = { fahrenheit : float } [@@deriving wiretype]
 
-let hello name = Ok { text = "Hello, " ^ name ^ "!" }
-let name = Spindle.Path.str "name"
+let to_fahrenheit celsius = Ok { fahrenheit = (celsius *. 9. /. 5.) +. 32. }
+let celsius = Spindle.Query.required "celsius" Spindle.Codec.float
 
 let routes =
   [
     Spindle.get
-      Spindle.Path.(s "hello" / name)
-      (Spindle.Returns.json greeting_json)
-      (let+ name = Spindle.param name in
-       hello name);
+      Spindle.Path.(s "fahrenheit")
+      (Spindle.Returns.json reading_json)
+      (let+ celsius = celsius in
+       to_fahrenheit celsius);
   ]
 
 let () =
@@ -56,22 +56,23 @@ let () =
 $ dune exec ./main.exe
 Listening on http://localhost:8080 (127.0.0.1 and [::1])
 
-$ curl localhost:8080/hello/Ada
-{"text":"Hello, Ada!"}
+$ curl 'localhost:8080/fahrenheit?celsius=21'
+{"fahrenheit":69.8}
 ```
 
 | Request | Answer |
 |---|---|
-| `GET /hello/Ada` | `200` `{"text":"Hello, Ada!"}` |
-| `GET /hello/Ada%20Lovelace` | `200` `{"text":"Hello, Ada Lovelace!"}` |
-| `GET /hello` | `404` `{"error":"not_found","message":"There is nothing here."}` |
-| `POST /hello/Ada` | `405` `{"error":"method_not_allowed","message":"That is not something you can do here."}` |
+| `GET /fahrenheit?celsius=21` | `200` `{"fahrenheit":69.8}` |
+| `GET /fahrenheit?celsius=warm` | `400` `{"at":"query.celsius","code":"malformed","message":"This is not a number."}` |
+| `GET /fahrenheit` | `400` `{"at":"query.celsius","code":"required","message":"This is required."}` |
 | `GET /docs` | `200` the API's interactive reference |
-| `GET /openapi.json` | `200` the OpenAPI 3.2 document, `GET /hello/{name}` answering a `greeting` |
+| `GET /openapi.json` | `200` the OpenAPI 3.2 document, `celsius` a required `number` |
 
-The record's description is derived, so it both writes the answer and is its
-schema. `let+` gathers the route's inputs, here the path's `name`, and the
-body is a plain call to `hello`. Every request is a JSON line on stderr.
+`celsius` arrives as a float, or the request is refused before the handler
+runs. The record's description is derived, so it writes the answer and is its
+schema. `/docs` is the API described from the same routes, and can call it:
+
+![The /fahrenheit route in /docs, called with celsius=21 and answering 69.8](docs/assets/scalar.png)
 
 ## Documentation
 
