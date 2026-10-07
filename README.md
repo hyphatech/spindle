@@ -36,18 +36,26 @@ opam pin add https://github.com/hyphatech/spindle.git
 ```ocaml
 open Spindle.Syntax
 
-type reading = { fahrenheit : float } [@@deriving wiretype]
+type bill = {
+  total : float; [@min 0.]
+  tip : int; [@min 0] [@max 100]  (** percent *)
+  people : int; [@min 1] [@max 50]
+}
+[@@deriving wiretype]
 
-let to_fahrenheit celsius = Ok { fahrenheit = (celsius *. 9. /. 5.) +. 32. }
-let celsius = Spindle.Query.required "celsius" Spindle.Codec.float
+type share = { each : float } [@@deriving wiretype]
+
+let split b =
+  let total = b.total *. float (100 + b.tip) /. 100. in
+  Ok { each = total /. float b.people }
 
 let routes =
   [
-    Spindle.get
-      Spindle.Path.(s "fahrenheit")
-      (Spindle.Returns.json reading_json)
-      (let+ celsius = celsius in
-       to_fahrenheit celsius);
+    Spindle.post
+      Spindle.Path.(s "split")
+      (Spindle.Returns.json share_json)
+      (let+ b = Spindle.json bill_json in
+       split b);
   ]
 
 let () =
@@ -57,14 +65,19 @@ let () =
 ```
 
 ```console
-$ dune exec ./main.exe
-$ curl 'localhost:8080/fahrenheit?celsius=21'
-{"fahrenheit":69.8}
+$ curl localhost:8080/split --json '{"total": 90, "tip": 10, "people": 3}'
+{"each":33}
+
+$ curl localhost:8080/split --json '{"total": -5, "tip": 150, "people": 0}'
+{"error":"invalid","message":"Some of that request is not what it should be.",
+ "problems":[{"at":"body.total","code":"too_small","message":"This must be at least 0."},
+             {"at":"body.tip","code":"too_large","message":"This must be at most 100."},
+             {"at":"body.people","code":"too_small","message":"This must be at least 1."}]}
 ```
 
 Open `localhost:8080/docs`:
 
-![The /fahrenheit route in /docs, called with celsius=21 and answering 69.8](docs/assets/scalar.png)
+![POST /split in /docs, its body's bounds read from the type](docs/assets/scalar.png)
 
 ## Contributing
 
