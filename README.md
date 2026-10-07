@@ -56,16 +56,15 @@ let () =
 $ dune exec ./main.exe
 Listening on http://localhost:8080 (127.0.0.1 and [::1])
 
-$ curl localhost:8080/hello/Ada
-{"text":"Hello, Ada!"}
+$ curl localhost:8080/hello/Hypha
+{"text":"Hello, Hypha!"}
 ```
 
 | Request | Answer |
 |---|---|
-| `GET /hello/Ada` | `200` `{"text":"Hello, Ada!"}` |
-| `GET /hello/Ada%20Lovelace` | `200` `{"text":"Hello, Ada Lovelace!"}` |
+| `GET /hello/Hypha` | `200` `{"text":"Hello, Hypha!"}` |
 | `GET /hello` | `404` `{"error":"not_found","message":"There is nothing here."}` |
-| `POST /hello/Ada` | `405` `{"error":"method_not_allowed","message":"That is not something you can do here."}` |
+| `POST /hello/Hypha` | `405` `{"error":"method_not_allowed","message":"That is not something you can do here."}` |
 | `GET /docs` | `200` the API's interactive reference |
 | `GET /openapi.json` | `200` the OpenAPI 3.2 document, `GET /hello/{name}` answering a `greeting` |
 
