@@ -75,13 +75,9 @@ body is a plain call to `hello`. Every request is a JSON line on stderr.
 
 ## Documentation
 
-[hyphatech.github.io/spindle](https://hyphatech.github.io/spindle/): installing
-it, a tutorial from a first app to a described API with a database behind it,
-a page for each of the rest, and the reference. Every program a page shows is
-a file in [`examples/`](examples/), built with the repository, so a page
-cannot show code that does not compile.
-
-What is missing or caveated is [GAPS.md](GAPS.md).
+The full documentation is at
+[hyphatech.github.io/spindle](https://hyphatech.github.io/spindle/), and the
+known gaps are in [GAPS.md](GAPS.md).
 
 ## Packages
 
