@@ -7,6 +7,7 @@
  (names
   hello
   greeting
+  fahrenheit
   path_params
   methods
   dependencies

@@ -41,6 +41,7 @@ type t = {
 let of_shape = function
   | Codec.String -> S.String S.text
   | Codec.Integer -> S.Integer S.no_bounds
+  | Codec.Number -> S.Number S.no_bounds
   | Codec.Boolean -> S.Boolean
   | Codec.Enum words -> S.String { S.text with words = Some words }
 

@@ -6789,6 +6789,22 @@ let codec_cases =
   [
     case "int" Spindle.Codec.int [ "42"; "-7"; "0" ]
       [ ""; "0x1f"; "1_000"; "+3"; "1e3"; " 4"; "99999999999999999999" ];
+    case "float" Spindle.Codec.float
+      [ "21"; "-7.5"; "0.1"; "1e3"; "2.5E-4"; "-0"; "1e308" ]
+      [
+        "";
+        ".5";
+        "5.";
+        "+3";
+        "1_000";
+        "0x1p3";
+        "inf";
+        "nan";
+        "1e";
+        "1e400";
+        " 4";
+        "4 ";
+      ];
     case "int64" Spindle.Codec.int64
       [ "9223372036854775807"; "-9223372036854775808" ]
       [ "9223372036854775808"; "+1"; "0x1"; "" ];
@@ -6848,6 +6864,19 @@ let test_a_codec_reads_and_refuses_as_its_grammar () =
             (Option.is_none (Spindle.Codec.parse codec text)))
         refuses)
     codec_cases
+
+(* Every finite float prints as text the codec reads back as the same
+   float, so a value an application writes into a link is the one it gets. *)
+let test_a_float_comes_back_as_itself =
+  QCheck.Test.make ~count:1000 ~name:"a float comes back as itself" QCheck.float
+    (fun v ->
+      QCheck.assume (Float.is_finite v);
+      match
+        Spindle.Codec.parse Spindle.Codec.float
+          (Spindle.Codec.print Spindle.Codec.float v)
+      with
+      | Some again -> Float.equal again v
+      | None -> false)
 
 (* A header read by a codec answers what it read, and one it refuses is
    [invalid] at its place -- but for whitespace around it, which is no part
@@ -7042,6 +7071,7 @@ let () =
             test_a_codec_reads_and_refuses_as_its_grammar;
           Alcotest.test_case "a header is read by its codec" `Quick
             test_a_header_is_read_by_its_codec;
+          QCheck_alcotest.to_alcotest test_a_float_comes_back_as_itself;
         ] );
       ( "cookies",
         [

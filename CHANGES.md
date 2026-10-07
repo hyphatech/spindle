@@ -1,5 +1,13 @@
 # Changes
 
+## Unreleased
+
+- `spindle`: `Codec.float` reads a number in decimal digits, with an
+  optional minus sign, fraction and exponent, and refuses what
+  `float_of_string` would also take but no client means, and a number too
+  large for a float. It is described as `number`. Breaking: `Number` joins
+  `Codec.shape`, so a match over it needs the case.
+
 ## 0.1.0 (2026-10-07)
 
 First release.

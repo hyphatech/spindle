@@ -1,4 +1,4 @@
-type shape = String | Integer | Boolean | Enum of string list
+type shape = String | Integer | Number | Boolean | Enum of string list
 
 type 'a t = {
   parse : string -> 'a option;
@@ -44,6 +44,58 @@ let int64 =
     print = Int64.to_string;
     expects = "a whole number";
     shape = Integer;
+    kind = None;
+  }
+
+(* Digits, an optional fraction and an optional exponent, with an optional
+   minus sign: [float_of_string] also reads "0x1p3", "1_000", "inf", "nan",
+   ".5" and "+3", none of which a client means. A number too large for a
+   float is refused rather than read as infinity. *)
+let parse_float s =
+  let n = String.length s in
+  let digits i =
+    let j = ref i in
+    while !j < n && is_digit s.[!j] do
+      incr j
+    done;
+    if !j > i then Some !j else None
+  in
+  let fraction i =
+    if i < n && Char.equal s.[i] '.' then digits (i + 1) else Some i
+  in
+  let exponent i =
+    if i < n && (Char.equal s.[i] 'e' || Char.equal s.[i] 'E') then
+      let i = i + 1 in
+      digits
+        (if i < n && (Char.equal s.[i] '+' || Char.equal s.[i] '-') then i + 1
+         else i)
+    else Some i
+  in
+  let start = if n > 0 && Char.equal s.[0] '-' then 1 else 0 in
+  match Option.bind (Option.bind (digits start) fraction) exponent with
+  | Some i when i = n ->
+      Option.bind (float_of_string_opt s) (fun v ->
+          if Float.is_finite v then Some v else None)
+  | Some _ | None -> None
+
+(* The fewest digits that read back as the same float. *)
+let print_float v =
+  let rec shortest precision =
+    let text = Printf.sprintf "%.*g" precision v in
+    if precision >= 17 then text
+    else
+      match float_of_string_opt text with
+      | Some again when Float.equal again v -> text
+      | Some _ | None -> shortest (precision + 1)
+  in
+  shortest 1
+
+let float =
+  {
+    parse = parse_float;
+    print = print_float;
+    expects = "a number";
+    shape = Number;
     kind = None;
   }
 

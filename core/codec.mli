@@ -19,6 +19,7 @@ type 'a t
 type shape =
   | String
   | Integer
+  | Number
   | Boolean
   | Enum of string list  (** exactly these words *)
 
@@ -32,6 +33,13 @@ val int : int t
 
 val int64 : int64 t
 (** {!int}'s rule, read as an [int64]: what most databases' keys are. *)
+
+val float : float t
+(** A number in decimal digits, with an optional minus sign, fraction and
+    exponent: [21], [-7.5], [2.5e-4]. [float_of_string] also reads ["0x1p3"],
+    ["inf"], ["nan"], [".5"] and ["+3"], none of which a client means, and a
+    number too large for a float is refused rather than read as infinity. It
+    prints the fewest digits that read back as the same float. *)
 
 val bool : bool t
 (** [true] or [false], and nothing else. *)

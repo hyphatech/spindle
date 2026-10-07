@@ -67,6 +67,7 @@ let add =
     (let+ _ = Spindle.param order_id
      and+ _ = session
      and+ _ = Spindle.Query.optional "page" Spindle.Codec.int
+     and+ _ = Spindle.Query.optional "weight" Spindle.Codec.float
      and+ i = Spindle.json item_json in
      Ok i)
 
@@ -82,7 +83,7 @@ let test_a_route_is_in_the_document () =
   let params = Yojson.Safe.Util.to_list (member [ "parameters" ] op) in
   Alcotest.(check (list string))
     "the path's parameter and the query's, not the credential"
-    [ "order_id:path:integer"; "page:query:integer" ]
+    [ "order_id:path:integer"; "page:query:integer"; "weight:query:number" ]
     (List.map
        (fun p ->
          str [ "name" ] p ^ ":" ^ str [ "in" ] p ^ ":"
