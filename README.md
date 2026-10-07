@@ -15,14 +15,15 @@ HTTP library.
 
 ## Install
 
-Spindle and the Hypha libraries under it are pinned from their releases
-until opam-repository carries them:
-
 ```sh
-opam pin add -n https://github.com/hyphatech/postgres-eio.git#0.1.0
-opam pin add -n https://github.com/hyphatech/rowtype.git#0.2.0
-opam pin add -n https://github.com/hyphatech/wiretype.git#0.1.0
-opam pin add https://github.com/hyphatech/spindle.git#0.1.0
+opam pin add postgres-eio https://github.com/hyphatech/postgres-eio.git
+opam pin add https://github.com/hyphatech/rowtype.git
+opam pin add https://github.com/hyphatech/wiretype.git
+opam pin add https://github.com/hyphatech/spindle.git
+```
+
+```lisp
+(libraries spindle eio_main)
 ```
 
 ## Quick start

@@ -24,12 +24,12 @@ setup: ## create the local switch and install dependencies
 	$(MAKE) pin OPAM_SWITCH=--switch=$(CURDIR)
 	opam install . --switch=$(CURDIR) --deps-only --with-test --with-dev-setup -y
 
-# Hypha's own libraries, each at its release until opam-repository has it.
+# Hypha's own libraries, until opam-repository has them.
 OPAM_SWITCH ?=
-pin: ## pin Hypha's libraries Spindle is built on to their releases
-	opam pin add $(OPAM_SWITCH) -n -y "git+https://github.com/hyphatech/postgres-eio.git#0.1.0"
-	opam pin add $(OPAM_SWITCH) -n -y "git+https://github.com/hyphatech/rowtype.git#0.2.0"
-	opam pin add $(OPAM_SWITCH) -n -y "git+https://github.com/hyphatech/wiretype.git#0.1.0"
+pin: ## pin Hypha's libraries Spindle is built on
+	opam pin add $(OPAM_SWITCH) -n -y "git+https://github.com/hyphatech/postgres-eio.git"
+	opam pin add $(OPAM_SWITCH) -n -y "git+https://github.com/hyphatech/rowtype.git"
+	opam pin add $(OPAM_SWITCH) -n -y "git+https://github.com/hyphatech/wiretype.git"
 
 build: ## build everything
 	$(OPAM) dune build @all

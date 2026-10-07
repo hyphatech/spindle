@@ -38,7 +38,7 @@ What Spindle is and how it reads is [its README](README.md).
 - **No localisation of the framework's own sentences.** `Refusal.not_found`
   and its kin are English and fixed, with no way to supply their words in
   another language.
-- **Not in opam-repository.** The packages are pinned from their release,
+- **Not in opam-repository.** The packages are pinned from this repository,
   as are the Hypha libraries under them ([README](README.md#install)), and
   the documentation site is built (`make docs`) but published nowhere; its
   Install page is written as the packages will be installed.
