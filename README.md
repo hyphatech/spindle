@@ -24,19 +24,54 @@ opam pin add https://github.com/hyphatech/spindle.git
 
 ```lisp
 (libraries spindle eio_main)
+(preprocess (pps ppx_wiretype))
 ```
 
 ## Quick start
 
 ```ocaml
+open Spindle.Syntax
+
+type greeting = { text : string } [@@deriving wiretype]
+
+let hello name = Ok { text = "Hello, " ^ name ^ "!" }
+let name = Spindle.Path.str "name"
+
 let routes =
   [
-    Spindle.get Spindle.Path.root Spindle.Returns.text
-      (Spindle.Dep.return (Ok "Good morning, world!"));
+    Spindle.get
+      Spindle.Path.(s "hello" / name)
+      (Spindle.Returns.json greeting_json)
+      (let+ name = Spindle.param name in
+       hello name);
   ]
 
-let () = Eio_main.run @@ fun env -> Spindle.serve env routes
+let () =
+  Spindle.Log.setup ();
+  Eio_main.run @@ fun env ->
+  Spindle.serve env (routes @ Spindle.Openapi.docs routes)
 ```
+
+```console
+$ dune exec ./main.exe
+Listening on http://localhost:8080 (127.0.0.1 and [::1])
+
+$ curl localhost:8080/hello/Ada
+{"text":"Hello, Ada!"}
+```
+
+| Request | Answer |
+|---|---|
+| `GET /hello/Ada` | `200` `{"text":"Hello, Ada!"}` |
+| `GET /hello/Ada%20Lovelace` | `200` `{"text":"Hello, Ada Lovelace!"}` |
+| `GET /hello` | `404` `{"error":"not_found","message":"There is nothing here."}` |
+| `POST /hello/Ada` | `405` `{"error":"method_not_allowed","message":"That is not something you can do here."}` |
+| `GET /docs` | `200` the API's interactive reference |
+| `GET /openapi.json` | `200` the OpenAPI 3.2 document, `GET /hello/{name}` answering a `greeting` |
+
+The record's description is derived, so it both writes the answer and is its
+schema. `let+` gathers the route's inputs, here the path's `name`, and the
+body is a plain call to `hello`. Every request is a JSON line on stderr.
 
 ## Documentation
 
