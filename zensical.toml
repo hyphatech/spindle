@@ -8,7 +8,7 @@
 
 [project]
 site_name = "Spindle"
-site_description = "A direct-style web framework for OCaml 5, on Eio."
+site_description = "The Eio-native web framework for modern OCaml."
 site_url = "https://hyphatech.github.io/spindle/"
 repo_url = "https://github.com/hyphatech/spindle"
 docs_dir = "docs"

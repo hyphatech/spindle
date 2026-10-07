@@ -1,6 +1,6 @@
 # Spindle
 
-The beautiful, idiomatic web framework for modern OCaml.
+The Eio-native web framework for modern OCaml.
 
 [![ci](https://img.shields.io/github/actions/workflow/status/hyphatech/spindle/ci.yml?branch=main&label=ci)](https://github.com/hyphatech/spindle/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/hyphatech/spindle?label=release)](https://github.com/hyphatech/spindle/releases)
@@ -12,7 +12,7 @@ The beautiful, idiomatic web framework for modern OCaml.
 ## Features
 
 - **Interactive docs**: OpenAPI and Scalar at `/docs`, generated from your routes.
-- **zod, automagically**: typed schemas for your front end, from the same routes.
+- **Front end in sync**: schemas for your front end, derived from your OCaml types.
 - **Typed end to end**: JSON derived from your types, every input validated.
 - **Eio-native**: straight-line handlers on OCaml 5, on every CPU core.
 - **Battle-tested**: its own HTTP/1.1 engine, every requirement backed by a test.

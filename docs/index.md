@@ -10,10 +10,10 @@ hide:
 
 <div markdown>
 
-**The beautiful, idiomatic web framework for modern OCaml.**
+**The Eio-native web framework for modern OCaml.**
 
 Performant, Eio-native and battle-tested. OpenAPI and Scalar out of the
-box, and zod schemas generated for your front end -- automagically.
+box, and your front end typed from the same OCaml types.
 
 ```sh
 opam install spindle
@@ -62,12 +62,12 @@ opam install spindle
 
     [:octicons-arrow-right-24: Describing the API](tutorial/describing.md)
 
--   :lucide-wand-sparkles:{ .lg .middle } __zod, automagically__
+-   :lucide-wand-sparkles:{ .lg .middle } __Front end in sync__
 
     ---
 
-    One command writes typed zod schemas for every route. Your front end
-    and your server can't drift.
+    Your OCaml types become your front end's schemas, zod included, in
+    one command. Change a type and both ends change with it.
 
     [:octicons-arrow-right-24: The client's schemas](tutorial/describing.md#the-clients-schemas)
 

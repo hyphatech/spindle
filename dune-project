@@ -28,7 +28,7 @@
 
 (package
  (name spindle)
- (synopsis "A web framework on Eio")
+ (synopsis "The Eio-native web framework for modern OCaml")
  (description
   "Routes as values, dependencies that list what a route reads, failures as values, streams and WebSockets, the API described as OpenAPI and zod, and HTTP/1.1 read and written by itself. spindle.client calls other servers and links no framework.")
  (depends
