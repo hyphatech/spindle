@@ -252,11 +252,16 @@ The rules are ranked, because they conflict:
 A change is done when every box holds:
 
 - [ ] The checks under *Commands* pass.
-- [ ] **A change brings its tests**: the typical corner cases (empty, one,
+- [ ] **Test first.** A behaviour starts as a test that fails for the
+  reason the behaviour is missing -- an assertion against a stub, never a
+  compile error -- and only then is the code written that makes it pass;
+  a test never seen failing may test nothing. A bug's fix starts with the
+  test that reproduces it. The test is the interface's first caller, so
+  an awkward test is an awkward API. Then the corner cases (empty, one,
   the boundaries, invalid input, a failure partway through), a property
-  test wherever a round trip exists, and the real server wherever a test
-  can run one, never a mock of it; a stub stands in only for a third
-  party's service.
+  wherever a round trip exists, and the real server wherever a test can
+  run one, never a mock of it; a stub stands in only for a third party's
+  service. A refactoring adds no test and keeps every one passing.
 - [ ] **No partial functions**: nothing raises on an input the code has not
   ruled out. No `failwith`, `Option.get`, `Result.get_ok`, `List.hd`,
   `List.tl`, `List.nth`, `Obj.magic`, and `invalid_arg` only where the
@@ -267,24 +272,25 @@ A change is done when every box holds:
 - [ ] **Errors are values**: a `result` with a variant error, and `let*`
   over it rather than nested matches. Eio is direct-style, so `let*` always
   means `result`. An exception is a programmer's error and never crosses a
-  library boundary.
-- [ ] **No polymorphic `compare`**, and no `=` on a type that has a module:
-  `Int.compare`, `String.equal`, `Char.equal`. `=` on `int` is fine. It also
-  hides in `List.mem`, `List.assoc`, `List.sort compare`, `max`, `min` and a
-  `Hashtbl`'s keys: accepted over plain data -- an `int`, a `char`, a
-  `string` -- where nothing can hold a closure or an abstract type, and this
-  rule broken over anything else.
-- [ ] **No `open` of an ordinary module**, file-wide or local: its every
-  name comes into scope, a reader cannot tell where one came from, and a
-  name the module gains later silently shadows one of ours. Alias modules
-  at the top of the file instead (`module P = Protocol`), and annotate a
-  value's type once rather than qualify its fields (`(g : Store.game)`,
-  then `g.size`, never `g.Store.size`). **A module made to be opened is
-  opened**: one of binding operators and nothing else, file-wide (`open
-  Spindle.Syntax`), and a library of combinators or operators locally,
-  around the expression that uses them (`Angstrom.( ... )`,
-  `Float.( ... )`). Any other `open` is one the repository's rules name,
-  with its reason.
+  library boundary. One a stdlib call raises is caught with `match ...
+  with exception`, never a `try` around the code that uses the answer,
+  which would catch that code's exceptions too.
+- [ ] **No polymorphic `compare`, and no `=` on a type that has a
+  module**: `Int.compare`, `String.equal`. `=` on `int` and `char` is fine.
+  `List.mem`, `List.assoc`, `List.sort compare`, `max`, `min` and a
+  `Hashtbl`'s keys are polymorphic too: accepted over plain data -- an
+  `int`, a `char`, a `string` -- where nothing can hold a closure or an
+  abstract type, and nowhere else. `==` only where identity is the point.
+- [ ] **No `open` of an ordinary module**, file-wide or local: a reader
+  cannot tell where a name came from, and a name the module gains later
+  silently shadows one of ours. Alias it at the top of the file (`module P
+  = Protocol`), and annotate a value's type once rather than qualify its
+  fields (`(g : Store.game)`, then `g.size`, never `g.Store.size`). **A
+  module made to be opened is opened**: one of binding operators and
+  nothing else, file-wide (`open Spindle.Syntax`), and a library of
+  combinators or operators locally, around the expression that uses them
+  (`Angstrom.( ... )`, `Float.( ... )`). Any other `open` is one the
+  repository's rules name, with its reason.
 - [ ] **No silenced warnings.** The warning set in `dune` is the linter --
   warning 9 makes adding a record field a compile error at every pattern
   that should handle it -- and a warning that looks wrong is a code shape
@@ -298,7 +304,11 @@ A change is done when every box holds:
   is the one a caller would guess, and there is one way to do a thing: a
   new name never repeats what the caller can already say with the names it
   has. A change that leaves a caller's code longer, noisier or easier to
-  get wrong is redone, however clean its inside.
+  get wrong is redone, however clean its inside. The shapes are the
+  stdlib's: `t` for a module's own type and first among its arguments, a
+  function before the collection it walks, `create`/`make`, `of_x`/`to_x`
+  and `*_opt`; a label wherever two arguments could be swapped, and an
+  optional argument with its default, followed by `()`.
 - [ ] **An `.mli` per library module.** Abstract types, hidden
   constructors; the contract in odoc in the `.mli`, the reasons in the
   `.ml`. It exports what a user needs, and nothing more. **A library's
@@ -313,6 +323,10 @@ A change is done when every box holds:
 - [ ] **A library never prints or reads the environment, and exits only
   where its `.mli` says.** An executable reads its environment where it
   starts. A library logs on its own `Logs` sources.
+- [ ] **A log line stands alone, and a secret has no log level.** A line
+  says enough to be read among a thousand others and is never split
+  across two. No header value, body, query string, credential or
+  statement parameter is logged, at any level.
 - [ ] **A meaning is a type.** A state is a variant, never a string, a
   boolean or a pair of booleans one combination of which is impossible; a
   unit or an identifier that travels unnamed -- a column, an element, a
@@ -321,19 +335,18 @@ A change is done when every box holds:
   its unit at every call (`~timeout_s`) is enough.
 - [ ] **Advanced types only where they delete real duplication.** A GADT
   earns its place by describing a thing once that would otherwise be
-  described twice; otherwise, records and variants.
+  described twice; otherwise, records and variants. A polymorphic variant
+  only where the set of constructors is open by design, never to save
+  declaring a type, and no objects.
 - [ ] **Effects at the edge.** What can be computed without IO is, in code
   that does none, and a value is converted to and from a wire format at a
-  boundary, never in the middle.
+  boundary, never in the middle. An interface hands out immutable values;
+  mutation inside an implementation is fine while it never escapes it.
 - [ ] **Cancellation leaves nothing held.** A fiber cancelled at any effect
   releases what it held: a connection goes back to its pool or is closed,
   and a lock is let go. A catch-all handler (`with _ ->`,
   `| exception _ ->`) re-raises `Eio.Cancel.Cancelled` before anything else,
   or it swallows the cancellation.
-- [ ] **Labelled arguments** where a call would otherwise be ambiguous, and
-  optional arguments with defaults, followed by `()`.
-- [ ] **Stdlib naming**: `t`, `create`/`make`, `of_x`/`to_x`, `*_opt`,
-  stdlib argument order.
 - [ ] **A name says what a thing is or does, in the words a person would
   use where it is read.** No metaphors, moods or puns, and no
   abbreviations beyond the stdlib's (`b` a buffer, `n` a count, `f` a
@@ -343,20 +356,22 @@ A change is done when every box holds:
   the types already keep apart. A name assembled from parts to satisfy a
   rule (`renewals_per_idle`, `Call_failed`) is worse than none: where no
   natural name comes, the plainer one stays -- the one already there, or
-  none.
+  none. A name never repeats its module (`Pool.connection`, never
+  `Pool.pool_connection`), says `get` only where something is fetched,
+  and is as long as its scope is wide.
 - [ ] **A number with a reason is named where nothing beside it already
   says it**, the reason beside it: a field, a label or a comment that
   names its unit and purpose (`send_timeout_s = 10.`) needs nothing more.
 - [ ] **No needless cost.** No quadratic walk where a linear one is as
-  clear, and no whole result held where streaming is as simple. A claim
-  about speed comes with a measurement.
-- [ ] **Plain stdlib.** No Base, Core or Lwt.
+  clear, and no whole result held where streaming is as simple. Recursion
+  over input whose size nobody bounds is a tail call, or
+  `[@tail_mod_cons]`, since a deep stack is a crash rather than a slow
+  answer. A claim about speed comes with a measurement.
+- [ ] **A dependency earns its place**: it does something nothing already
+  linked does, and the repository says what. Pure OCaml over a C
+  binding; no Base, Core or Lwt.
 - [ ] **`ocamlformat` decides layout.** Never format by hand; when its
   output is ugly, the code's shape is what is wrong.
-- [ ] **What a change touches is found by the compiler's knowledge**, not
-  by a text search: every caller of a changed signature and every user of
-  an export is the language server's references, or Merlin's
-  `occurrences`, below.
 
 ## OCaml tools
 
@@ -397,9 +412,11 @@ declaration alone; a value asked from its `.mli` finds every use.
 `dune describe` lists every library, executable and module, so nothing is
 missed when the whole project is read.
 
-**Ask the language server who uses a name and what it is; ask `rg`
-everything else, always with a path** -- with none it reads standard
-input, which an agent's shell never closes.
+**What a change touches is found by the compiler's knowledge**, never by
+a text search: every caller of a changed signature and every user of an
+export is the language server's references, or Merlin's `occurrences`.
+**Ask `rg` everything else, always with a path** -- with none it reads
+standard input, which an agent's shell never closes.
 
 **Search with `rg`, never `grep -r` or `find`.** `_build/` and `_opam/` are
 gitignored, so `rg` skips them, where `find . -name '*.ml'` also returns
