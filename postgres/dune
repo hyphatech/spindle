@@ -1,0 +1,8 @@
+; Postgres for a Spindle server, over rowtype's Postgres backend: connections
+; bounded as a server bounds them, a pool and its probe, and a failure's refusal.
+
+(library
+ (name spindle_postgres)
+ (public_name spindle_postgres)
+ (private_modules bounds instant source traced)
+ (libraries rowtype rowtype-postgres ptime spindle eio logs))

@@ -1,0 +1,57 @@
+# Checks are defined in the Makefile. 5.4 is the supported minimum.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        ocaml: ["5.4", "5.5"]
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: spindle
+          POSTGRES_PASSWORD: spindle
+          POSTGRES_DB: spindle
+        ports:
+          - 5438:5432
+        options: >-
+          --health-cmd "pg_isready -U spindle -d spindle"
+          --health-interval 1s --health-timeout 3s --health-retries 30
+    env:
+      SPINDLE_TEST_PG: postgres://spindle:spindle@localhost:5438/spindle
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: ${{ matrix.ocaml }}
+      # Hypha's libraries are pinned to their releases until opam-repository has them.
+      - run: make pin
+      - run: opam install . --deps-only --with-test --with-dev-setup -y
+      # Use setup-ocaml's switch instead of the Makefile's local one.
+      - run: make lint OPAM="opam exec --"
+      - run: opam exec -- dune test --force
+
+  # The oldest versions the opam file allows, as opam-repository checks.
+  lower-bounds:
+    runs-on: ubuntu-24.04
+    env:
+      OPAMCRITERIA: +removed,+count[version-lag,solution]
+      OPAMFIXUPCRITERIA: +removed,+count[version-lag,solution]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.4"
+      - run: make pin
+      - run: opam install . --deps-only --with-test -y
+      - run: opam list --installed --columns=name,version
+      - run: opam exec -- dune build -p spindle,spindle_postgres,spindle_cli @install
+      - run: opam exec -- dune test -p spindle,spindle_postgres,spindle_cli --force

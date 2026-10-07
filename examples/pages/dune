@@ -1,0 +1,28 @@
+; A page, made with each of four renderers. Spindle
+; answers a page as a string, so each program is the renderer's own and
+; nothing here is a dependency of the framework; they are built with the
+; repository so that one which stops compiling is found by the build.
+
+(executable
+ (name htmlit_page)
+ (modules htmlit_page)
+ (libraries spindle eio_main htmlit))
+
+(executable
+ (name tyxml_page)
+ (modules tyxml_page)
+ (libraries spindle eio_main tyxml)
+ (preprocess
+  (pps tyxml-ppx)))
+
+(executable
+ (name jsx_page)
+ (modules jsx_page)
+ (libraries spindle eio_main html_of_jsx)
+ (preprocess
+  (pps html_of_jsx.ppx)))
+
+(executable
+ (name jingoo_page)
+ (modules jingoo_page)
+ (libraries spindle eio_main jingoo))

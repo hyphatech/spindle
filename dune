@@ -1,0 +1,14 @@
+; Warnings, project-wide. The code already met this set before the stanza
+; existed -- it is here so the compiler keeps it true rather than a reviewer
+; having to. Warning 9 in particular (a record pattern that omits a field
+; without saying `_`) is off by default and is what makes adding a field to
+; a record a compile error at every site that should have handled it.
+;
+; 4 (fragile-match) is the one exclusion: it fires on every `_ ->` catch-all,
+; which is why essentially nobody enables it. The rest of the default-off
+; warnings here are off because they are about module-system style, not bugs.
+
+(env
+ (_
+  (flags
+   (:standard -w +a-4-40-41-42-44-45-48-67-70))))

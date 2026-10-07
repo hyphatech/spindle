@@ -1,0 +1,24 @@
+; Calling other servers: HTTPS with the system's trust store, a switch and a
+; deadline per call. The only part of the framework that links the TLS
+; stack, so an application that calls nobody compiles none of it.
+
+(library
+ (name spindle_client)
+ (public_name spindle.client)
+ (libraries
+  spindle_http
+  wiretype
+  eio
+  eio.unix
+  iomux
+  mtime
+  uri
+  tls-eio
+  x509
+  ipaddr
+  ca-certs
+  mirage-crypto-rng
+  mirage-crypto-rng.unix
+  base64
+  domain-name
+  logs))

@@ -1,0 +1,29 @@
+# The test database: empty on every start (tmpfs), durability off for speed.
+name: spindle
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: spindle
+      POSTGRES_PASSWORD: spindle
+      POSTGRES_DB: spindle
+    # Not 5432, so a local Postgres is never tested by mistake.
+    ports:
+      - "${PG_TEST_PORT:-5438}:5432"
+    tmpfs:
+      - /var/lib/postgresql
+    command:
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spindle -d spindle"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+

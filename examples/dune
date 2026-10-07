@@ -1,0 +1,40 @@
+; Small programs, each showing one thing an application does with Spindle,
+; for the documentation and the tutorials to point at. They are built with
+; the repository, so an example that stops compiling as the framework
+; changes is found by the build and not by a reader.
+
+(executables
+ (names
+  hello
+  greeting
+  path_params
+  methods
+  dependencies
+  json_body
+  logging
+  api_cli
+  bearer_auth
+  middleware
+  cookie
+  static
+  openapi
+  sse
+  health
+  websocket_server
+  websocket_client
+  sql_query
+  sql_transaction
+  multidomain)
+ (libraries
+  spindle
+  spindle.client
+  spindle_cli
+  spindle_postgres
+  rowtype
+  rowtype-postgres
+  eio
+  eio_main
+  wiretype
+  logs)
+ (preprocess
+  (pps ppx_wiretype)))

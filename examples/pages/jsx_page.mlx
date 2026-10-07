@@ -1,0 +1,30 @@
+(* A page made with html_of_jsx, written as JSX in mlx, an OCaml dialect
+   dune reads through the dialect in this package's dune-project.
+
+   Spindle has no template language: [Returns.html] answers the string a
+   renderer made, so any renderer fits, and escaping what a person sent is
+   the renderer's -- [JSX.string] escapes, so /hello/<b>kim</b> is words on
+   the page. *)
+
+open Spindle.Syntax
+
+let name = Spindle.Path.str "name"
+
+let greeting name =
+  <html lang="en">
+    <head><title>(JSX.string "Hello")</title></head>
+    <body><h1>(JSX.string ("Hello, " ^ name ^ "!"))</h1></body>
+  </html>
+
+let routes =
+  [
+    Spindle.get
+      Spindle.Path.(s "hello" / name)
+      Spindle.Returns.html
+      (let+ name = Spindle.param name in
+       Ok ("<!doctype html>" ^ JSX.render (greeting name)));
+  ]
+
+let () =
+  Spindle.Log.setup ();
+  Eio_main.run @@ fun env -> Spindle.serve env routes

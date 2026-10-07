@@ -1,0 +1,22 @@
+; HTTP as both ends of a call speak it: heads, bodies by every framing and
+; the writer, read and written strictly; WebSockets, and the JSON they carry;
+; and what a line is logged with and a fiber runs under. Its own library
+; rather than modules of `spindle`, because the server and `spindle_client`
+; both speak it and must speak it one way, and the client depends on it
+; alone -- a program that calls other servers links no framework. It holds
+; no socket and no policy: every limit it applies is one it is given.
+
+(library
+ (name spindle_http)
+ (public_name spindle.http)
+ (private_modules frame grammar calendar context)
+ (libraries
+  eio
+  mtime
+  logs
+  wiretype
+  digestif
+  base64
+  angstrom
+  ipaddr
+  threads.posix))

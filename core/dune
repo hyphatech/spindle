@@ -1,0 +1,74 @@
+; The web framework both of this repository's servers are built on.
+; It knows nothing about Go -- a test greps
+; for that -- so that it can leave this repository once both have run on it
+; in production. It reads and writes HTTP/1.1 itself, through
+; `spindle_http`, over Eio's sockets: a handler sees our request, our
+; response and our statuses, and nothing here links an HTTP library.
+
+(library
+ (name spindle)
+ (public_name spindle)
+ ; What the library itself uses and nothing outside it may: how a response
+ ; is rendered, how long a connection may wait, and what a path, a
+ ; dependency, an answer and a route are
+ ; underneath. A package built on
+ ; the framework reaches them through the public modules like anybody.
+ (private_modules
+  wire
+  deadline
+  body_repr
+  input
+  path_repr
+  dep_repr
+  request_repr
+  returns_repr
+  route_repr
+  cookie_repr
+  out
+  described
+  scalar
+  conditional
+  cors_repr
+  gzip
+  compress_repr
+  file_types)
+ (libraries
+  spindle_http
+  eio
+  eio.unix
+  eio.mock
+  cstruct
+  optint
+  mtime
+  uri
+  wiretype
+  ipaddr
+  digestif
+  mirage-crypto
+  decompress.de
+  checkseum
+  checkseum.ocaml
+  mirage-crypto-rng.unix
+  base64
+  logs
+  unix
+  threads.posix))
+
+; Scalar, the reference /docs serves, as one script compiled into the
+; library: it is served from the application's own origin, so the page works
+; offline and under a content security policy that allows no other host. It
+; is linked only into a program that serves the docs, as every module no
+; program names is left out. The file is @scalar/api-reference 1.72.1's
+; dist/browser/standalone.js (MIT), and replacing it is how its version
+; changes.
+
+(rule
+ (target scalar.ml)
+ (deps scalar/standalone.js)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "let js = {scalar|")
+    (cat %{deps})
+    (echo "|scalar}\n")))))

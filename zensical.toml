@@ -1,0 +1,94 @@
+# Spindle's documentation site: `make docs` builds it into site/,
+# the reference from the .mli files into docs/reference/ first.
+#
+# Every program a page shows is a file under examples/, built with the
+# repository, and included here by pymdownx.snippets -- so a page cannot show
+# code that does not compile. check_paths makes a missing one fail the build.
+
+[project]
+site_name = "Spindle"
+site_description = "A direct-style web framework for OCaml 5, on Eio."
+docs_dir = "docs"
+site_dir = "site"
+
+nav = [
+  { "Spindle" = "index.md" },
+  { "Install" = "install.md" },
+  { "Tutorial" = [
+    { "Your first app" = "tutorial/first-app.md" },
+    { "Routes" = "tutorial/routes.md" },
+    { "Dependencies" = "tutorial/dependencies.md" },
+    { "Bodies, answers and refusals" = "tutorial/bodies.md" },
+    { "Logging" = "tutorial/logging.md" },
+    { "Static files" = "tutorial/static-files.md" },
+    { "A database" = "tutorial/database.md" },
+    { "Describing the API" = "tutorial/describing.md" },
+  ] },
+  { "Going further" = [
+    { "Pages" = "guide/pages.md" },
+    { "Middleware" = "guide/middleware.md" },
+    { "Requests, cookies and sessions" = "guide/cookies.md" },
+    { "Streams and broadcast" = "guide/streams.md" },
+    { "WebSockets" = "guide/websockets.md" },
+    { "Calling another server" = "guide/client.md" },
+    { "Health probes" = "guide/health.md" },
+    { "Metrics" = "guide/metrics.md" },
+    { "Rate limits" = "guide/rate-limits.md" },
+    { "Compression" = "guide/compression.md" },
+    { "Domains" = "guide/domains.md" },
+    { "Work nobody is waiting for" = "guide/background.md" },
+    { "Serving, and stopping" = "guide/serving.md" },
+    { "Testing" = "guide/testing.md" },
+  ] },
+  { "Reference" = "reference.md" },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.code.annotate",
+  "content.code.copy",
+  "content.tabs.link",
+  "navigation.footer",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[project.markdown_extensions]
+admonition = {}
+smarty = {}
+attr_list = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.details = {}
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.snippets.base_path = ["examples"]
+pymdownx.snippets.check_paths = true
+pymdownx.superfences = {}
+pymdownx.tabbed.alternate_style = true

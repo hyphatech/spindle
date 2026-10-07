@@ -1,0 +1,88 @@
+; Spindle's suites, and the Postgres kit's against SPINDLE_TEST_PG. Another
+; server a test stands in is stub_server.ml; a database of a case's own is
+; db_target.ml; a server on virtual time, and connections to it in memory,
+; is in_memory.ml.
+
+(tests
+ (names
+  test_spindle
+  test_openapi
+  test_wire
+  test_http_rfc
+  test_websocket_rfc
+  test_multipart_rfc
+  test_websocket
+  test_structured
+  test_spindle_postgres
+  test_cli)
+ (package spindle_postgres)
+ (modules :standard \ cli_app test_style)
+ (libraries
+  spindle
+  spindle.http
+  spindle.client
+  spindle_postgres
+  rowtype
+  rowtype-postgres
+  wiretype
+  logs
+  threads.posix
+  eio
+  eio_main
+  eio.mock
+  mtime
+  uri
+  yojson
+  alcotest
+  fmt
+  qcheck-core
+  qcheck-alcotest
+  ; The referee: a second HTTP/1.1 parser, to disagree with ours.
+  httpun
+  ; A second implementation of gzip, to read back what the server wrote.
+  decompress.gz
+  decompress.de
+  angstrom
+  cstruct
+  ; The client's TLS rows: a server with a certificate the suite makes.
+  tls
+  tls-eio
+  x509
+  ptime
+  mirage-crypto-rng.unix
+  base64
+  unix)
+ (deps
+  ; RFC 9651's published tests, pinned, which test_structured runs whole.
+  (source_tree structured-field-tests)
+  ; The command line test_cli runs as a process.
+  cli_app.exe))
+
+(executable
+ (name cli_app)
+ (modules cli_app)
+ (libraries spindle spindle_cli))
+
+; The house rules, read off the source.
+
+(test
+ (name test_style)
+ (package spindle)
+ (modules test_style)
+ (libraries alcotest)
+ (deps
+  (glob_files ../http/dune)
+  (glob_files ../core/dune)
+  (glob_files ../client/dune)
+  (glob_files ../postgres/dune)
+  (glob_files ../cli/dune)
+  (glob_files ../http/*.ml)
+  (glob_files ../http/*.mli)
+  (glob_files ../core/*.ml)
+  (glob_files ../core/*.mli)
+  (glob_files ../client/*.ml)
+  (glob_files ../client/*.mli)
+  (glob_files ../postgres/*.ml)
+  (glob_files ../postgres/*.mli)
+  (glob_files ../cli/*.ml)
+  (glob_files ../cli/*.mli)))

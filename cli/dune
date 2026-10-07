@@ -1,0 +1,7 @@
+; An application's command line: its API, described from the routes. Built on
+; cmdliner; the core does not link it.
+
+(library
+ (name spindle_cli)
+ (public_name spindle_cli)
+ (libraries spindle cmdliner eio eio.unix eio_main))
