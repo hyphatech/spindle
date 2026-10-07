@@ -47,7 +47,6 @@ module.
 |---|---|
 | A module's contract | its `.mli`, in odoc markup |
 | What a contributor must not break | *Rules that must hold* below: an instruction, its reason in a clause and how you find out you broke it |
-| What is missing, untested or caveated | [GAPS.md](GAPS.md) |
 | How to use it | the documentation site, [docs/](docs/index.md), every program included from `examples/` |
 | Why it changed | the commit message |
 
@@ -148,9 +147,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   and RFC 7239; RFC 9651 is its published suite, kept in
   `test/structured-field-tests/` and run whole by `test_structured`; and
   RFC 7578's and RFC 2046's, the multipart a form is posted as, are
-  `test_multipart_rfc`'s, read the same three ways. One it
-  does not meet is a line in [Spindle's GAPS](GAPS.md#http)
-  saying so. Review by example misses the requirement nobody thought of.
+  `test_multipart_rfc`'s, read the same three ways. Review by example misses the requirement nobody thought of.
   Symptom: a MUST nobody noticed, which is how the missing `Host` check was
   found.
 - **A value with structure is read by its parser.** Inside Spindle,
@@ -163,8 +160,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
 - **A WebSocket rule is a row.** A requirement of RFC 6455 that Spindle
   meets, as a server or as a client, has a row in `test_websocket_rfc`,
   named by its section and read whole, a byte at a time and at splits a
-  generator chooses, through a reader smaller than a frame; one it does not
-  meet is a line in [Spindle's GAPS](GAPS.md#websockets).
+  generator chooses, through a reader smaller than a frame.
   Symptom: a frame one end misreads that no peer in the suite happens to
   send -- as a reply written after a close was, until a row asked.
 - **A socket's failures are values, and so are a stream's.**
@@ -435,8 +431,7 @@ installed.
 - A change that makes a sentence in a document false edits that sentence in
   the same commit.
 - A user-visible change updates the `.mli` it touches and the page of the
-  documentation site that describes it; a new supported feature or a
-  removed limitation updates [GAPS.md](GAPS.md).
+  documentation site that describes it.
 - Commit subjects are imperative, under 72 characters, with no full stop.
   The body says why, wrapped at 72. No trailers.
 

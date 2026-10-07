@@ -9,8 +9,6 @@ The beautiful, idiomatic web framework for modern OCaml.
 
 **Documentation**: [hyphatech.github.io/spindle](https://hyphatech.github.io/spindle/)
 
-**Known gaps**: [GAPS.md](GAPS.md)
-
 ## Features
 
 - **Interactive docs**: OpenAPI and Scalar at `/docs`, generated from your routes.
