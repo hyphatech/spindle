@@ -14,7 +14,14 @@ module Cookie = struct
       ~needs:
         [
           Dep.Cookie
-            { name; required; many = false; shape = Codec.String; kind = None };
+            {
+              name;
+              required;
+              many = false;
+              shape = Codec.String;
+              kind = None;
+              default = None;
+            };
         ]
       (fun r ->
         let absent () =

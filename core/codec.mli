@@ -18,6 +18,7 @@ type 'a t
 (** What a codec reads, for whatever describes it. *)
 type shape =
   | String
+  | Format of Wiretype.Shape.format  (** a string written in this format *)
   | Integer
   | Number
   | Boolean
@@ -40,6 +41,18 @@ val float : float t
     ["inf"], ["nan"], [".5"] and ["+3"], none of which a client means, and a
     number too large for a float is refused rather than read as infinity. It
     prints the fewest digits that read back as the same float. *)
+
+val uuid : string t
+(** RFC 9562, any version, the nil and the max UUID included; printed
+    lower-cased. *)
+
+val date : (int * int * int) t
+(** [(year, month, day)], as RFC 3339 [full-date]: [2026-09-30]. *)
+
+val instant : int t
+(** Epoch milliseconds, as {!Spindle.now} gives them, written as RFC 3339
+    [date-time]: [2026-09-30T12:00:00Z], with any fraction and offset, printed
+    in UTC with milliseconds. *)
 
 val bool : bool t
 (** [true] or [false], and nothing else. *)

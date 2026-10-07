@@ -24,7 +24,7 @@ let cookie =
     read = (fun r n -> Option.to_list (Request.cookie r n));
   }
 
-let input_dep source name codec ~required ~many =
+let input_dep ?default source name codec ~required ~many =
   Dep.of_request
     ~needs:
       [
@@ -35,6 +35,7 @@ let input_dep source name codec ~required ~many =
             many;
             shape = Codec.shape codec;
             kind = Codec.kind codec;
+            default = Option.map (Codec.print codec) default;
           };
       ]
 
@@ -55,6 +56,13 @@ let optional source name codec =
       match source.read r name with
       | [] -> Ok None
       | v :: _ -> Result.map Option.some (parse_value source name codec v))
+
+let default source name codec value =
+  input_dep ~default:value source name codec ~required:false ~many:false
+    (fun r ->
+      match source.read r name with
+      | [] -> Ok value
+      | v :: _ -> parse_value source name codec v)
 
 let required source name codec =
   input_dep source name codec ~required:true ~many:false (fun r ->

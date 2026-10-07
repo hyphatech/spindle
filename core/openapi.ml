@@ -18,6 +18,19 @@ let schema_ref name = Obj [ ("$ref", String ("#/components/schemas/" ^ name)) ]
 let schema s = Out.of_value (S.Json_schema.of_t ~defs:"#/components/schemas/" s)
 let json_content s = Obj [ ("application/json", Obj [ ("schema", s) ]) ]
 
+(* A default as the JSON its schema reads: a number or a boolean bare, as
+   its codec prints it, anything else as a string. *)
+let with_default (i : Dep.input) s =
+  match (i.default, s) with
+  | Some text, Obj members ->
+      let value =
+        match i.shape with
+        | Codec.Integer | Codec.Number | Codec.Boolean -> Raw text
+        | Codec.String | Codec.Format _ | Codec.Enum _ -> String text
+      in
+      Obj (members @ [ ("default", value) ])
+  | Some _, _ | None, _ -> s
+
 let parameter_object where (i : Dep.input) =
   Obj
     [
@@ -26,7 +39,8 @@ let parameter_object where (i : Dep.input) =
       ("required", Bool i.required);
       ( "schema",
         let s = schema (D.of_shape i.shape) in
-        if i.many then Obj [ ("type", String "array"); ("items", s) ] else s );
+        if i.many then Obj [ ("type", String "array"); ("items", s) ]
+        else with_default i s );
     ]
 
 let credential_reads (i : Route.info) =

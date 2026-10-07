@@ -711,6 +711,25 @@ let test_query_header_cookie_and_clock () =
   in
   check_string "all four" {|["1","2","3","42"]|} r.body
 
+(* A default stands in for an input that is absent, and only then: a value
+   given is read, and one that does not parse is refused. *)
+let test_a_default_stands_in_for_an_absent_input () =
+  let route =
+    Spindle.get
+      Spindle.Path.(s "page")
+      Spindle.Returns.text
+      (let+ page = Spindle.Query.default "page" Spindle.Codec.int 1
+       and+ size = Spindle.Header.default "x-size" Spindle.Codec.int 20 in
+       Ok (Printf.sprintf "%d %d" page size))
+  in
+  let app = Spindle.Test.app [ route ] in
+  check_string "both absent" "1 20" (Spindle.Test.call app `GET "/page").body;
+  check_string "both given" "3 50"
+    (Spindle.Test.call app `GET "/page?page=3" ~headers:[ ("x-size", "50") ])
+      .body;
+  check_status "one that does not parse" 400
+    (Spindle.Test.call app `GET "/page?page=x").status
+
 (* ------------------------------------------------------------------ *)
 (* Cookies *)
 
@@ -6805,6 +6824,35 @@ let codec_cases =
         " 4";
         "4 ";
       ];
+    case "uuid" Spindle.Codec.uuid
+      [
+        "0190f8a4-6d2e-7c3b-9a1f-2b4c6d8e0f12";
+        "0190F8A4-6D2E-7C3B-9A1F-2B4C6D8E0F12";
+        "00000000-0000-0000-0000-000000000000";
+      ]
+      [
+        "";
+        "not-a-uuid";
+        "0190f8a4-6d2e-7c3b-9a1f";
+        "0190f8a46d2e7c3b9a1f2b4c6d8e0f12";
+      ];
+    case "date" Spindle.Codec.date
+      [ "2026-10-08"; "2024-02-29" ]
+      [
+        "";
+        "2026-02-30";
+        "2025-02-29";
+        "2026-10-8";
+        "08/10/2026";
+        "2026-10-08T00:00:00Z";
+      ];
+    case "instant" Spindle.Codec.instant
+      [
+        "2026-10-08T12:00:00.000Z";
+        "2026-10-08T13:00:00+01:00";
+        "2026-10-08T12:00:00Z";
+      ]
+      [ ""; "2026-10-08"; "yesterday"; "2026-10-08 12:00:00"; "1759924800000" ];
     case "int64" Spindle.Codec.int64
       [ "9223372036854775807"; "-9223372036854775808" ]
       [ "9223372036854775808"; "+1"; "0x1"; "" ];
@@ -7051,6 +7099,8 @@ let () =
             test_dependencies_stop_at_the_first_refusal;
           Alcotest.test_case "query, header, cookie and clock" `Quick
             test_query_header_cookie_and_clock;
+          Alcotest.test_case "a default stands in for an absent input" `Quick
+            test_a_default_stands_in_for_an_absent_input;
           Alcotest.test_case "a refusal before the body never reads it" `Quick
             test_a_refusal_before_the_body_never_reads_it;
           Alcotest.test_case "a bind after the body reads it" `Quick

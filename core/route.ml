@@ -21,6 +21,7 @@ let info t = t.info
 
 let shape_to_string = function
   | Codec.String -> "string"
+  | Codec.Format _ -> "string"
   | Codec.Integer -> "integer"
   | Codec.Number -> "number"
   | Codec.Boolean -> "boolean"

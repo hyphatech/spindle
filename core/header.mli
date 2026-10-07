@@ -6,3 +6,7 @@
 
 val optional : string -> 'a Codec.t -> 'a option Dep.t
 val required : string -> 'a Codec.t -> 'a Dep.t
+
+val default : string -> 'a Codec.t -> 'a -> 'a Dep.t
+(** The header's value, or the default when it is absent, said in the document.
+*)

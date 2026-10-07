@@ -9,6 +9,7 @@ val query : source
 val header : source
 val cookie : source
 val optional : source -> string -> 'a Codec.t -> 'a option Dep.t
+val default : source -> string -> 'a Codec.t -> 'a -> 'a Dep.t
 val required : source -> string -> 'a Codec.t -> 'a Dep.t
 val list : source -> string -> 'a Codec.t -> 'a list Dep.t
 val param : 'a Path.param -> 'a Dep.t

@@ -1,4 +1,10 @@
-type shape = String | Integer | Number | Boolean | Enum of string list
+type shape =
+  | String
+  | Format of Wiretype.Shape.format
+  | Integer
+  | Number
+  | Boolean
+  | Enum of string list
 
 type 'a t = {
   parse : string -> 'a option;
@@ -98,6 +104,31 @@ let float =
     shape = Number;
     kind = None;
   }
+
+(* Read as wiretype reads the same kind in a body, by handing it the text as
+   a JSON string, so one grammar holds wherever the value arrives. What these
+   kinds write is ASCII with nothing to escape, so the quotes are all there
+   is to take off. *)
+let of_kind ~expects format kind =
+  let parse s =
+    match Wiretype.encode Wiretype.string s with
+    | Ok json -> Result.to_option (Wiretype.decode kind json)
+    | Error _ -> None
+  in
+  let print v =
+    match Wiretype.encode kind v with
+    | Ok json when String.length json >= 2 ->
+        String.sub json 1 (String.length json - 2)
+    | Ok _ | Error _ -> ""
+  in
+  { parse; print; expects; shape = Format format; kind = None }
+
+let uuid = of_kind ~expects:"a UUID" (Uuid None) (Wiretype.uuid ())
+let date = of_kind ~expects:"a date, as 2026-09-30" Date Wiretype.date
+
+let instant =
+  of_kind ~expects:"an instant, as 2026-09-30T12:00:00Z" Date_time
+    Wiretype.instant
 
 let bool =
   {

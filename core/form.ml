@@ -126,6 +126,7 @@ let field name codec ~required ~many read =
         many;
         shape = Codec.shape codec;
         kind = Codec.kind codec;
+        default = None;
       }
   in
   from_body ~need (fun p -> values_named name p.fields) read

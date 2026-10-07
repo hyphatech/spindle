@@ -40,6 +40,7 @@ type t = {
 
 let of_shape = function
   | Codec.String -> S.String S.text
+  | Codec.Format f -> S.String { S.text with format = Some f }
   | Codec.Integer -> S.Integer S.no_bounds
   | Codec.Number -> S.Number S.no_bounds
   | Codec.Boolean -> S.Boolean

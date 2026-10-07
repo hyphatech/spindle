@@ -139,13 +139,17 @@ codec -- the same codecs a path parameter uses, all in `Spindle.Codec`:
 module Codec = Spindle.Codec
 
 Spindle.Query.optional "page" Codec.int          (* int option *)
+Spindle.Query.default "limit" Codec.int 20       (* int: 20 when absent *)
 Spindle.Query.required "q" Codec.string          (* string, or a problem *)
+Spindle.Query.optional "since" Codec.date        (* (year, month, day) option *)
 Spindle.Query.list "tag" (Codec.enum ~kind:"colour" to_string [ Red; Green ])
 Spindle.Header.optional "x-count" Codec.int
 ```
 
-A codec is `string`, `int`, `int64`, `bool`, an `enum` of words, or
-`custom`, and says what it reads (`Codec.shape`). A header with a structure
+A codec is `string`, `int`, `int64`, `float`, `bool`, `uuid`, a `date`,
+an `instant`, an `enum` of words, or `custom`, and says what it reads
+(`Codec.shape`), so the document gives each its type and format. A
+`default` is said there too. A header with a structure
 of its own is read by that structure's parser in `spindle_http`, so its
 value is an input like any other and one that does not parse is `invalid`
 at its header: `Codec.media_type`, `Codec.accept`, `Codec.weighted`,

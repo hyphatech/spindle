@@ -7,6 +7,13 @@
   `float_of_string` would also take but no client means, and a number too
   large for a float. It is described as `number`. Breaking: `Number` joins
   `Codec.shape`, so a match over it needs the case.
+- `spindle`: `Codec.uuid`, `Codec.date` and `Codec.instant` read a UUID,
+  an RFC 3339 date and an instant as wiretype's kinds read them in a body,
+  and are described with their formats. Breaking: `Format` joins
+  `Codec.shape`.
+- `spindle`: `Query.default` and `Header.default` read an input that may be
+  absent as its value or a default, and the document says the default.
+  Breaking: `default` joins `Dep.input`.
 
 ## 0.1.0 (2026-10-07)
 

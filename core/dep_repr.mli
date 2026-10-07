@@ -15,6 +15,7 @@ type input = {
   many : bool;
   shape : Codec.shape;
   kind : string option;
+  default : string option;
 }
 
 type file = { name : string; required : bool; many : bool }

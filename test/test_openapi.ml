@@ -68,6 +68,10 @@ let add =
      and+ _ = session
      and+ _ = Spindle.Query.optional "page" Spindle.Codec.int
      and+ _ = Spindle.Query.optional "weight" Spindle.Codec.float
+     and+ _ = Spindle.Query.default "limit" Spindle.Codec.int 20
+     and+ _ = Spindle.Query.optional "since" Spindle.Codec.date
+     and+ _ = Spindle.Query.optional "after" Spindle.Codec.instant
+     and+ _ = Spindle.Header.optional "x-request" Spindle.Codec.uuid
      and+ i = Spindle.json item_json in
      Ok i)
 
@@ -83,12 +87,36 @@ let test_a_route_is_in_the_document () =
   let params = Yojson.Safe.Util.to_list (member [ "parameters" ] op) in
   Alcotest.(check (list string))
     "the path's parameter and the query's, not the credential"
-    [ "order_id:path:integer"; "page:query:integer"; "weight:query:number" ]
+    [
+      "order_id:path:integer";
+      "page:query:integer";
+      "weight:query:number";
+      "limit:query:integer";
+      "since:query:string";
+      "after:query:string";
+      "x-request:header:string";
+    ]
     (List.map
        (fun p ->
          str [ "name" ] p ^ ":" ^ str [ "in" ] p ^ ":"
          ^ str [ "schema"; "type" ] p)
        params);
+  let param name =
+    List.find_opt (fun p -> String.equal (str [ "name" ] p) name) params
+    |> Option.value ~default:`Null
+  in
+  Alcotest.(check (list string))
+    "a format where the text has one"
+    [ "date"; "date-time"; "uuid" ]
+    (List.map
+       (fun n -> str [ "schema"; "format" ] (param n))
+       [ "since"; "after"; "x-request" ]);
+  Alcotest.(check string)
+    "a default as its own JSON" "20"
+    (Yojson.Safe.to_string (member [ "schema"; "default" ] (param "limit")));
+  Alcotest.(check string)
+    "and not required" "false"
+    (Yojson.Safe.to_string (member [ "required" ] (param "limit")));
   Alcotest.(check string)
     "the body, a component" "#/components/schemas/Item"
     (str [ "requestBody"; "content"; "application/json"; "schema"; "$ref" ] op);

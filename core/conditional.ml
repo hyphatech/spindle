@@ -136,6 +136,7 @@ let inputs =
         many = true;
         shape = Codec.shape Codec.string;
         kind = None;
+        default = None;
       }
   in
   Dep.of_request
