@@ -1,4 +1,5 @@
-# Spindle's documentation site: `make docs` builds it into site/,
+# Spindle's documentation site, published to GitHub Pages by
+# .github/workflows/docs.yml. `make docs` builds it into site/,
 # the reference from the .mli files into docs/reference/ first.
 #
 # Every program a page shows is a file under examples/, built with the
@@ -8,6 +9,8 @@
 [project]
 site_name = "Spindle"
 site_description = "A direct-style web framework for OCaml 5, on Eio."
+site_url = "https://hyphatech.github.io/spindle/"
+repo_url = "https://github.com/hyphatech/spindle"
 docs_dir = "docs"
 site_dir = "site"
 

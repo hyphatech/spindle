@@ -40,17 +40,11 @@ let () = Eio_main.run @@ fun env -> Spindle.serve env routes
 
 ## Documentation
 
-[`docs/`](docs/index.md) is a site built by [Zensical](https://zensical.org):
-installing it, a tutorial from a first app to a described API with a
-database behind it, and a page for each of the rest. Every program a page
-shows is a file in [`examples/`](examples/), built with the repository, so a
-page cannot show code that does not compile. The reference is each module's
-`.mli`, which the site carries as odoc's HTML.
-
-```sh
-make docs         # the site, into site/
-make docs-serve   # the site at localhost:8000, rebuilt as pages change
-```
+[hyphatech.github.io/spindle](https://hyphatech.github.io/spindle/): installing
+it, a tutorial from a first app to a described API with a database behind it,
+a page for each of the rest, and the reference. Every program a page shows is
+a file in [`examples/`](examples/), built with the repository, so a page
+cannot show code that does not compile.
 
 What is missing or caveated is [GAPS.md](GAPS.md).
 
@@ -70,6 +64,4 @@ See [AGENTS.md](AGENTS.md).
 
 ## Licence
 
-MIT, copyright Hypha Technologies Ltd; see [LICENSE](LICENSE). RFC 9651's
-tests in `test/structured-field-tests/` are under the licence beside them,
-and Scalar's script, served by `/openapi`, under its own.
+MIT, copyright Hypha Technologies Ltd. See [LICENSE](LICENSE).

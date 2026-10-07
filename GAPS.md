@@ -40,8 +40,8 @@ What Spindle is and how it reads is [its README](README.md).
   another language.
 - **Not in opam-repository.** The packages are pinned from this repository,
   as are the Hypha libraries under them ([README](README.md#install)), and
-  the documentation site is built (`make docs`) but published nowhere; its
-  Install page is written as the packages will be installed.
+  the documentation site's Install page is written as the packages will
+  be installed.
 - **OCaml 5.5 needs a preview of `ocamlfind`.** `logs`, `mtime` and `uunf`
   are built with it, and its stable release refuses 5.5, so the Install page
   names OCaml 5.4, on which everything installs from opam as released.

@@ -1,0 +1,43 @@
+# The documentation site on GitHub Pages, rebuilt on every push to main:
+# odoc's reference from the .mli files, then Zensical's pages around it.
+name: docs
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - uses: actions/checkout@v5
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.4"
+      - run: make pin
+      - run: opam install . --deps-only odoc -y
+      # Use setup-ocaml's switch instead of the Makefile's local one.
+      - run: make reference OPAM="opam exec --"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
+      - run: pip install zensical==0.0.67
+      - run: zensical build --strict
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4
+        id: deployment
