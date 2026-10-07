@@ -32,8 +32,6 @@ jobs:
       - uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: ${{ matrix.ocaml }}
-      # Hypha's libraries are pinned until opam-repository has them.
-      - run: make pin
       - run: opam install . --deps-only --with-test --with-dev-setup -y
       # Use setup-ocaml's switch instead of the Makefile's local one.
       - run: make lint OPAM="opam exec --"
@@ -50,7 +48,6 @@ jobs:
       - uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: "5.4"
-      - run: make pin
       - run: opam install . --deps-only --with-test -y
       - run: opam list --installed --columns=name,version
       - run: opam exec -- dune build -p spindle,spindle_postgres,spindle_cli @install

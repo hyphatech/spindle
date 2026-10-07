@@ -8,7 +8,7 @@ and the documentation site, [docs/](docs/index.md).
 ## Commands
 
 ```sh
-make setup   # once: local opam switch in ./_opam, Hypha's libraries pinned, every dependency
+make setup   # once: local opam switch in ./_opam, every dependency
 make test    # starts the test Postgres in Docker, runs every suite
 make lint    # formatting, odoc, and the release build
 make fmt     # format in place

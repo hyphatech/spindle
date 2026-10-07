@@ -39,7 +39,7 @@ What Spindle is and how it reads is [its README](README.md).
   and its kin are English and fixed, with no way to supply their words in
   another language.
 - **Not in opam-repository.** The packages are pinned from this repository,
-  as are the Hypha libraries under them ([README](README.md#install)), and
+  which pins the Hypha libraries under it ([README](README.md#install)), and
   the documentation site's Install page is written as the packages will
   be installed.
 - **OCaml 5.5 needs a preview of `ocamlfind`.** `logs`, `mtime` and `uunf`

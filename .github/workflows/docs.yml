@@ -27,7 +27,6 @@ jobs:
       - uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: "5.4"
-      - run: make pin
       - run: opam install . --deps-only odoc -y
       # Use setup-ocaml's switch instead of the Makefile's local one.
       - run: make reference OPAM="opam exec --"

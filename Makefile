@@ -12,7 +12,7 @@ DOCS_PORT ?= 8000
 REFERENCE = spindle spindle_cli spindle_postgres odoc.support
 
 .DEFAULT_GOAL := help
-.PHONY: help setup pin build test lint fmt doc docs docs-serve reference db db-down
+.PHONY: help setup build test lint fmt doc docs docs-serve reference db db-down
 
 help: ## list targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -21,15 +21,7 @@ help: ## list targets
 setup: ## create the local switch and install dependencies
 	@docker compose version >/dev/null 2>&1 || echo "The Postgres suites need docker compose."
 	@[ -d _opam ] || opam switch create . 5.5.1 --no-install -y
-	$(MAKE) pin OPAM_SWITCH=--switch=$(CURDIR)
 	opam install . --switch=$(CURDIR) --deps-only --with-test --with-dev-setup -y
-
-# Hypha's own libraries, until opam-repository has them.
-OPAM_SWITCH ?=
-pin: ## pin Hypha's libraries Spindle is built on
-	opam pin add $(OPAM_SWITCH) -n -y "git+https://github.com/hyphatech/postgres-eio.git"
-	opam pin add $(OPAM_SWITCH) -n -y "git+https://github.com/hyphatech/rowtype.git"
-	opam pin add $(OPAM_SWITCH) -n -y "git+https://github.com/hyphatech/wiretype.git"
 
 build: ## build everything
 	$(OPAM) dune build @all

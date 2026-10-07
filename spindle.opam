@@ -61,3 +61,7 @@ build: [
 ]
 dev-repo: "git+https://github.com/hyphatech/spindle.git"
 x-maintenance-intent: ["(latest)"]
+pin-depends: [
+  [ "wiretype.dev" "git+https://github.com/hyphatech/wiretype.git" ]
+  [ "ppx_wiretype.dev" "git+https://github.com/hyphatech/wiretype.git" ]
+]
