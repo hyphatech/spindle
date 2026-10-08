@@ -1,0 +1,125 @@
+/* The home page's hero: the mark, the tagline and the buttons beside the
+   program, filling the first screen; the cards follow below it. The two
+   columns share one grid row, so they are the same height: the mark at the
+   program's first line, the buttons at its last. */
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: center;
+  column-gap: 3rem;
+  min-height: calc(100vh - 12rem);
+  padding: 2rem 0;
+}
+
+.hero-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1.25rem;
+}
+
+.hero-text > * {
+  flex: none;
+}
+
+.hero-code {
+  min-width: 0;
+}
+
+.md-typeset .hero h1 {
+  margin: 0;
+}
+
+.md-typeset .hero-text > *,
+.md-typeset .hero-code .highlight {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* The block's own padding would set the program below the mark. */
+.md-typeset .hero-code .highlight pre > code {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.md-typeset .hero h1 img {
+  width: 300px;
+}
+
+.md-typeset .hero-tagline {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  color: var(--md-default-fg-color);
+}
+
+.md-typeset .hero-text > p:not(.hero-tagline) {
+  max-width: 28rem;
+  font-size: 0.9rem;
+  color: var(--md-default-fg-color--light);
+}
+
+.md-typeset .hero-text .highlight {
+  max-width: 20rem;
+}
+
+.md-typeset .hero .md-button {
+  border-radius: 9999px;
+}
+
+/* The program reads as text on the page, not as a box beside it. */
+.md-typeset .hero-code .highlight pre > code {
+  background: transparent;
+  font-size: 0.7rem;
+  line-height: 1.6;
+}
+
+.md-typeset .hero-code .md-code__nav {
+  display: none;
+}
+
+@media screen and (max-width: 960px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    row-gap: 1.5rem;
+    padding: 1rem 0 0;
+  }
+
+  .hero-text {
+    gap: 1rem;
+  }
+
+  .md-typeset .hero h1 img {
+    width: 200px;
+  }
+
+  .md-typeset .hero-tagline {
+    font-size: 1.3rem;
+  }
+
+  .md-typeset .hero-text > p:not(.hero-tagline) {
+    font-size: 0.8rem;
+  }
+
+  .md-typeset .hero .md-button {
+    padding: 0.5em 1.5em;
+  }
+
+  /* The program sits on the text's left edge and scrolls rather than
+     being cut off. */
+  .hero-code {
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--md-default-fg-color--lightest);
+  }
+
+  .md-typeset .hero-code .highlight pre > code {
+    padding-left: 0;
+    padding-right: 0;
+    font-size: 0.65rem;
+    overflow-x: auto;
+  }
+}

@@ -4,16 +4,16 @@ hide:
   - toc
 ---
 
+<div class="hero" markdown>
+
+<div class="hero-text" markdown>
+
 # ![Spindle](assets/logo-light.svg#only-light){ width="320" }![Spindle](assets/logo-dark.svg#only-dark){ width="320" } { #spindle }
 
-<div class="grid" markdown>
+<p class="hero-tagline">The Eio-native web framework for modern OCaml.</p>
 
-<div markdown>
-
-**The Eio-native web framework for modern OCaml.**
-
-Performant, Eio-native and battle-tested. OpenAPI and Scalar out of the
-box, and your front end typed from the same OCaml types.
+Performant and battle-tested. OpenAPI and Scalar out of the box, and your
+front end typed from the same OCaml types.
 
 ```sh
 opam install spindle
@@ -24,9 +24,13 @@ opam install spindle
 
 </div>
 
+<div class="hero-code" markdown>
+
 ```ocaml
 --8<-- "greeting.ml:app"
 ```
+
+</div>
 
 </div>
 
