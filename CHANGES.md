@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Breaking: Spindle needs wiretype 0.2.0, whose changes reach an
+  application through it: a refusal's `at` quotes a member name that is not
+  plain (`body["a.b"]`), an answer holding a float that is not finite is a
+  `500` rather than `null`, and the document's schemas say what the reader
+  means where they once guessed. wiretype's CHANGES.md lists each.
 - `spindle`: `Codec.float` reads a number in decimal digits, with an
   optional minus sign, fraction and exponent, and refuses what
   `float_of_string` would also take but no client means, and a number too

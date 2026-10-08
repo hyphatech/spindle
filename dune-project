@@ -35,12 +35,12 @@
   (ocaml
    (>= 5.4))
   (wiretype
-   (>= 0.1.0))
+   (>= 0.2.0))
   ; The deriver every application describes its JSON with, installed with
   ; the framework so one package is the whole of starting; no library here
   ; links it.
   (ppx_wiretype
-   (>= 0.1.0))
+   (>= 0.2.0))
   (eio
    (>= 1.5))
   (eio_main
