@@ -42,9 +42,9 @@
   (ppx_wiretype
    (>= 0.2.0))
   (eio
-   (>= 1.5))
+   (>= 1.6))
   (eio_main
-   (>= 1.5))
+   (>= 1.6))
   (uri
    (>= 4.4.0))
   (angstrom
@@ -139,7 +139,7 @@
   (ptime
    (>= 1.2.0))
   (eio
-   (>= 1.5))
+   (>= 1.6))
   (logs
    (>= 0.10.0))
   ; The suites are this package's, since they reach every library.
@@ -194,6 +194,6 @@
   (cmdliner
    (>= 2.1.1))
   (eio
-   (>= 1.5))
+   (>= 1.6))
   (eio_main
-   (>= 1.5))))
+   (>= 1.6))))

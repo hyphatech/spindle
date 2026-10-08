@@ -14,7 +14,7 @@ depends: [
   "rowtype" {>= "0.2.0"}
   "rowtype-postgres" {>= "0.2.0"}
   "ptime" {>= "1.2.0"}
-  "eio" {>= "1.5"}
+  "eio" {>= "1.6"}
   "logs" {>= "0.10.0"}
   "spindle_cli" {with-test & = version}
   "alcotest" {with-test & >= "1.9.1"}

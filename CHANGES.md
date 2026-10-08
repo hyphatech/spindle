@@ -7,6 +7,8 @@
   plain (`body["a.b"]`), an answer holding a float that is not finite is a
   `500` rather than `null`, and the document's schemas say what the reader
   means where they once guessed. wiretype's CHANGES.md lists each.
+- Spindle needs eio 1.6, the first to raise `Eio.Fs.Symlink`, which
+  `Files` has matched since 0.1.0, whose opam files allowed 1.5.
 - `spindle`: `Codec.float` reads a number in decimal digits, with an
   optional minus sign, fraction and exponent, and refuses what
   `float_of_string` would also take but no client means, and a number too

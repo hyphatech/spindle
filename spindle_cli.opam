@@ -11,8 +11,8 @@ depends: [
   "ocaml" {>= "5.4"}
   "spindle" {= version}
   "cmdliner" {>= "2.1.1"}
-  "eio" {>= "1.5"}
-  "eio_main" {>= "1.5"}
+  "eio" {>= "1.6"}
+  "eio_main" {>= "1.6"}
   "odoc" {with-doc}
 ]
 build: [

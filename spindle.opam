@@ -13,8 +13,8 @@ depends: [
   "ocaml" {>= "5.4"}
   "wiretype" {>= "0.2.0"}
   "ppx_wiretype" {>= "0.2.0"}
-  "eio" {>= "1.5"}
-  "eio_main" {>= "1.5"}
+  "eio" {>= "1.6"}
+  "eio_main" {>= "1.6"}
   "uri" {>= "4.4.0"}
   "angstrom" {>= "0.16.1"}
   "logs" {>= "0.10.0"}
