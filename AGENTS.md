@@ -32,6 +32,7 @@ client/     spindle.client: calling another server, on http/ alone
 postgres/   spindle_postgres: a server's Postgres, over rowtype's backend
 cli/        spindle_cli: the API, described on the command line
 docs/       the documentation site, every program included from examples/
+overrides/  the site's theme overrides: the header's mark, as an icon
 examples/   the programs the site shows, each built and run
 test/       the suites: the framework, HTTP and WebSocket rows by RFC
             section, the wire, the Postgres kit, and test_style, the house

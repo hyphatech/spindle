@@ -1,4 +1,9 @@
-# Spindle
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <img src="docs/assets/logo-light.svg" alt="Spindle" width="320">
+  </picture>
+</h1>
 
 The Eio-native web framework for modern OCaml.
 
