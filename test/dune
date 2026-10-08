@@ -1,7 +1,7 @@
 ; Spindle's suites, and the Postgres kit's against SPINDLE_TEST_PG. Another
 ; server a test stands in is stub_server.ml; a database of a case's own is
 ; db_target.ml; a server on virtual time, and connections to it in memory,
-; is in_memory.ml.
+; is in_memory.ml; a certificate, and TLS before a server, is tls_front.ml.
 
 (tests
  (names

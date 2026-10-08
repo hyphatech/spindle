@@ -50,9 +50,10 @@ val exporter :
 (** [exporter ~clock ~mono_clock record]: [record] is handed every span of a
     kept trace as it ends, on whichever fiber and domain ended it, so it is
     quick and synchronised -- a queue another fiber sends from, as
-    [Spindle_client.Otlp] keeps. [ratio] (1.0) is the share of the traces begun
-    here that are kept; a trace joined from a caller is kept exactly when the
-    caller's is, so a trace is whole or absent. *)
+    [Spindle_client.Otlp] keeps -- and never waits, since a span whose fiber is
+    being cancelled is ended there too. [ratio] (1.0) is the share of the traces
+    begun here that are kept; a trace joined from a caller is kept exactly when
+    the caller's is, so a trace is whole or absent. *)
 
 val span :
   ?kind:kind ->

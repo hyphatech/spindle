@@ -29,10 +29,12 @@ build: ## build everything
 test: db ## run the tests
 	SPINDLE_TEST_PG=$(PG_TEST_URL) $(OPAM) dune test --force
 
-# Release is the profile opam installs with.
-lint: ## check formatting, docs and the release build
+# Release is the profile opam installs with. opam lint passes a warning
+# unless told it is an error, and installing from source prints each one.
+lint: ## check formatting, docs, the release build and the opam files
 	$(OPAM) dune build @all @fmt @doc
 	$(OPAM) dune build --profile release @all
+	opam lint -W @1..99 *.opam
 
 fmt: ## format the code
 	$(OPAM) dune fmt

@@ -13,6 +13,7 @@ depends: [
   "spindle" {= version}
   "rowtype" {>= "0.2.0"}
   "rowtype-postgres" {>= "0.2.0"}
+  "postgres-eio" {>= "0.1.0"}
   "ptime" {>= "1.2.0"}
   "eio" {>= "1.6"}
   "logs" {>= "0.10.0"}

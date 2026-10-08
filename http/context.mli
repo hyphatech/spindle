@@ -77,4 +77,4 @@ val add_attributes : recording -> (string * value) list -> unit
 
 val with_span : recording -> (unit -> 'a) -> 'a
 (** [f ()], the span ended when it returns or raises; a raise is recorded as its
-    constructor and goes on. *)
+    constructor and goes on, and a cancellation ends it unset and goes on. *)

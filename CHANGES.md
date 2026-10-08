@@ -1,5 +1,26 @@
 # Changes
 
+## Unreleased
+
+- `spindle_postgres` names postgres-eio among its dependencies, which it
+  pins, so installing it from source no longer warns.
+- `spindle.client`: a `Body.read` after one that failed answers that
+  failure again. Over HTTPS it raised `Eio.Cancel.Cancelled` into a caller
+  nobody had cancelled, after a read that timed out. Breaking: over HTTP
+  such a read waited again.
+- `spindle_postgres`: a `Pool.run` whose fiber is cancelled passes the
+  cancellation on. It raised `Fun.Finally_raised` instead, which a
+  `Fiber.first` it lost re-raised.
+- `Server.run`: on Linux, `localhost` whose port another process holds on
+  `[::1]` fails as in use. It served `127.0.0.1` alone, beside the other
+  process, which a browser asking for `[::1]` first reached instead.
+- `Trace`: a span whose fiber is cancelled ends with its status unset. It
+  ended as `Error "Cancelled"`, counting a race lost or a client gone as a
+  failure.
+- `Websocket`: TLS failing beneath an open socket ends it as `Lost`, as a
+  connection that ends does. A `wss` client raised the TLS exception from
+  `Spindle_client.websocket`.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

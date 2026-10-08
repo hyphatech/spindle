@@ -95,7 +95,9 @@ Spindle_client.stream client `GET url (fun answer ->
 ```
 
 `~timeout_s` bounds the head, and `~read_timeout_s` each wait for more of the
-body. To stop early, return: the connection is then closed.
+body. A read that fails is the body's end: every read after it answers the
+same error, so waiting longer means a longer `~read_timeout_s`, not a second
+read. To stop early, return: the connection is then closed.
 
 ## Server-Sent Events
 

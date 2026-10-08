@@ -1057,19 +1057,24 @@ let run ~sw ~net ~mono_clock:clock ~now ~domain_mgr ?domains ~port
   let bind addr =
     Eio.Net.listen net ~sw ~backlog ~reuse_addr:true (`Tcp (addr, port))
   in
-  (* A host without IPv6 says so as the family or address being unavailable,
-     or from the io_uring backend as any error of Eio's own. Reading all of
-     those as a missing family is safe because the other family is bound
-     unguarded, so a port in use still fails there. *)
+  (* Whether a bind failed with one of [codes]: raised as it is by the posix
+     backend, wrapped in Eio's error by io_uring's. *)
+  let failed_with codes = function
+    | Unix.Unix_error (code, _, _)
+    | Eio.Io (Eio.Exn.X (Eio_unix.Unix_error (code, _, _)), _) ->
+        List.mem code codes
+    | _ -> false
+  in
+  (* A host without IPv6 says so as the family or address being unavailable.
+     Any other failure -- a port someone else holds on that family above all
+     -- is the server's to report, never a family to do without. *)
   let bind_if_supported addr =
     match bind addr with
     | s -> Some s
-    | exception
-        ( Eio.Exn.Io _
-        | Unix.Unix_error
-            ( (Unix.EAFNOSUPPORT | Unix.EADDRNOTAVAIL | Unix.EPROTONOSUPPORT),
-              _,
-              _ ) ) ->
+    | exception ex
+      when failed_with
+             [ Unix.EAFNOSUPPORT; Unix.EADDRNOTAVAIL; Unix.EPROTONOSUPPORT ]
+             ex ->
         None
   in
   let address_to_string = Format.asprintf "%a" Eio.Net.Ipaddr.pp in
@@ -1111,19 +1116,11 @@ let run ~sw ~net ~mono_clock:clock ~now ~domain_mgr ?domains ~port
               "every interface: 0.0.0.0, with no IPv6 here" )
         | Some v6 -> (
             (* On a dual-stack host the IPv6 wildcard takes IPv4 too, and
-               binding IPv4 then fails as in use: raised from the socket call
-               by the posix backend, as Eio's own error by io_uring's. *)
-            let v6_only =
-              ([ v6 ], "every interface: [::], which takes IPv4 too")
-            in
+               binding IPv4 then fails as in use. *)
             match bind Eio.Net.Ipaddr.V4.any with
             | v4 -> ([ v6; v4 ], "every interface: [::] and 0.0.0.0")
-            | exception Unix.Unix_error (Unix.EADDRINUSE, _, _) -> v6_only
-            | exception
-                Eio.Io
-                  (Eio.Exn.X (Eio_unix.Unix_error (Unix.EADDRINUSE, _, _)), _)
-              ->
-                v6_only)
+            | exception ex when failed_with [ Unix.EADDRINUSE ] ex ->
+                ([ v6 ], "every interface: [::], which takes IPv4 too"))
       else
         ( List.map bind addrs,
           String.concat " and " (List.map address_to_string addrs) )

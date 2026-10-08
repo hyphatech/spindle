@@ -636,34 +636,48 @@ module Body = struct
     reader : Framing.reader;
     clock : Eio.Time.Mono.ty Eio.Resource.t;
     wait_s : float;
-    mutable ended : bool;  (** read to its end *)
+    mutable state : state;
     mutable function_returned : bool;
   }
+
+  (* A failed read is answered again: one cut off by its wait leaves a TLS
+     connection unreadable, which would raise that cancellation at the next
+     read, since a record half read cannot be resumed. *)
+  and state = Reading | Ended | Failed of error
 
   (* Each wait bounded, never the whole: a stream's length is its own. After
      its function returns the connection is kept or closed, so a read reads
      nothing. *)
   let read b =
-    if b.function_returned || b.ended then Ok `End
+    let failed e =
+      b.state <- Failed e;
+      Error e
+    in
+    if b.function_returned then Ok `End
     else
-      match
-        Eio.Time.Timeout.run (Eio.Time.Timeout.seconds b.clock b.wait_s)
-          (fun () ->
-            Ok
-              (Framing.read_some b.reader ~max:max_int ~reserve:(fun _ -> true)))
-      with
-      | Error `Timeout -> Error (Timed_out b.wait_s)
-      | Ok (Ok (`Data s)) -> Ok (`Data s)
-      | Ok (Ok `End) ->
-          b.ended <- true;
-          Ok `End
-      | Ok (Error (`Broken m)) ->
-          Error (Unreachable ("an answer cut short: " ^ m))
-      | Ok (Error (`Too_large | `Busy)) ->
-          Error (Unreachable "an answer that could not be held")
-      | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
-      | exception ex -> (
-          match error_of_exn ex with Some e -> Error e | None -> raise ex)
+      match b.state with
+      | Ended -> Ok `End
+      | Failed e -> Error e
+      | Reading -> (
+          match
+            Eio.Time.Timeout.run (Eio.Time.Timeout.seconds b.clock b.wait_s)
+              (fun () ->
+                Ok
+                  (Framing.read_some b.reader ~max:max_int ~reserve:(fun _ ->
+                       true)))
+          with
+          | Error `Timeout -> failed (Timed_out b.wait_s)
+          | Ok (Ok (`Data s)) -> Ok (`Data s)
+          | Ok (Ok `End) ->
+              b.state <- Ended;
+              Ok `End
+          | Ok (Error (`Broken m)) ->
+              failed (Unreachable ("an answer cut short: " ^ m))
+          | Ok (Error (`Too_large | `Busy)) ->
+              failed (Unreachable "an answer that could not be held")
+          | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
+          | exception ex -> (
+              match error_of_exn ex with Some e -> failed e | None -> raise ex))
 end
 
 type answer = { status : int; headers : (string * string) list; body : Body.t }
@@ -736,7 +750,7 @@ let stream t ?timeout_s ?read_timeout_s ?(headers = []) ?body meth url f =
                 Framing.reader framing c.reader ~max_trailer:max_head;
               clock = t.clock;
               wait_s;
-              ended = false;
+              state = Reading;
               function_returned = false;
             }
           in
@@ -744,9 +758,10 @@ let stream t ?timeout_s ?read_timeout_s ?(headers = []) ?body meth url f =
              unread body is the next answer's first bytes. *)
           let finally () =
             b.function_returned <- true;
-            match (b.ended, keep_idle_for t head framing ~caller_closes) with
-            | true, Some idle_for -> keep_idle t (pool_key target) c ~idle_for
-            | true, None | false, (Some _ | None) -> close_connection c
+            match (b.state, keep_idle_for t head framing ~caller_closes) with
+            | Ended, Some idle_for -> keep_idle t (pool_key target) c ~idle_for
+            | Ended, None | (Reading | Failed _), (Some _ | None) ->
+                close_connection c
           in
           Ok
             (Fun.protect ~finally (fun () ->

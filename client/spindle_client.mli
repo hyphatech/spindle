@@ -131,8 +131,9 @@ module Body : sig
 
   val read : t -> ([ `Data of string | `End ], error) result
   (** The next piece as it arrived, or its end. Each read waits at most the
-      call's [read_timeout_s]; a read after the function it was handed to has
-      returned is [`End]. *)
+      call's [read_timeout_s]; a read after one that failed answers that failure
+      again, since a read cut off leaves a TLS connection unreadable; and a read
+      after the function it was handed to has returned is [`End]. *)
 end
 
 type answer = { status : int; headers : (string * string) list; body : Body.t }

@@ -10,7 +10,7 @@ and the documentation site, [docs/](docs/index.md).
 ```sh
 make setup   # once: local opam switch in ./_opam, every dependency
 make test    # starts the test Postgres in Docker, runs every suite
-make lint    # formatting, odoc, and the release build
+make lint    # formatting, odoc, the release build, and the opam files
 make fmt     # format in place
 make docs    # the documentation site into site/, as Pages publishes it; docs-serve to preview
 ```

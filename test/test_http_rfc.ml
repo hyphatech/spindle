@@ -1583,10 +1583,8 @@ type saw =
   | Hung_up of int  (** the client closed this connection, counted from 0 *)
   | Alerted of int  (** and closed it with a TLS closure alert *)
 
-(* What the suite's certificate names, for a TLS row: the loopback address
-   the rows call, or a name alone -- which a call to the address must then
-   refuse. *)
-type certified = Name_and_address | Name_only
+(* What the suite's certificate names, for a TLS row. *)
+type certified = Tls_front.certified = Name_and_address | Name_only
 
 type client_row = {
   rfc : string;
@@ -1842,64 +1840,6 @@ let client_rows =
       [ call Fails ];
   ]
 
-(* A certificate of the suite's own, naming what [certified] says, and an
-   authenticator that trusts its key and nothing else -- and checks the
-   name or address the client says it is calling, as a real one does: what
-   a TLS row's server and client are given. *)
-let tls_pair =
-  let make certified =
-    Mirage_crypto_rng_unix.use_default ();
-    let key = X509.Private_key.generate `P256 in
-    let name =
-      X509.Distinguished_name.
-        [
-          Relative_distinguished_name.singleton (CN (Common_name.v "localhost"));
-        ]
-    in
-    let names = X509.General_name.singleton DNS [ "localhost" ] in
-    let names =
-      match certified with
-      | Name_and_address ->
-          X509.General_name.add IP
-            [ Ipaddr.V4.to_octets Ipaddr.V4.localhost ]
-            names
-      | Name_only -> names
-    in
-    let extensions = X509.Extension.singleton Subject_alt_name (false, names) in
-    let certificate =
-      match X509.Signing_request.create name key with
-      | Error (`Msg m) -> Alcotest.fail m
-      | Ok csr -> (
-          match
-            X509.Signing_request.sign csr ~valid_from:Ptime.epoch
-              ~valid_until:
-                (Option.value (Ptime.of_float_s 4e9) ~default:Ptime.max)
-              ~extensions key name
-          with
-          | Ok c -> c
-          | Error e -> Alcotest.failf "%a" X509.Validation.pp_signature_error e)
-    in
-    let config =
-      match
-        Tls.Config.server ~certificates:(`Single ([ certificate ], key)) ()
-      with
-      | Ok c -> c
-      | Error (`Msg m) -> Alcotest.fail m
-    in
-    let fingerprint =
-      X509.Public_key.fingerprint ~hash:`SHA256 (X509.Private_key.public key)
-    in
-    let authenticator : X509.Authenticator.t =
-     fun ?ip ~host chain ->
-      X509.Validation.trust_key_fingerprint ?ip ~host
-        ~time:(fun () -> Ptime.of_float_s (Unix.gettimeofday ()))
-        ~hash:`SHA256 ~fingerprint chain
-    in
-    (config, authenticator)
-  in
-  let both = lazy (make Name_and_address) and name = lazy (make Name_only) in
-  function Name_and_address -> Lazy.force both | Name_only -> Lazy.force name
-
 (* One connection, as its script says. *)
 let script ~tls ~delivery seen i socket acts =
   let note f =
@@ -1991,7 +1931,7 @@ let run_client_row env (row : client_row) delivery =
       changed = Eio.Condition.create ();
     }
   in
-  let tls = Option.map tls_pair row.tls in
+  let tls = Option.map Tls_front.certificate row.tls in
   let host, listening =
     if row.by_name then
       match

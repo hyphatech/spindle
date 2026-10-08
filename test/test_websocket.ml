@@ -246,80 +246,12 @@ let test_a_refusal_reaches_the_client env () =
   check_outcome "refused, with its status"
     (Error "answered 403, which opens no socket") (called got)
 
-(* A certificate of the test's own, and a front that speaks TLS to the
-   client and plain HTTP to the server, as a proxy before one does. *)
-let tls_front ~sw env ~port =
-  Mirage_crypto_rng_unix.use_default ();
-  let key = X509.Private_key.generate `P256 in
-  let name =
-    X509.Distinguished_name.
-      [ Relative_distinguished_name.singleton (CN (Common_name.v "localhost")) ]
-  in
-  let extensions =
-    X509.Extension.singleton Subject_alt_name
-      (false, X509.General_name.singleton DNS [ "localhost" ])
-  in
-  let certificate =
-    match X509.Signing_request.create name key with
-    | Error (`Msg m) -> Alcotest.fail m
-    | Ok csr -> (
-        match
-          X509.Signing_request.sign csr ~valid_from:Ptime.epoch
-            ~valid_until:
-              (Option.value (Ptime.of_float_s 4e9) ~default:Ptime.max)
-            ~extensions key name
-        with
-        | Ok c -> c
-        | Error e -> Alcotest.failf "%a" X509.Validation.pp_signature_error e)
-  in
-  let config =
-    match
-      Tls.Config.server ~certificates:(`Single ([ certificate ], key)) ()
-    with
-    | Ok c -> c
-    | Error (`Msg m) -> Alcotest.fail m
-  in
-  let fingerprint =
-    X509.Public_key.fingerprint ~hash:`SHA256 (X509.Private_key.public key)
-  in
-  let authenticator : X509.Authenticator.t =
-   fun ?ip ~host chain ->
-    X509.Validation.trust_key_fingerprint ?ip ~host
-      ~time:(fun () -> Ptime.of_float_s (Unix.gettimeofday ()))
-      ~hash:`SHA256 ~fingerprint chain
-  in
-  let net = Eio.Stdenv.net env in
-  let socket =
-    Eio.Net.listen net ~sw ~backlog:4 ~reuse_addr:true
-      (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
-  in
-  let front =
-    match Eio.Net.listening_addr socket with
-    | `Tcp (_, p) -> p
-    | _ -> Alcotest.fail "expected a TCP socket"
-  in
-  Eio.Fiber.fork_daemon ~sw (fun () ->
-      let rec accept () =
-        Eio.Net.accept_fork socket ~sw
-          ~on_error:(fun _ -> ())
-          (fun flow _ ->
-            let tls = Tls_eio.server_of_flow config flow in
-            Eio.Switch.run @@ fun sw ->
-            let back =
-              Eio.Net.connect ~sw net (`Tcp (Eio.Net.Ipaddr.V4.loopback, port))
-            in
-            Eio.Fiber.first
-              (fun () -> Eio.Flow.copy tls back)
-              (fun () -> Eio.Flow.copy back tls));
-        accept ()
-      in
-      accept ());
-  (front, authenticator)
-
 let test_the_client_speaks_wss env () =
   Eio.Switch.run @@ fun sw ->
   let port = serve ~sw env routes in
-  let front, authenticator = tls_front ~sw env ~port in
+  let front, authenticator =
+    Tls_front.listen ~sw ~net:(Eio.Stdenv.net env) ~port
+  in
   let got =
     Spindle_client.websocket (client ~sw env ~authenticator ()) chat
       (Printf.sprintf "wss://localhost:%d/echo" front) (fun ws ->
@@ -328,6 +260,55 @@ let test_the_client_speaks_wss env () =
         Ok back.text)
   in
   check_outcome "over TLS" (Ok "secret") (called got)
+
+(* TLS broken beneath an open socket -- by a middlebox, or the peer's bug --
+   is the connection lost, as a closed one is: a failure the handler is
+   answered, never one raised through it. *)
+let test_a_socket_whose_tls_breaks_is_lost env () =
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  let config, authenticator = Tls_front.certificate Name_only in
+  let socket =
+    Eio.Net.listen net ~sw ~backlog:1 ~reuse_addr:true
+      (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
+  in
+  let port =
+    match Eio.Net.listening_addr socket with
+    | `Tcp (_, p) -> p
+    | _ -> Alcotest.fail "expected a TCP socket"
+  in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      let flow, _ = Eio.Net.accept ~sw socket in
+      let tls = Tls_eio.server_of_flow config flow in
+      let r = Eio.Buf_read.of_flow tls ~max_size:65536 in
+      (match Spindle_http.Head.Request.read ~max:65536 r with
+      | Error _ -> Alcotest.fail "the upgrade could not be read"
+      | Ok head ->
+          let key =
+            Option.value ~default:""
+              (Spindle_http.Field.find head.headers "sec-websocket-key")
+          in
+          Eio.Flow.copy_string
+            ("HTTP/1.1 101 Switching Protocols\r\n\
+              Upgrade: websocket\r\n\
+              Connection: Upgrade\r\n\
+              Sec-WebSocket-Accept: " ^ Ws.accept_key key ^ "\r\n\r\n")
+            tls;
+          (* The client's first frame: the socket is open. *)
+          ignore (Eio.Buf_read.take 1 r : string);
+          Eio.Flow.copy_string "no TLS record begins like this" flow);
+      Eio.Fiber.await_cancel ());
+  match
+    Spindle_client.websocket (client ~sw env ~authenticator ()) chat
+      (Printf.sprintf "wss://localhost:%d/echo" port) (fun ws ->
+        let* () = Ws.send ws { text = "hi" } in
+        let* back = Ws.receive ws in
+        Ok back.text)
+  with
+  | Error (Spindle_client.Ended (Ws.Lost _)) -> ()
+  | got ->
+      Alcotest.failf "lost, not %s"
+        (match called got with Ok s -> "answered " ^ s | Error m -> m)
 
 (* Everybody in a room hears what anybody says, each message encoded once. *)
 let test_a_room_is_a_broadcast_of_frames env () =
@@ -533,6 +514,8 @@ let () =
             (test_a_client_socket_says_how_it_ended env);
           Alcotest.test_case "the client speaks wss" `Quick
             (test_the_client_speaks_wss env);
+          Alcotest.test_case "a socket whose TLS breaks is lost" `Quick
+            (test_a_socket_whose_tls_breaks_is_lost env);
           Alcotest.test_case "a room is a broadcast of frames" `Quick
             (test_a_room_is_a_broadcast_of_frames env);
           Alcotest.test_case "a silent peer is pinged, then dropped" `Quick

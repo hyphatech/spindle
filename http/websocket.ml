@@ -385,10 +385,14 @@ let read_frames t ~side ~max_message ~on_frame reader =
         hand_over t (Message (Binary_data s));
         next None
   in
+  (* Anything else the flow raises, a TLS alert say, is the connection
+     failing beneath the socket. *)
   match next None with
   | ended -> ended
   | exception (End_of_file | Eio.Io _) ->
       Lost "the connection ended without a close"
+  | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
+  | exception ex -> Lost (Printexc.to_string ex)
 
 (* Pings after [keep_alive_s] without a frame, and gives up at twice that.
    Time spent waiting for the handler is not the peer's silence. *)

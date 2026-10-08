@@ -137,6 +137,25 @@ let test_a_run_pool_is_closed_after () =
       Alcotest.(check int)
         "nothing idle once closed" 0 (Spindle_postgres.Pool.stats pool).idle)
 
+(* A program's pool whose fiber is cancelled -- a race it lost, a sibling
+   that failed -- passes the cancellation on as it came, so whatever
+   cancelled it goes on as if the pool had never been there. *)
+let test_a_cancelled_run_pool_passes_the_cancellation_on () =
+  Db_target.with_postgres (fun target ->
+      let env = fst (Db_target.io ()) in
+      let opened, opening = Eio.Promise.create () in
+      let winner =
+        Eio.Fiber.first
+          (fun () ->
+            Spindle_postgres.Pool.run env target ~size:3 (fun _ ->
+                Eio.Promise.resolve opening ();
+                Eio.Fiber.await_cancel ()))
+          (fun () ->
+            Eio.Promise.await opened;
+            "the sibling")
+      in
+      Alcotest.(check string) "the race is the sibling's" "the sibling" winner)
+
 (* The driver's options reach it through both wrappers: a pool asked to
    keep no statements leaves none prepared at the server, where one left to
    the driver's default keeps what it ran. *)
@@ -669,6 +688,8 @@ let () =
             test_a_pool_takes_the_drivers_options;
           Alcotest.test_case "a run pool is closed after" `Quick
             test_a_run_pool_is_closed_after;
+          Alcotest.test_case "a cancelled run pool passes the cancellation on"
+            `Quick test_a_cancelled_run_pool_passes_the_cancellation_on;
           Alcotest.test_case "a connection that keeps no statements reads text"
             `Quick test_a_connection_that_keeps_no_statements_reads_text;
           Alcotest.test_case "an instant reads back to the millisecond" `Quick

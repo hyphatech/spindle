@@ -2600,6 +2600,35 @@ let test_a_kept_trace_records_its_spans () =
 
 (* A trace begun here is kept at the ratio; one joined is kept exactly when
    the caller's is, so a trace is whole or absent. *)
+
+(* A span whose fiber is cancelled -- a race it lost, a client gone, a
+   server stopping -- is ended, so its trace is whole, but nothing went
+   wrong in it: counted as an error, every cancellation would swell the
+   error rate a collector keeps. *)
+let test_a_cancelled_span_is_no_error () =
+  Eio_main.run @@ fun env ->
+  let record, recorded, _ = recorder () in
+  let trace = exporter env record in
+  Spindle.Log.with_request_id ~trace "r-1" (fun () ->
+      Eio.Fiber.first
+        (fun () ->
+          Spindle.Trace.span "lose the race" (fun () ->
+              Eio.Fiber.await_cancel ()))
+        ignore);
+  match
+    List.find_opt
+      (fun (s : Spindle.Trace.span) -> String.equal s.name "lose the race")
+      (recorded ())
+  with
+  | None -> Alcotest.fail "the cancelled span was not recorded"
+  | Some lost ->
+      Alcotest.(check bool)
+        "ended, unset, with no exception" true
+        ((match lost.status with
+           | Spindle.Trace.Unset -> true
+           | Spindle.Trace.Error _ -> false)
+        && not (List.mem_assoc "exception.type" lost.attributes))
+
 let test_a_trace_is_kept_whole_or_not_at_all () =
   Eio_main.run @@ fun env ->
   let spans_of ?ratio ?traceparent () =
@@ -3526,6 +3555,62 @@ let test_the_client_reads_as_it_arrives () =
       Alcotest.fail
         "each wait is bounded, and the first piece came as it was sent"
 
+(* A read cut off by its wait leaves a TLS connection unreadable, since a
+   record half read cannot be resumed: every read after a failed one
+   answers that failure again, over either scheme, and never raises. *)
+let test_a_failed_read_is_answered_again () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  let slow =
+    Spindle.get
+      Spindle.Path.(s "slow")
+      Spindle.Returns.response
+      (Spindle.Dep.return
+         (Ok
+            (Spindle.Response.stream (fun send ->
+                 let ( let* ) = Result.bind in
+                 let* () = send "first" in
+                 (* Nothing more comes, so every wait for more passes. *)
+                 Eio.Fiber.await_cancel ()))))
+  in
+  let port =
+    serve ~sw ~net
+      ~clock:(Eio.Stdenv.mono_clock env)
+      ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+      ~domains:1
+      (Spindle.Test.app [ slow ])
+  in
+  let front, authenticator = Tls_front.listen ~sw ~net ~port in
+  let client =
+    Spindle_client.create ~sw ~net
+      ~mono_clock:(Eio.Stdenv.mono_clock env)
+      ~authenticator ()
+  in
+  let read_after_failing url =
+    Spindle_client.stream client ~read_timeout_s:0.1 `GET url (fun a ->
+        let rec until_failed () =
+          match Spindle_client.Body.read a.body with
+          | Ok (`Data _) -> until_failed ()
+          | Ok `End -> "the body ended"
+          | Error (Spindle_client.Timed_out _) -> (
+              match Spindle_client.Body.read a.body with
+              | Error (Spindle_client.Timed_out _) -> "the same failure"
+              | Ok _ | Error _ -> "something else")
+          | Error _ -> "another failure"
+        in
+        until_failed ())
+  in
+  List.iter
+    (fun (scheme, url) ->
+      match read_after_failing url with
+      | Ok said -> check_string scheme "the same failure" said
+      | Error _ -> Alcotest.failf "%s: the call failed" scheme)
+    [
+      ("http", Printf.sprintf "http://127.0.0.1:%d/slow" port);
+      ("https", Printf.sprintf "https://localhost:%d/slow" front);
+    ]
+
 let call_on ~net ~clock ~port ?(headers = []) ?body meth path =
   Eio.Switch.run @@ fun sw ->
   let client = Spindle_client.create ~sw ~net ~mono_clock:clock () in
@@ -4254,6 +4339,40 @@ let test_a_wildcard_listens_on_every_interface domains () =
         (host ^ ", IPv6") true
         (answers ~net Eio.Net.Ipaddr.V6.loopback port))
     [ "0.0.0.0"; "::" ]
+
+(* A port held on one loopback address is held: localhost is both or
+   neither, never IPv4 alone beside whoever holds [::1] -- whom a browser,
+   asking for [::1] first, would reach instead. *)
+let test_localhost_held_on_one_loopback_is_refused () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  let port = free_port ~net in
+  match
+    Eio.Net.listen net ~sw ~backlog:1 ~reuse_addr:true
+      (`Tcp (Eio.Net.Ipaddr.V6.loopback, port))
+  with
+  | exception (Eio.Io _ | Unix.Unix_error _) ->
+      (* No IPv6 here, so nobody can hold [::1]. *)
+      Alcotest.skip ()
+  | _held -> (
+      match
+        Spindle.Server.run ~sw ~net
+          ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+          ~domains:1
+          ~mono_clock:(Eio.Stdenv.mono_clock env)
+          ~now:(fun () -> 0)
+          ~port
+          ~ready:(fun where ->
+            Alcotest.failf "listening on %s, beside whoever holds [::1]" where)
+          (Spindle.Test.app [ hello ])
+      with
+      | () -> Alcotest.fail "the server returned"
+      | exception
+          ( Unix.Unix_error (Unix.EADDRINUSE, _, _)
+          | Eio.Io (Eio.Exn.X (Eio_unix.Unix_error (Unix.EADDRINUSE, _, _)), _)
+            ) ->
+          ())
 
 (* An address is exactly what is listened on. *)
 let test_an_address_is_exactly_that_one domains () =
@@ -7167,6 +7286,8 @@ let () =
             test_an_event_stream_reads_as_the_standard_says;
           Alcotest.test_case "the client reads as it arrives" `Quick
             test_the_client_reads_as_it_arrives;
+          Alcotest.test_case "a failed read is answered again" `Quick
+            test_a_failed_read_is_answered_again;
         ] );
       ( "rate limits",
         [
@@ -7236,6 +7357,8 @@ let () =
             test_a_call_carries_the_trace;
           Alcotest.test_case "a kept trace records its spans" `Quick
             test_a_kept_trace_records_its_spans;
+          Alcotest.test_case "a cancelled span is no error" `Quick
+            test_a_cancelled_span_is_no_error;
           Alcotest.test_case "a trace is kept whole or not at all" `Quick
             test_a_trace_is_kept_whole_or_not_at_all;
           Alcotest.test_case "a tracestate is passed on" `Quick
@@ -7304,6 +7427,8 @@ let () =
             (test_a_wildcard_listens_on_every_interface 1);
           Alcotest.test_case "an address is exactly that one" `Quick
             (test_an_address_is_exactly_that_one 1);
+          Alcotest.test_case "localhost held on one loopback is refused" `Quick
+            test_localhost_held_on_one_loopback_is_refused;
           Alcotest.test_case "a stream ends when its client goes" `Quick
             (test_a_stream_ends_when_its_client_goes 1);
           Alcotest.test_case "https is never spoken as plain http" `Quick

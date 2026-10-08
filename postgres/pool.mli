@@ -123,7 +123,8 @@ val run :
   'a
 (** [run env target f] is a program's pool: {!create}d on a switch of its own,
     with the network and the monotonic clock taken from [env], handed to [f],
-    and {!close}d when [f] returns or raises --
+    and {!close}d when [f] returns or raises; cancelled, it passes the
+    cancellation on, its connections ending with the switch --
 
     {[
     Eio_main.run @@ fun env ->

@@ -63,7 +63,10 @@ let transaction ?wait_s ?keep ?isolation ?retries t work =
 
 let close = Pg.Pool.close
 
-(* Closed when [f] returns, so idle connections end properly. A database that
+(* Closed when [f] returns or raises, so idle connections end properly. A
+   cancelled [f] is not closed after: closing waits to tell the server, which
+   a cancelled fiber cannot, and would raise its cancellation as
+   [Fun.Finally_raised]. Its connections end with the switch. A database that
    refuses ends the program, saying why. *)
 let run ?size ?wait_s ?statement_timeout_ms ?idle_in_transaction_timeout_ms
     ?connect_timeout_s ?parameters ?timeout_s ?statement_cache ?reset
@@ -76,7 +79,16 @@ let run ?size ?wait_s ?statement_timeout_ms ?idle_in_transaction_timeout_ms
       ?connect_timeout_s ?parameters ?timeout_s ?statement_cache ?reset
       ?max_lifetime_s ?idle_check_s target
   with
-  | Ok pool -> Fun.protect ~finally:(fun () -> close pool) (fun () -> f pool)
+  | Ok pool -> (
+      match f pool with
+      | v ->
+          close pool;
+          v
+      | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
+      | exception ex ->
+          let bt = Printexc.get_raw_backtrace () in
+          close pool;
+          Printexc.raise_with_backtrace ex bt)
   | Error e ->
       L.err (fun m ->
           m "the pool could not be opened: %s" (Rowtype.error_to_string e));

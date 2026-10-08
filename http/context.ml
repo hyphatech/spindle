@@ -142,12 +142,18 @@ let record_raise (u : recording) ex =
   add_attributes u [ ("exception.type", `String kind) ];
   u.span <- { u.span with status = Error kind }
 
-(* Ends [u] when [f] returns or raises. *)
+(* Ends [u] when [f] returns or raises. A cancellation ends it too, so its
+   trace is whole, but as nothing gone wrong: a race lost or a client gone
+   is no error to count. *)
 let with_span u f =
   match f () with
   | v ->
       end_span u;
       v
+  | exception (Eio.Cancel.Cancelled _ as ex) ->
+      let bt = Printexc.get_raw_backtrace () in
+      end_span u;
+      Printexc.raise_with_backtrace ex bt
   | exception ex ->
       let bt = Printexc.get_raw_backtrace () in
       record_raise u ex;
