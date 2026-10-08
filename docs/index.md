@@ -4,7 +4,7 @@ hide:
   - toc
 ---
 
-# Spindle
+# ![Spindle](assets/logo-light.svg#only-light){ width="320" }![Spindle](assets/logo-dark.svg#only-dark){ width="320" } { #spindle }
 
 <div class="grid" markdown>
 

@@ -48,6 +48,11 @@ nav = [
 
 [project.theme]
 language = "en"
+favicon = "assets/favicon.svg"
+# The header's mark is an icon, not theme.logo's image, so its needle takes
+# the header's colour in either scheme.
+custom_dir = "overrides"
+icon.logo = "spindle/mark"
 features = [
   "content.code.annotate",
   "content.code.copy",
