@@ -67,11 +67,8 @@ let () =
   Spindle.serve env (routes @ Spindle.Openapi.docs routes)
 ```
 
-```sh
-curl localhost:8080/split --json '{"total": 90, "tip": 10, "people": 3}'
-```
-
-```text
+```console
+$ curl localhost:8080/split --json '{"total": 90, "tip": 10, "people": 3}'
 {"each":33}
 ```
 
