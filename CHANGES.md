@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an
   application through it: a refusal's `at` quotes a member name that is not
