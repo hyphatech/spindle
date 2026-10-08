@@ -1,8 +1,7 @@
 # Install
 
-Three things, once per machine: **opam**, OCaml's package manager; **OCaml**
-itself, which opam installs; and **Spindle**, which brings **dune**, the
-build tool, with it.
+You need **opam**, OCaml's package manager, and **OCaml 5.4 or later**.
+Spindle brings **dune**, the build tool, with it.
 
 ## 1. Install opam
 
@@ -24,19 +23,15 @@ build tool, with it.
     winget install Git.Git OCaml.opam
     ```
 
-## 2. Install OCaml
-
-opam keeps OCaml and your packages in a *switch*, an environment of its own.
-Set opam up -- answer yes when it offers to set up your shell -- then make a
-switch with OCaml 5.4:
+## 2. Set up OCaml
 
 ```sh
-opam init --bare
-opam switch create 5.4.1
+opam init
 ```
 
-This compiles OCaml, and takes a few minutes. Then let this terminal see
-it; a new one sees it by itself:
+Answer yes when it offers to set up your shell. This installs the latest
+OCaml, which takes a few minutes. Then let this terminal see it -- a new
+terminal does by itself:
 
 === "macOS and Linux"
 
@@ -50,30 +45,55 @@ it; a new one sees it by itself:
     (& opam env) -split '\r?\n' | ForEach-Object { Invoke-Expression $_ }
     ```
 
+??? note "Already had opam?"
+
+    Check `ocaml -version`. If it is older than 5.4, make a switch -- an
+    environment of its own -- with the latest OCaml:
+
+    ```sh
+    opam switch create spindle ocaml-base-compiler
+    eval $(opam env)
+    ```
+
 ## 3. Install Spindle
 
 ```sh
-opam install spindle
+opam pin add https://github.com/hyphatech/spindle.git
 ```
 
-That is Spindle, dune, and everything they need.
+This installs its three packages and everything they need:
+
+| Package | Library | What for |
+|---|---|---|
+| `spindle` | `spindle` | The framework, and `spindle.client` for calling other servers |
+| `spindle_postgres` | `spindle_postgres` | [Database](tutorial/database.md) |
+| `spindle_cli` | `spindle_cli` | [Client schemas](tutorial/client-schemas.md#setting-up-the-command-line) |
 
 ## Check it worked
 
 ```sh
-$ ocaml -version
-The OCaml toplevel, version 5.4.1
-$ dune --version
+ocaml -version
+```
+
+```text
+The OCaml toplevel, version 5.5.1
+```
+
+```sh
+dune --version
+```
+
+```text
 3.18.0
 ```
 
-Both answering -- dune with 3.18 or later -- means you are ready.
+OCaml 5.4 or later and dune 3.18 or later means you are ready.
 
 ## Your editor
 
 For completion, types on hover and errors as you type, install the language
 server, then the **OCaml Platform** extension in VS Code -- or the OCaml
-support of the editor you use:
+support of your editor:
 
 ```sh
 opam install ocaml-lsp-server

@@ -16,7 +16,7 @@ The Eio-native web framework for modern OCaml.
 
 ## Features
 
-- **Interactive docs**: OpenAPI and Scalar at `/docs`, generated from your routes.
+- **Interactive docs**: OpenAPI docs via Scalar at `/docs`, generated from your routes.
 - **Front end in sync**: schemas for your front end, derived from your OCaml types.
 - **Typed end to end**: JSON derived from your types, every input validated.
 - **Eio-native**: straight-line handlers on OCaml 5, on every CPU core.
@@ -67,20 +67,20 @@ let () =
   Spindle.serve env (routes @ Spindle.Openapi.docs routes)
 ```
 
-```console
-$ curl localhost:8080/split --json '{"total": 90, "tip": 10, "people": 3}'
-{"each":33}
-
-$ curl localhost:8080/split --json '{"total": -5, "tip": 150, "people": 0}'
-{"error":"invalid","message":"Some of that request is not what it should be.",
- "problems":[{"at":"body.total","code":"too_small","message":"This must be at least 0."},
-             {"at":"body.tip","code":"too_large","message":"This must be at most 100."},
-             {"at":"body.people","code":"too_small","message":"This must be at least 1."}]}
+```sh
+curl localhost:8080/split --json '{"total": 90, "tip": 10, "people": 3}'
 ```
 
-Open `localhost:8080/docs`:
+```text
+{"each":33}
+```
 
-![POST /split in /docs, its body's bounds read from the type](docs/assets/scalar.png)
+Open `localhost:8080/docs` for interactive API docs, with nothing to
+write: an OpenAPI 3.2 document generated from your routes, served by
+[Scalar](https://scalar.com). Every route, its schema with the bounds from
+your types, every error it may answer, and a button to try it.
+
+![POST /split in the interactive docs at /docs](docs/assets/scalar.png)
 
 ## Contributing
 

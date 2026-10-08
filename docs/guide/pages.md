@@ -1,19 +1,19 @@
-# Pages
+# HTML pages and templates
 
-**A page is a string.** `Returns.html` answers it at `200` as
-`text/html; charset=utf-8`, and `Response.html` under any status. Spindle
-has no template language and writes no HTML of its own: rendering a page is
-a problem well solved elsewhere, so an application renders with the library
-it likes, and **escaping what a person sent is that renderer's job**. Each
-of these escapes the text it writes unless it is told not to, and
-each program below serves one page with one of them:
+A page is a string. `Returns.html` answers it at `200` as
+`text/html; charset=utf-8`; `Response.html` does the same under any status.
+Spindle has no template language: render with whichever library you like.
+**Escaping what a person sent is the renderer's job**, and each of these
+escapes text unless told not to.
 
-| Renderer | How a page is written | Its string |
+| Renderer | How you write a page | Its string |
 |---|---|---|
-| [htmlit](https://erratique.ch/software/htmlit) | combinators, with no dependency of their own | `Htmlit.El.to_string ~doctype:true page` |
-| [TyXML](https://github.com/ocsigen/tyxml) | combinators, or HTML through `tyxml-ppx`; the markup is checked against the standard as it compiles | `Format.asprintf "%a" (Tyxml.Html.pp ()) page` |
+| [htmlit](https://erratique.ch/software/htmlit) | combinators, no dependencies | `Htmlit.El.to_string ~doctype:true page` |
+| [TyXML](https://github.com/ocsigen/tyxml) | combinators, or HTML through `tyxml-ppx`, checked against the standard as it compiles | `Format.asprintf "%a" (Tyxml.Html.pp ()) page` |
 | [html_of_jsx](https://github.com/davesnx/html_of_jsx) | JSX, in the [mlx](https://github.com/ocaml-mlx/mlx) dialect | `"<!doctype html>" ^ JSX.render page` |
-| [jingoo](https://github.com/tategakibunko/jingoo) | Jinja's templates, in files | `Jingoo.Jg_template.Loaded.eval template ~models` |
+| [jingoo](https://github.com/tategakibunko/jingoo) | Jinja templates, in files | `Jingoo.Jg_template.Loaded.eval template ~models` |
+
+Each program serves the same page at `/hello/{name}`:
 
 === "htmlit"
 
@@ -43,8 +43,16 @@ each program below serves one page with one of them:
     --8<-- "pages/templates/greeting.jingoo"
     ```
 
-jingoo reads a template when it is loaded and raises on one it cannot, so
-a template is loaded as the program starts, where the raise stops it; a
-variable a template names and the model lacks is written as nothing. A
-refusal is JSON on every route, a page's included.
+    jingoo raises on a template it cannot read, so load it when the program
+    starts, as above, not per request.
 
+```sh
+curl 'localhost:8080/hello/%3Cb%3Ekim%3C%2Fb%3E'
+```
+
+```text
+<!DOCTYPE html>
+<html lang="en"><head>...<title>Hello</title></head><body><h1>Hello, &lt;b&gt;kim&lt;/b&gt;!</h1></body></html>
+```
+
+A refusal is still JSON, on a page's route as on any other.

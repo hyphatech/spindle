@@ -1,45 +1,76 @@
-# Streams and broadcast
+# Server-Sent Events
 
-A Server-Sent Events stream is an answer that declares its events: each kind
-by name and what its data is -- JSON of a description,
-`Event.json "state" state_json`, or text as it is, `Event.text "token"`.
-A stream's events are a type of its own, declared and never defined, which
-each of its kinds carries, so `send` takes no event made for another stream;
-one of its own kinds the route left out of its list is sent, and logged as
-its bug. An event is made from its kind -- encoded once, then sent to as
-many clients as are listening -- and `Event.retry` and `Event.comment` are
-the two lines any stream may send. A value its kind cannot encode is our
-bug, logged where it is made, and that event sends nothing. `send` answers
-a result, `Error Gone` once the client has gone, so a producer's loop is
-written with `let*` and ends there; one waiting for something to send when
-its client goes learns it at its next `send`, since nothing cancels it. The framework writes the chunked
-framing, the no-buffering headers, a `: keep-alive` comment whenever the
-stream has been quiet for `Returns.events ~keep_alive_s` (15) seconds, and a
-log line when the stream ends and why (finished, client gone, connection
-closed). The document describes each event as OpenAPI 3.2 does, an
-`itemSchema` with a branch per name.
+A Server-Sent Events stream sends events until it is done. `Broadcast`
+sends one event to everyone listening.
 
-**Resuming** is an id on each event, `Event.make ~id`, which a browser sends
-back as `Last-Event-ID` when it reconnects; the route reads it as it reads
-any header, `Spindle.Header.optional "last-event-id" Spindle.Codec.int`, and
-carries on after it. This stream resumes:
+## A resumable event stream
+
+`GET /count` sends a number a second, and a client that reconnects carries
+on where it left off:
 
 ```ocaml
 --8<-- "sse.ml"
 ```
 
+```sh
+curl -N localhost:8080/count
+```
+
+```text
+event: count
+id: 1
+data: 1
+
+event: count
+id: 2
+data: 2
+...
+```
+
+```sh
+curl -N -H 'Last-Event-ID: 41' localhost:8080/count
+```
+
+```text
+event: count
+id: 42
+data: 42
+...
+```
+
+- **Declare each kind of event**: `Event.json "count" Wiretype.int`, or
+  `Event.text "token"` for plain text. The stream's own type (`counting`)
+  stops you sending another stream's events.
+- **`send` answers `Error Gone` once the client has gone**, so a loop
+  written with `let*` ends there.
+- **Resuming:** give each event an id (`Event.make ~id`). A browser sends
+  the last one back as `Last-Event-ID` when it reconnects.
+- A quiet stream gets a `: keep-alive` comment every 15 seconds
+  (`Returns.events ~keep_alive_s`).
+
+## Broadcasting to many clients
+
+`Broadcast` sends one event to every subscriber of a topic, within one
+process:
+
 ```ocaml
+open Spindle.Syntax
+
+let ( let* ) = Result.bind
+
 type room
 
-let count : (int, room) Spindle.Event.kind = Spindle.Event.json "count" Wiretype.int
+let count : (int, room) Spindle.Event.kind =
+  Spindle.Event.json "count" Wiretype.int
+
 let hub : (unit, room Spindle.Event.t) Spindle.Broadcast.t =
   Spindle.Broadcast.create ~depth:16 ()
 
-let room = Path.str "room"
+let room = Spindle.Path.str "room"
 
 let events =
   Spindle.get
-    Path.(s "rooms" / room / s "events")
+    Spindle.Path.(s "rooms" / room / s "events")
     (Spindle.Returns.events Spindle.Event.[ declare count ])
     (let+ room = Spindle.param room in
      Ok
@@ -57,12 +88,14 @@ let events =
              in
              loop ())))
 
-(* Anywhere else: make it once, send the same event to everybody. *)
-let () = Spindle.Broadcast.publish hub ~topic:"lobby" (Spindle.Event.make count 1)
+(* Anywhere else: make the event once, and everybody gets it. *)
+let () =
+  Spindle.Broadcast.publish hub ~topic:"lobby" (Spindle.Event.make count 1)
 ```
 
-`Broadcast` is in-process fan-out with two rules: **the publisher renders
-once** (`publish` takes what it sends already made -- an `Event.t`, or
-bytes), and **a slow subscriber is dropped, never
-waited for** (a bounded queue per subscriber). The second is only safe when
-every event is a whole state, which is the application's to make true.
+- **An event is encoded once**, however many subscribers get it.
+- **A slow subscriber is dropped, never waited for.** One more than
+  `~depth` events (16) behind gets `None` from `next`. So send whole
+  states, not changes, and a client that reconnects is up to date.
+- Each subscriber carries a tag (`()` here), which `Broadcast.subscribers`
+  lists: who is present, say. `Broadcast.close` ends every subscription.

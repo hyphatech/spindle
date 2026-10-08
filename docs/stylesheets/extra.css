@@ -62,8 +62,10 @@
   color: var(--md-default-fg-color--light);
 }
 
+/* As wide as the install command, which a fixed width cut off. */
 .md-typeset .hero-text .highlight {
-  max-width: 20rem;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .md-typeset .hero .md-button {

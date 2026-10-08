@@ -7,12 +7,7 @@
 open Spindle.Syntax
 
 (* --8<-- [start:routes] *)
-(* A codec of the application's own: any type with a parser and a printer. *)
-let int64 =
-  Spindle.Codec.custom ~kind:"int64" ~parse:Int64.of_string_opt
-    ~print:Int64.to_string ()
-
-let user_id = Spindle.Path.param "user_id" int64
+let user_id = Spindle.Path.int64 "user_id"
 let name = Spindle.Path.str "name"
 
 (* The answer's description is derived from its record, so a name holding a

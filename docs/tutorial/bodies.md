@@ -1,41 +1,13 @@
-# Bodies, answers and refusals
+# Request bodies, responses and errors
 
-An API reads JSON, writes JSON, and says no -- and the three have to agree
-with what the API's document claims, with what the client expects, and with
-each other. Spindle makes each of them one declared value, so they cannot
-drift apart.
+This page reads a JSON body, answers with JSON, and says no. Each is a value
+declared on the route, so the API's document always matches what the route
+does.
 
-## How it works
+## JSON in, JSON out
 
-**One description reads and writes.** A record with
-`[@@deriving wiretype]` gets a description, `<type>_json`, which decodes a
-body, encodes an answer, and states its shape to the API's document and the
-client's zod schema. Nothing is written twice. A shape the deriver cannot
-describe is written by hand with
-[`wiretype`'s combinators](https://github.com/hyphatech/wiretype#by-hand),
-and is the same kind of value.
-
-**The shape is the description's; a rule is yours.** The description checks
-what the wire can state -- types, required members, bounds like
-`[@min 1]` -- and a body that fails it never reaches your code: it is a `400`
-with every problem at its place. What needs your data -- is the item in
-stock, is the name taken -- is the endpoint's check, worded for a person.
-
-**What a route returns is declared on it.** `Returns.json ~status:`Created
-placed_json` says the route answers `201` with that shape, and the endpoint
-returns the plain value; the framework encodes it, so the answer always is
-what the route says.
-
-**A refusal is a code, declared once.** A code has a name a client branches
-on, a status, and what it means; a refusal made from it carries a sentence
-for a person and, optionally, a detail that goes only to the log. A route
-lists the codes it may give, so the API's document lists them too, and a
-code a route never declared is caught by its tests.
-
-## A body in, an answer out
-
-An order is a record whose quantity has bounds; what was placed is another
-record, answered at `201`; and an item that is sold out is a refusal the
+An order is a record whose quantity has bounds. What was placed is another
+record, answered at `201`. An item that is sold out is a refusal the
 application declares:
 
 ```ocaml
@@ -43,53 +15,84 @@ application declares:
 ```
 
 ```sh
-$ curl -i localhost:8080/orders -H 'content-type: application/json' \
+curl -i localhost:8080/orders -H 'content-type: application/json' \
     -d '{"item": "tea", "quantity": 2}'
+```
+
+```text
 HTTP/1.1 201 Created
 content-type: application/json
 
 {"number":1,"item":"tea","quantity":2}
 ```
 
-A body of the wrong shape is answered before the endpoint runs, every
+A body of the wrong shape is answered before your endpoint runs, with every
 problem at once:
 
 ```sh
-$ curl localhost:8080/orders -H 'content-type: application/json' \
+curl localhost:8080/orders -H 'content-type: application/json' \
     -d '{"quantity": "two"}'
+```
+
+```text
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"body.quantity","code":"unexpected_type","message":"This must be a whole number, not text."},{"at":"body.item","code":"required","message":"This is required."}]}
-$ curl localhost:8080/orders -H 'content-type: application/json' \
+```
+
+```sh
+curl localhost:8080/orders -H 'content-type: application/json' \
     -d '{"item": "tea", "quantity": 0}'
+```
+
+```text
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"body.quantity","code":"too_small","message":"This must be at least 1."}]}
 ```
 
-And the rule only the kitchen knows is the endpoint's own refusal:
+A rule only your data can check is the endpoint's own refusal:
 
 ```sh
-$ curl -i localhost:8080/orders -H 'content-type: application/json' \
+curl -i localhost:8080/orders -H 'content-type: application/json' \
     -d '{"item": "cake", "quantity": 1}'
+```
+
+```text
 HTTP/1.1 409 Conflict
 content-type: application/json
 
 {"error":"sold_out","message":"There is no cake left today."}
 ```
 
-??? example "The whole program"
+What happened:
+
+- `[@@deriving wiretype]` gives each record a description, `order_json` and
+  `placed_json`. The same value decodes the body, encodes the answer and
+  describes the shape in the API's document. A shape the deriver cannot
+  describe is written with
+  [`wiretype`'s combinators](https://github.com/hyphatech/wiretype#by-hand).
+- `Spindle.json order_json` reads the body. Types, required fields and bounds
+  like `[@min 1]` are checked for you; a body that fails is a `400`.
+- `Returns.json ~status:`Created placed_json` declares the answer. The
+  endpoint returns the plain record and the framework encodes it.
+- `sold_out` is a refusal code, declared once with its status. The route
+  lists it in `~refuses`.
+
+??? example "The whole app"
 
     ```ocaml
     --8<-- "json_body.ml"
     ```
 
-## What a route returns
+## Response types
 
-A route is `Spindle.route meth path returns inputs`, and `Spindle.get`,
-`post`, `put`, `patch` and `delete` are it with their method. What it
-returns is a required argument, and it decides what its list of inputs
-returns -- the plain value, or a refusal:
+A route is `Spindle.get`, `post`, `put`, `patch` or `delete` (or
+`Spindle.route meth`), then a path, what it returns, and its inputs. What it
+returns decides what the endpoint must give back:
 
 ```ocaml
 Spindle.get path Returns.html
   (let+ ... in Ok page)                                  (* a page, 200 *)
+
+Spindle.get path Returns.text
+  (let+ ... in Ok "Hello.")                              (* text, 200 *)
 
 Spindle.post path (Returns.json ~status:`Accepted verdict_json)
   (let+ ... in Ok verdict)                               (* a value, encoded *)
@@ -107,12 +110,11 @@ Spindle.get path (Returns.websocket chat)
   (let+ ... in Ok (fun ws -> ...))                       (* a WebSocket *)
 ```
 
-`Returns.text` is text at `200`; the status of a JSON value, and of
-nothing, is the model's, one per route.
+`Returns.json` defaults to `200` and `Returns.empty` to `204`.
 
-**A route whose success is one of several things** -- made or replaced,
-queued or done -- lists the statuses it may answer, each with when, and
-every branch returns the one it reached beside the value:
+**When success can be one of several statuses** -- made or replaced, queued
+or done -- list them, each with a sentence for the document, and return the
+one you reached beside the value:
 
 ```ocaml
 Spindle.put Path.(s "users" / user_id)
@@ -125,25 +127,14 @@ Spindle.put Path.(s "users" / user_id)
    | Error e -> Error (Spindle_postgres.refusal e))
 ```
 
-`Returns.empty_response` is the same with no body, the endpoint returning
-`` Ok `Created `` or `` Ok `No_content ``. Every status shares the one body,
-and the document gives each its own response and its sentence. A status is a
-success: failing is a refusal, and a list that is empty, names a status twice
-or names one that is not `2xx` is refused when the app is made. One the
-endpoint answers that its list does not name is sent, logged as the route's
-bug, and raised on by `Spindle.Test.call`, as a code nobody declared is.
+`Returns.empty_response ~statuses` is the same with no body: the endpoint
+returns `` Ok `Created `` or `` Ok `No_content ``. Every listed status must
+be a `2xx`; failing is a refusal.
 
-## Responses, cookies and headers
+## Setting cookies and headers
 
-`Returns` is the declaration on the route and `Response` is
-the message on the wire: `Response` has `make` (a body as it is), `html`,
-`json`, `empty` (`204`), `redirect`, `stream`, `events`, `takeover` and
-`refusal`, for a route that makes its own; `Returns.websocket` is the one
-model whose answer is a conversation.
-
-**A cookie or a header the endpoint sets** arrives as an input that is a
-function -- `Spindle.set_cookie`, `Spindle.add_header` -- which the endpoint
-calls where it decides to, and a route that sets nothing never mentions:
+To set a cookie or a header, take `Spindle.set_cookie` or
+`Spindle.add_header` as an input -- it is a function -- and call it:
 
 ```ocaml
 let sign_out session set_cookie =
@@ -156,33 +147,22 @@ Spindle.post Path.(s "sign-out") (Returns.json Wiretype.bool)
    sign_out session set_cookie)
 ```
 
-What it set goes with an `Ok`, and never with a refusal, whose headers are
-its own. Each request has its own; a call after the answer has gone, from a
-fibre the endpoint left behind, changes nothing and is logged as the
-route's bug. A test calls the endpoint with a function of its own. The content type, the length, the request id and
-every cookie's attributes are written by the framework, and a header whose
-value holds CR or LF is never written -- it would let whoever chose it write
-headers of their own -- so the answer becomes `500`. So is every field that
-says how an answer is framed or whether its connection lasts --
-`Content-Length`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `Upgrade`,
-`TE`, `Trailer`: a response that sets one itself, or answers a status that is
-no final answer (200 to 599, `takeover`'s `101` aside), is the route's bug and
-answers `500`, because a length beside the framework's is an answer a reader
-can take two ways. An answer after which the connection should end is
-`Response.close_connection`, and the server says `Connection: close` for it, once.
-`takeover ~protocol`
-answers `101` with that protocol in `Upgrade`, and hands the route the
-connection's reader and writer until it returns, which is what a protocol
-after HTTP is built on. RFC 9110 §7.8 lets a server switch only to a
-protocol the client offered -- in its own `Upgrade`, with `Connection:
-upgrade` -- and never an HTTP/1.0 client, so a takeover that does either is
-the route's bug and answers `500` too, in-process and on the wire alike.
+- What you set is sent with an `Ok` answer only, never with a refusal.
+- The framework writes `Content-Type`, `Content-Length` and the other fields
+  that frame the answer. Setting one yourself, or a header value containing
+  a line break, answers `500`.
+- To end the connection after an answer, return
+  `Response.close_connection response` from a `Returns.response` route.
 
-## Refusals and codes
+A route that builds its own answer uses `Returns.response` and `Response`:
+`make`, `html`, `json`, `empty`, `redirect`, `stream`, `events`, `refusal`,
+and `takeover` for a protocol spoken after HTTP (see the `Response`
+reference).
 
-An `Error` is always a `Refusal.t`, made from a **code**: a value declared
-once with its status and what it means, so the two cannot disagree and every
-code there is can be listed.
+## Errors
+
+An `Error` is always a `Refusal.t`, made from a **code** you declare once
+with its status and meaning:
 
 ```ocaml
 let conflict =
@@ -192,30 +172,26 @@ Error (Refusal.make ~detail:(Store.error_to_string e) conflict
          "Somebody moved first.")
 ```
 
-A route's codes are its `~refuses` and every one its inputs carry
-(`Route.info`'s `codes`) -- `unsupported_media_type` among them, which a
-body read as one type declares -- and the framework's own
-(`Refusal.Code.framework`: `not_found`, `method_not_allowed`, `unreadable`,
-`invalid`, `too_large`, `busy`, `cross_origin`, `not_implemented`,
-`upgrade_required`, `internal`) need no declaring. A
-refusal made from anything else is the route's bug: `Test.call` raises on it,
-and the server logs a warning and answers it anyway. **A code means one
-thing**: two declarations of one name with a different status, doc or
-challenge are refused when the app is made, the framework's own included,
-because a client branches on the name. A `401` code declares its challenge
-(`~challenge`), which every refusal made from it carries in
-`WWW-Authenticate`, because RFC 9110 §15.5.2 has every `401` say how to
-authenticate; one declared without is refused with the rest. A credential
-with no registered scheme -- a session cookie -- names a scheme of the
-application's own. The framework's own refusals are sentences, and an
-application that wants other words gives its own code and sentence, e.g.
-`Spindle.json ~refusal:(bad_body, "That is not an order.") t`, which the
-dependency then declares.
+The client gets `{"error": "conflict", "message": "Somebody moved first."}`.
+The `~detail` goes to the log only.
 
-## Forms
+- **List your codes** in the route's `~refuses`. Codes its inputs bring (a
+  JSON body's `unsupported_media_type`, say) are added for you, and the
+  framework's own -- `not_found`, `invalid`, `too_large`, `internal` and the
+  rest of `Refusal.Code.framework` -- need no listing. A code nobody
+  declared is still answered, but logged as a bug, and `Spindle.Test.call`
+  raises on it.
+- **A name means one thing.** Two codes with the same name but a different
+  status or doc are refused when the app is made.
+- **A `401` code needs `~challenge`**, the `WWW-Authenticate` value, e.g.
+  `~challenge:{|Bearer realm="api"|}`.
+- **Your own wording for a bad body**:
+  `Spindle.json ~refusal:(bad_body, "That is not an order.") order_json`.
 
-A form's fields are typed inputs, read as a query's are, each at
-`form.<name>` when it is wrong:
+## Forms and file uploads
+
+A form's fields are typed inputs, read like query parameters. A wrong one is
+a problem at `form.<name>`:
 
 ```ocaml
 let email = Spindle.Form.required "email" Spindle.Codec.string
@@ -226,27 +202,20 @@ Spindle.post Path.(s "sign-up") (Spindle.Returns.json account_json)
    sign_up ~email ~remember)
 ```
 
-`Form.optional`, `required` and `list` take a codec, and `checked` is `true`
-when a field was sent at all, since a box not ticked is not sent. The body
-is read once, as `application/x-www-form-urlencoded` or, for a form with a
-file in it, `multipart/form-data`, however many fields a route reads -- the
-fields share it -- and held whole up to `max_body`; any other
-`Content-Type` is `415` before it is read, and a field whose text is
-not UTF-8 is a problem at its name. A form is one way to read a body, so a
-route listing a field beside `Spindle.json` or a stream is refused when the
-app is made. **A file** is `Form.file`, `file_opt` or `files`: its
-`filename` -- text a person chose, never a path -- its type (`text/plain`
-where the part names none) and its content; a file input left empty, which
-a browser sends as a part with an empty name and nothing in it, is no file.
-An upload too large to hold is `Spindle.multipart`'s
-([a large body](dependencies.md#the-rules)). The
-document describes the body as an object of the fields, each its codec's,
-the required ones said.
+- `Form.required`, `optional` and `list` take a codec. `checked` is `true`
+  when the field was sent at all, since an unticked box is not sent.
+- The body is read once, however many fields you read, as
+  `application/x-www-form-urlencoded` or `multipart/form-data`, up to the
+  server's `max_body`. Any other `Content-Type` is `415`.
+- A route reads one body: a form field beside `Spindle.json` is refused when
+  the app is made.
+- **Files** are `Form.file`, `file_opt` and `files`, each with a `filename`
+  (text a person chose, never a path to trust), a `content_type` and the
+  `content`. An upload too large to hold in memory is read with
+  `Spindle.multipart` ([large bodies](dependencies.md#large-bodies)).
 
-**Forgery is the origin check's, and there is no token.** A browser posts a
-form to another site without asking, which is why such a request is `403
-cross_origin` before any route sees it; that is what a CSRF token was for,
-and a form is read under the check and nothing else. An application that
-turns the check off has turned off what protects its forms.
+**No CSRF token is needed.** A cross-site `POST` is refused with `403
+cross_origin` before any route sees it. Turning that check off removes your
+forms' protection.
 
 Next: [logging](logging.md).

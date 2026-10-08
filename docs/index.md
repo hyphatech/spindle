@@ -12,11 +12,10 @@ hide:
 
 <p class="hero-tagline">The Eio-native web framework for modern OCaml.</p>
 
-Performant and battle-tested. OpenAPI and Scalar out of the box, and your
-front end typed from the same OCaml types.
+Fast, ergonomic and RFC-strict. Simple to start, ready for production.
 
 ```sh
-opam install spindle
+opam pin add https://github.com/hyphatech/spindle.git
 ```
 
 [Get started](install.md){ .md-button .md-button--primary }
@@ -57,14 +56,14 @@ opam install spindle
     Built on OCaml 5 effects. Straight-line handlers: no promises, no
     monads, no callbacks.
 
--   :lucide-book-open:{ .lg .middle } __OpenAPI and Scalar, out of the box__
+-   :lucide-book-open:{ .lg .middle } __OpenAPI docs via Scalar, out of the box__
 
     ---
 
     Interactive docs at `/docs`, generated from your routes and never out
     of date.
 
-    [:octicons-arrow-right-24: Describing the API](tutorial/describing.md)
+    [:octicons-arrow-right-24: OpenAPI](tutorial/openapi.md)
 
 -   :lucide-wand-sparkles:{ .lg .middle } __Front end in sync__
 
@@ -73,7 +72,7 @@ opam install spindle
     Your OCaml types become your front end's schemas, zod included, in
     one command. Change a type and both ends change with it.
 
-    [:octicons-arrow-right-24: The client's schemas](tutorial/describing.md#the-clients-schemas)
+    [:octicons-arrow-right-24: Client schemas](tutorial/client-schemas.md)
 
 -   :lucide-braces:{ .lg .middle } __Typed end to end__
 
@@ -82,7 +81,7 @@ opam install spindle
     JSON derived from your types and validated on the way in, with every
     mistake reported at once.
 
-    [:octicons-arrow-right-24: Bodies](tutorial/bodies.md)
+    [:octicons-arrow-right-24: Request bodies](tutorial/bodies.md)
 
 -   :lucide-shield-check:{ .lg .middle } __Battle-tested__
 
@@ -97,7 +96,7 @@ opam install spindle
 
     Typed queries, a pool and transactions, on a driver written in OCaml.
 
-    [:octicons-arrow-right-24: A database](tutorial/database.md)
+    [:octicons-arrow-right-24: Database](tutorial/database.md)
 
 -   :lucide-boxes:{ .lg .middle } __Batteries included__
 
@@ -106,6 +105,6 @@ opam install spindle
     WebSockets, live updates, sessions, logging, traces, metrics, and
     tests that need no server.
 
-    [:octicons-arrow-right-24: Going further](guide/pages.md)
+    [:octicons-arrow-right-24: Guides](guide/pages.md)
 
 </div>

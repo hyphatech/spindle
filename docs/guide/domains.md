@@ -1,53 +1,61 @@
-# Domains, and what a handler may touch
+# Multicore and shared state
 
-A Spindle server runs on **every domain the machine recommends**
-(`Domain.recommended_domain_count ()`), unless told a number. Spindle starts
-the domains itself, and each has a switch for as long as it serves, its own
-deadline sweep, and an accept loop on every address; a connection lives on
-the domain that accepted it, and stays there, since Eio cannot move one --
-long-lived streams that happen to pile up on one domain stay on it, and a
-shared listening socket balances only what is accepted next. So a handler
-runs **beside handlers on other
-domains**, in parallel, and everything it touches is one of two things:
+Spindle serves on every core: by default it runs
+`Domain.recommended_domain_count ()` domains, and your handlers run on all of
+them in parallel. So anything a handler touches must be one of:
 
-- **Immutable after startup** -- the app, its routes, whatever was loaded
-  before the server started. Made before the domains, read from any.
-- **Synchronised** -- a count an `Atomic`, a value handed across a
-  `Stream` or a `Promise`, a table behind an `Eio.Mutex` held across no
-  effect but its own, since what waits behind it is every other domain.
+- **Immutable after startup** -- the app, its routes, whatever you loaded
+  before the server started.
+- **Safe from any domain** -- an `Atomic` for a count, an `Eio.Stream` or
+  `Eio.Promise` to hand values across, an `Eio.Mutex` around a table. Hold a
+  mutex only around the table itself, never across a database call or a write
+  to a client: every other domain waits behind it.
 
-What the framework keeps is the second kind: the server's counts, the
-pool's queue and flag, `Broadcast`'s subscribers, the buffer each domain
-gathers its log lines in, and a request id from a random state per domain.
-The lines are written by a domain of the log's own, so no domain that
-serves waits on stderr.
+If your application's state is not safe from several domains, serve it on
+one, with `~domains:1`. Fibers then switch only at an effect, so code between
+two effects needs no lock.
 
-**Each domain's minor heap holds what its requests keep alive.** A request
-holds its state across every read and write, and one still in flight at a
-minor collection is promoted for the major collector to pay for. OCaml's
-default, 256k words, is about what 256 connections keep in flight, so
-Spindle raises every domain it serves on to a million words (8 MB) --
-every one, since a domain starts with the default whatever another was
-given -- and lowers none: `OCAMLRUNPARAM=s=4M` gives each four.
+## Shared state: a lock, or one domain
 
-**A fiber is forked onto its own domain's switch**, because Eio refuses a
-fork onto another domain's. `Spindle.Local.switch ()` is that switch on
-every domain the server runs, and `Spindle.Local.within ~sw f` binds one for
-code outside a server -- startup, a test. `Background`, `Alarm` and the
-client's watch on a kept connection all fork onto it, so work runs on the
-domain that caused it, with no message and no domain all of it funnels
-through.
-
-An application whose own state is not safe from several domains says so
-with `~domains:1`, and is served exactly as a one-domain server always was.
-Code inside `Spindle.blocking` is on another thread: it reads and returns
-values, and never touches the application's state.
-
-## A table, both ways
-
-A table written by every request, behind an `Eio.Mutex`, and on one
-domain with no lock -- and what a `Hashtbl` with neither does:
+Each visit to `/pages/<name>` counts one, in a `Hashtbl` behind an
+`Eio.Mutex`; with `--one-domain` it runs on one domain with no lock:
 
 ```ocaml
 --8<-- "multidomain.ml"
 ```
+
+```sh
+dune exec examples/multidomain.exe
+```
+
+```sh
+curl localhost:8080/pages/home
+```
+
+```text
+home: visit number 1
+```
+
+```sh
+curl localhost:8080/pages/home
+```
+
+```text
+home: visit number 2
+```
+
+A `Hashtbl` with neither a lock nor one domain loses writes, misses entries
+that are there, and can raise from inside a resize -- and none of it shows on
+a laptop's first try.
+
+## Domains and background work
+
+- A connection stays on the domain that accepted it, for its whole life.
+- Work forked from a handler -- `Background`, `Alarm` -- runs on that
+  handler's domain, on its switch, `Spindle.Local.switch ()`. Outside a
+  server (startup code, a test), `Spindle.Local.within ~sw f` sets one.
+- `Spindle.blocking f` runs `f` on a system thread, for a library that blocks.
+  Inside `f`, perform no Eio effect and touch nothing a fiber owns.
+- Spindle raises each domain's minor heap to a million words (8 MB) so that
+  requests in flight are collected young. It never lowers it:
+  `OCAMLRUNPARAM=s=4M` asks for four million words.

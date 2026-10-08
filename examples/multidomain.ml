@@ -43,7 +43,7 @@ let routes ~locked =
            Eio.Mutex.use_rw ~protect:false lock (fun () -> visit page)
          else visit page
        in
-       Ok (Printf.sprintf "%s: %d visits\n" page n));
+       Ok (Printf.sprintf "%s: visit number %d\n" page n));
   ]
 
 let () =
