@@ -24,6 +24,7 @@ curl -i -X POST localhost:8080/sign-in
 HTTP/1.1 429 Too Many Requests
 content-type: application/json
 retry-after: 6
+...
 
 {"error":"rate_limited","message":"That was asked too often. Please try again in a moment."}
 ```

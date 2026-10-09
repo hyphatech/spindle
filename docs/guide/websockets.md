@@ -29,6 +29,7 @@ curl -i localhost:8080/echo
 ```text
 HTTP/1.1 426 Upgrade Required
 upgrade: websocket
+...
 
 {"error":"upgrade_required","message":"This address opens a WebSocket, and nothing else."}
 ```

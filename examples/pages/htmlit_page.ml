@@ -2,8 +2,8 @@
 
    Spindle has no template language: [Returns.html] answers the string a
    renderer made, so any renderer fits, and escaping what a person sent is
-   the renderer's -- [El.txt] escapes, so /hello/<b>kim</b> is words on the
-   page. *)
+   the renderer's -- [El.txt] escapes, so the <b>kim</b> of
+   /hello/%3Cb%3Ekim%3C%2Fb%3E is words on the page. *)
 
 open Spindle.Syntax
 module El = Htmlit.El

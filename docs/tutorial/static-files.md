@@ -24,6 +24,7 @@ etag: "4e3597b273bb16778f1093c5780a9fe2"
 cache-control: no-cache
 x-content-type-options: nosniff
 content-length: 88
+...
 ```
 
 `/` is the directory's `index.html`, and a path with no file is the

@@ -46,6 +46,7 @@ curl -i localhost:8080/readyz
 ```text
 HTTP/1.1 503 Service Unavailable
 content-type: application/json
+...
 
 {"error":"not_ready","message":"Not ready: maintenance."}
 ```

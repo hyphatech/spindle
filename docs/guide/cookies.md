@@ -138,7 +138,7 @@ host and whether the browser used `https`.
     ```
 
     Spindle answers the preflight itself and names an allowed origin in
-    `Access-Control-Allow-Origin`; an origin you did not allow is told
-    nothing. An allowed origin also passes the forgery check. `~routes`
+    `Access-Control-Allow-Origin`, or answers `*` under `Any`; an origin you
+    did not allow is told nothing. An allowed origin also passes the forgery check. `~routes`
     narrows the policy to some routes, say your API. `Any` with
     `~credentials:true` raises.

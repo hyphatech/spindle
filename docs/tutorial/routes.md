@@ -71,6 +71,7 @@ curl -i -X DELETE localhost:8080/todos/1
 
 ```text
 HTTP/1.1 204 No Content
+...
 ```
 
 ```sh
@@ -108,7 +109,7 @@ let sku =
        ~print:Sku.to_string ())                  (* a type of your own *)
 
 Path.(s "orders" / order_id / s "items")         (* /orders/{order_id}/items *)
-Path.(s "static" / rest file)                    (* /static/{file*} *)
+Path.(s "static" / file)                         (* /static/{file*} *)
 Path.root                                        (* / *)
 ```
 
@@ -146,9 +147,9 @@ Build a link or a redirect from the same path the route matches, so the two
 can't drift apart:
 
 ```ocaml
-let order rest = Path.(s "orders" / order_id / rest)
+let order tail = Path.(s "orders" / order_id / tail)
 
-Path.url (order Path.(s "items")) [ Path.arg order_id "Kim Li" ]
+Path.url (order (Path.s "items")) [ Path.arg order_id "Kim Li" ]
 (* Ok "/orders/Kim%20Li/items" *)
 ```
 

@@ -146,7 +146,8 @@ Spindle.Zod.module_ app   (* TypeScript: zod/mini *)
 ```
 
 It answers a `result`; its `Error` names two different types described
-under one name.
+under one name, and two routes whose paths make one operation
+(`/a-b` and `/a_b`).
 
 That is the tutorial. The [guides](../guide/pages.md) take each of the
 rest a page at a time.

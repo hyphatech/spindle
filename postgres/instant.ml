@@ -1,8 +1,9 @@
 (* Spindle's instants are epoch milliseconds and rowtype's a [Ptime.t]:
-   converted exactly, through days and picoseconds. One Ptime cannot hold,
-   outside its years 0 to 9999, is written as the nearest it can -- year 0
-   then being the column's to refuse -- and below the millisecond is dropped
-   on reading. *)
+   converted exactly, through days and picoseconds, for the years 1 to 9999
+   the column and rowtype both hold. One past 9999 is written as Ptime's
+   latest instant, and one before year 1 as a Ptime of year 0 or its
+   earliest, which the column refuses; below the millisecond is dropped on
+   reading. *)
 
 let ms_per_day = 86_400_000
 let ps_per_ms = 1_000_000_000L

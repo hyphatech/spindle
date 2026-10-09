@@ -12,7 +12,9 @@
 val document :
   ?title:string -> ?version:string -> App.t -> (string, string list) result
 (** The document, as JSON. [Error] names every description the generator could
-    not name: two different ones under one kind. *)
+    not name -- two different ones under one kind -- and every two routes whose
+    paths make one operation id, [/a-b] and [/a_b], which a generated client
+    would give one name. *)
 
 val report : App.t -> string list
 (** Every place described loosely, each saying where: a route that may read more
@@ -32,8 +34,8 @@ val routes :
     scripts beneath it -- all from this server, so the page works offline and
     asks no other host for anything. The application adds them to the routes it
     described and makes its app once, so the document describes its API and not
-    itself. [Error] names routes {!Spindle.App.make} refuses, descriptions the
-    document could not name, and a path with a parameter, which is no one place.
+    itself. [Error] names routes {!Spindle.App.make} refuses, what {!document}
+    answers [Error] for, and a path with a parameter, which is no one place.
     {!docs} is this for routes written in source. *)
 
 val docs :
@@ -54,6 +56,6 @@ val docs :
     out of its document: [api @ site @ docs api].
 
     Raises [Invalid_argument] where {!val-routes} answers [Error] -- routes
-    {!Spindle.App.make} refuses, two descriptions under one kind, a path with a
-    parameter -- each written in source. A program that builds its routes at run
-    time uses {!val-routes}. *)
+    {!Spindle.App.make} refuses, two descriptions under one kind, two routes of
+    one operation id, a path with a parameter -- each written in source. A
+    program that builds its routes at run time uses {!val-routes}. *)

@@ -48,7 +48,7 @@ val int64 : ?or_not_found:unit -> string -> int64 param
 
 val rest : string -> string list param
 (** Every remaining segment, zero or more, each percent-decoded:
-    [Path.(s "static" / rest file)] answers [/static/css/site.css] with
+    [Path.(s "static" / rest "file")] answers [/static/css/site.css] with
     [["css"; "site.css"]], and [/static] with [[]]. A segment holding an encoded
     ["/"] is still one segment, and an empty segment is never part of one. It
     ranks below every literal and parameter at its position, so a rest route at

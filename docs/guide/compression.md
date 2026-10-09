@@ -20,6 +20,7 @@ content-type: text/plain; charset=utf-8
 vary: Accept-Encoding
 content-encoding: gzip
 content-length: 47
+...
 ```
 
 ## What is compressed

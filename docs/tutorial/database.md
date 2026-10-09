@@ -62,6 +62,7 @@ curl -i -X PUT localhost:8080/names/ada
 
 ```text
 HTTP/1.1 201 Created
+...
 
 {"name":"ada","claimed_at":1791451486621}
 ```
@@ -72,6 +73,7 @@ curl -i -X PUT localhost:8080/names/ada
 
 ```text
 HTTP/1.1 200 OK
+...
 
 {"name":"ada","claimed_at":1791451486621}
 ```

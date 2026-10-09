@@ -22,6 +22,7 @@ curl -i localhost:8080/orders -H 'content-type: application/json' \
 ```text
 HTTP/1.1 201 Created
 content-type: application/json
+...
 
 {"number":1,"item":"tea","quantity":2}
 ```
@@ -57,6 +58,7 @@ curl -i localhost:8080/orders -H 'content-type: application/json' \
 ```text
 HTTP/1.1 409 Conflict
 content-type: application/json
+...
 
 {"error":"sold_out","message":"There is no cake left today."}
 ```
@@ -137,14 +139,20 @@ To set a cookie or a header, take `Spindle.set_cookie` or
 `Spindle.add_header` as an input -- it is a function -- and call it:
 
 ```ocaml
-let sign_out session set_cookie =
-  Sessions.close session;
-  set_cookie clear_session;
-  Ok true
+let sign_out sessions id ~set_cookie ~now =
+  match Spindle.Session.find sessions id ~now with
+  | Ok None -> Ok false
+  | Ok (Some session) -> (
+      match Spindle.Session.close sessions session ~set_cookie with
+      | Ok () -> Ok true
+      | Error e -> Error (Spindle.Session.refusal e))
+  | Error e -> Error (Spindle.Session.refusal e)
 
 Spindle.post Path.(s "sign-out") (Returns.json Wiretype.bool)
-  (let+ session = session and+ set_cookie = Spindle.set_cookie in
-   sign_out session set_cookie)
+  (let+ id = Spindle.Session.cookie sessions
+   and+ set_cookie = Spindle.set_cookie
+   and+ now = Spindle.now in
+   sign_out sessions id ~set_cookie ~now)
 ```
 
 - What you set is sent with an `Ok` answer only, never with a refusal.

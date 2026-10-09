@@ -17,9 +17,10 @@
     reaches. An origin the policy does not allow is answered without those
     headers, so the browser refuses and the server has said nothing.
 
-    {b An answer to an allowed origin} carries [Access-Control-Allow-Origin],
-    the origin itself, and [Vary: Origin] is on every answer of a covered route,
-    allowed or not, so a cache never hands one origin's answer to another.
+    {b An answer to an allowed origin} carries [Access-Control-Allow-Origin]:
+    the origin itself, or [*] under [Any], which allows no credentials; and
+    [Vary: Origin] is on every answer of a covered route, allowed or not, so a
+    cache never hands one origin's answer to another.
 
     {b The forgery check.} A named origin is trusted by it on the routes the
     policy covers, since letting a site read an answer while refusing its writes

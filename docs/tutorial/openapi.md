@@ -36,8 +36,9 @@ what it means.*
 - Only the routes you pass are described: `api @ site @ Spindle.Openapi.docs
   api` keeps a static site out of the document.
 - `~at` and `~document` move the page and the document.
-- A mistake in the descriptions -- two different types under one name --
-  raises before the server listens. For routes built at run time,
+- A mistake in the descriptions -- two different types under one name, or
+  two paths that make one `operationId` -- raises before the server
+  listens. For routes built at run time,
   `Spindle.Openapi.routes` answers a `result` instead.
 
 ??? example "The whole app"
@@ -77,7 +78,7 @@ POST /orders/{order_id}/items  -- Add an item
   reads: cookie session?: string, query page?: integer, body item
   credentials: session
   returns: 201 item
-  refuses: 401 signed_out, 410 gone
+  refuses: 410 gone, 401 signed_out, 415 unsupported_media_type
   tags: orders
 ```
 
@@ -93,7 +94,9 @@ Spindle.Openapi.report app                   (* what is described loosely *)
 ```
 
 `document` answers a `result`; its `Error` names two different types
-described under one name. What to know when you read the document:
+described under one name, and two routes whose paths make one
+`operationId` (`/a-b` and `/a_b`), which a generated client would give one
+name. What to know when you read the document:
 
 - **Each type with a name is a component.** Names are unique within an app.
   If a type's request and answer forms differ, the request's is

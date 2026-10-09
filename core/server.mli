@@ -96,10 +96,12 @@ val run :
     {b Heads.} A request head larger than [max_header_bytes] (16 KiB) is [431],
     or [414] when it is the request line that does not fit; one that takes
     longer than [head_timeout_s] (10) to arrive is [408]; an HTTP/1.1 request
-    without exactly one [Host] is [400]; and a head whose framing RFC 9112
-    forbids -- a [Transfer-Encoding] beside a [Content-Length], two different
-    lengths, a coding that is not [chunked] -- is [400]; each is closed. A
-    connection with no request for [idle_timeout_s] (60) is closed.
+    without exactly one [Host] is [400]; a head whose framing RFC 9112 forbids
+    -- a [Transfer-Encoding] beside a [Content-Length], two different lengths,
+    [chunked] twice or not last -- is [400]; and a coding under [chunked] --
+    [gzip, chunked] -- is [501], since no coding but [chunked] is implemented;
+    each is closed. A connection with no request for [idle_timeout_s] (60) is
+    closed.
 
     {b Waiting.} A connection has one deadline, moved as it makes progress, and
     every wait on the client runs against it: between requests, [idle_timeout_s]
