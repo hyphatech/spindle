@@ -40,11 +40,13 @@ let allowed_opens =
 let allowed_banned =
   [
     ("core/broadcast.ml", "invalid_arg");
+    ("core/compress.ml", "invalid_arg");
     ("core/cookie_repr.ml", "invalid_arg");
     ("core/cors.ml", "invalid_arg");
     ("core/log.ml", "stderr");
     ("core/metrics.ml", "invalid_arg");
     ("core/openapi.ml", "invalid_arg");
+    ("core/rate.ml", "invalid_arg");
     ("core/server.ml", "invalid_arg");
     ("core/spindle.ml", "invalid_arg");
     ("core/spindle.ml", "exit");

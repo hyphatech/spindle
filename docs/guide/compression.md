@@ -34,6 +34,9 @@ content-length: 47
   `type/*+suffix`. Default: text, JSON, XML, JavaScript, SVG and event
   streams.
 
+A level outside 1 to 9, or a negative `min_bytes`, raises `Invalid_argument`
+where it is made.
+
 An answer is left alone when it sets its own `Content-Encoding`, says
 `Cache-Control: no-transform`, or is a range. Every answer of a listed type
 says `Vary: Accept-Encoding`, compressed or not.

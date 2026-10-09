@@ -1960,6 +1960,21 @@ let test_a_stream_compresses_in_process () =
   check_string "a stream reads back whole" "data: one\n\ndata: two\n\n"
     (gunzip r.body)
 
+(* A level deflate has not, or a negative size, is a constant written in
+   source, and is refused where it is made. *)
+let test_a_compression_that_cannot_be_is_refused () =
+  let refused name make =
+    match make () with
+    | (_ : Spindle.Compress.t) -> Alcotest.failf "%s was accepted" name
+    | exception Invalid_argument m ->
+        Alcotest.(check bool) (name ^ ", named") true (contains ~sub:name m)
+  in
+  refused "level" (fun () -> Spindle.Compress.make ~level:0 ());
+  refused "level" (fun () -> Spindle.Compress.make ~level:10 ());
+  refused "min_bytes" (fun () -> Spindle.Compress.make ~min_bytes:(-1) ());
+  ignore (Spindle.Compress.make ~level:1 ~min_bytes:0 ());
+  ignore (Spindle.Compress.make ~level:9 ())
+
 let test_an_answer_is_compressed_where_it_may_be () =
   let a =
     Spindle.Test.app ~compress:Spindle.Compress.default compressed_routes
@@ -2020,6 +2035,30 @@ let test_an_answer_is_compressed_where_it_may_be () =
 (* A burst is how many calls pass at once, and the rate how soon the next
    one does after that: two a second with a burst of five lets five through,
    then one every half second. *)
+(* A limit is a constant written in source, so one that limits nothing, or
+   everything, is refused where it is made rather than read as another. *)
+let test_a_limit_that_cannot_be_is_refused () =
+  let mono_clock = Eio_mock.Clock.Mono.make () in
+  let refused name make =
+    match make () with
+    | (_ : Spindle.Rate.t) -> Alcotest.failf "%s was accepted" name
+    | exception Invalid_argument m ->
+        Alcotest.(check bool) (name ^ ", named") true (contains ~sub:name m)
+  in
+  refused "limit" (fun () ->
+      Spindle.Rate.create ~mono_clock ~limit:0 ~per_s:1. ());
+  refused "burst" (fun () ->
+      Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:1. ~burst:0 ());
+  refused "per_s" (fun () ->
+      Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:0. ());
+  refused "per_s" (fun () ->
+      Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:(-1.) ());
+  refused "per_s" (fun () ->
+      Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:Float.nan ());
+  refused "per_s" (fun () ->
+      Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:Float.infinity ());
+  ignore (Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:0.001 ~burst:1 ())
+
 let test_a_burst_is_its_own_figure () =
   let mono_clock = Eio_mock.Clock.Mono.make () in
   let calls = Spindle.Rate.create ~mono_clock ~limit:2 ~per_s:1. ~burst:5 () in
@@ -7759,6 +7798,8 @@ let () =
         ] );
       ( "rate limits",
         [
+          Alcotest.test_case "a limit that cannot be is refused" `Quick
+            test_a_limit_that_cannot_be_is_refused;
           Alcotest.test_case "a burst is its own figure" `Quick
             test_a_burst_is_its_own_figure;
           Alcotest.test_case "a limit refuses past its rate" `Quick
@@ -7766,6 +7807,8 @@ let () =
         ] );
       ( "compression",
         [
+          Alcotest.test_case "a compression that cannot be is refused" `Quick
+            test_a_compression_that_cannot_be_is_refused;
           Alcotest.test_case "an answer is compressed where it may be" `Quick
             test_an_answer_is_compressed_where_it_may_be;
           Alcotest.test_case "a stream compresses in process" `Quick

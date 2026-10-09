@@ -31,7 +31,9 @@ retry-after: 6
 
 - `Rate.create ~mono_clock ~limit ~per_s ?burst ()` allows `limit` calls
   every `per_s` seconds, and up to `burst` (default: `limit`) at once.
-  Make it once, at startup, and share it between requests.
+  Make it once, at startup, and share it between requests. A `limit` or
+  `burst` below one, or a `per_s` that is not a positive number of seconds,
+  raises `Invalid_argument` there.
 - `~key` is what is counted: `Spindle.client` (the client's address), or any
   `string Dep.t` -- a session, a token, a path parameter.
 - `Retry-After` is in whole seconds, at least one.

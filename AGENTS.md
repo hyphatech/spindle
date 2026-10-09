@@ -71,6 +71,9 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   Prometheus cannot read, or a name registered twice) and its counting (for
   a number of label values other than its family's, or a counter moved
   down), `Spindle.Broadcast.create` (for a depth below one),
+  `Spindle.Compress.make` (for a level deflate has not, or a negative
+  size), `Spindle.Rate.create` (for a limit or a burst below one, or a
+  period that is no positive number of seconds),
   `Spindle.Server.run`, `serve_on` and `Spindle.serve` (for a limit out of
   its range, or a trusted proxy that is no address), `Spindle.serve` and
   `Spindle.Test.app`, for a route table `App.make` refuses -- and `Test.app`

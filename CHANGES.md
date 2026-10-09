@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Breaking: `Compress.make` raises `Invalid_argument` for a `~level`
+  outside 1 to 9 or a negative `~min_bytes`, and `Rate.create` for a
+  `~limit` or `~burst` below one or a `~per_s` that is not a positive
+  number of seconds. A level was clamped into range, a negative size
+  compressed everything, and a limit of nothing was read as one.
+
 - Breaking: a plain `OPTIONS` of a path a route names, where no route
   declares `OPTIONS`, is `204` with `Allow` listing the path's methods,
   `OPTIONS` among them (RFC 9110 §9.3.7), and `OPTIONS *` is `204`. Each

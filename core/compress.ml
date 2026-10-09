@@ -12,6 +12,13 @@ let text_types =
   ]
 
 let make ?(min_bytes = 1024) ?(level = 6) ?(types = text_types) () =
-  { min_bytes; level = max 1 (min 9 level); types }
+  if level < 1 || level > 9 then
+    invalid_arg
+      (Printf.sprintf "Spindle.Compress.make: ~level:%d, not 1 to 9" level);
+  if min_bytes < 0 then
+    invalid_arg
+      (Printf.sprintf "Spindle.Compress.make: ~min_bytes:%d, below zero"
+         min_bytes);
+  { min_bytes; level; types }
 
 let default = make ()

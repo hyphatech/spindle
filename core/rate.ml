@@ -11,13 +11,18 @@ type t = {
 }
 
 let create ~mono_clock ~limit ~per_s ?(burst = limit) () =
-  let interval = int_of_float (per_s *. 1e9 /. float_of_int (max 1 limit)) in
+  let refuse what = invalid_arg ("Spindle.Rate.create: " ^ what) in
+  if limit < 1 then refuse (Printf.sprintf "~limit:%d, below one" limit);
+  if burst < 1 then refuse (Printf.sprintf "~burst:%d, below one" burst);
+  if not (Float.is_finite per_s && per_s > 0.) then
+    refuse (Printf.sprintf "~per_s:%g, not a positive number of seconds" per_s);
+  let interval = int_of_float (per_s *. 1e9 /. float_of_int limit) in
   {
     now =
       (fun () ->
         Int64.to_int (Mtime.to_uint64_ns (Eio.Time.Mono.now mono_clock)));
     interval;
-    tolerance = interval * (max 1 burst - 1);
+    tolerance = interval * (burst - 1);
     next_allowed = Hashtbl.create 64;
     lock = Eio.Mutex.create ();
     writes_since_sweep = 0;

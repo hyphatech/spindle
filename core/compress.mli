@@ -30,7 +30,9 @@ val make : ?min_bytes:int -> ?level:int -> ?types:string list -> unit -> t
 (** [min_bytes] (1024) is the least an answer is worth compressing at; [level]
     (6) is deflate's, 1 to 9; [types] are what is compressed, each
     [type/subtype], [type/*] or [type/*+suffix]: text, JSON, XML, JavaScript,
-    SVG and event streams unless given. *)
+    SVG and event streams unless given. Raises [Invalid_argument] for a [level]
+    outside 1 to 9 or a negative [min_bytes]: each is a constant written in
+    source. *)
 
 val default : t
 (** [make ()]: what an application that compresses usually wants. *)
