@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Breaking: `Files` answers a file a browser would open as a page of the
+  application's origin -- HTML, SVG, any XML -- as an attachment, with
+  `Content-Security-Policy: sandbox`. It answered one inline, so an
+  uploaded `.html` or `.svg` ran its script as the site; `nosniff` keeps a
+  browser from guessing a type, not from running the one it is given.
+  `~inline_active:true` shows one inline, still sandboxed.
+
 - `spindle_postgres`: `error_to_string` tells any `Spindle_postgres.error`
   in words for a log, as rowtype tells it, with no value in them.
 - Breaking: OCaml 5.5 or later is required. The opam files asked for 5.4,

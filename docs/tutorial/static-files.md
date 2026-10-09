@@ -94,6 +94,12 @@ Spindle.Files.directory ~at:Path.(s "uploads") ~download:true "var/uploads"
   symlink out of the directory is refused by the operating system.
 - **Nothing lists a directory**: one is `404`, or its `~index` where you name
   one.
+- **An upload never runs as your site.** A file a browser would open as a
+  page of your origin -- HTML, SVG, any XML -- is sent as an attachment and
+  carries `Content-Security-Policy: sandbox`, so an uploaded `x.html` is
+  downloaded rather than run beside your cookies. `~inline_active:true` shows
+  one in the browser instead, still sandboxed: with no origin of its own and
+  none of its script run.
 - `~download:true` sends each file as an attachment with its name;
   `~dotfiles:true` serves names that start with a dot.
 - Answers carry an `etag`, `Last-Modified` and `nosniff`, and answer

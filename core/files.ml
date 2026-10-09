@@ -1,10 +1,12 @@
 module Range = Spindle_http.Range
+module Media_type = Spindle_http.Media_type
 module L = (val Logs.src_log Log.http : Logs.LOG)
 
 type options = {
   index : string option;
   dotfiles : bool;
   download : bool;
+  inline_active : bool;
   types : (string * string) list;
 }
 
@@ -146,6 +148,18 @@ let content_disposition name =
     Printf.sprintf "attachment; filename=\"%s\"; filename*=UTF-8''%s" fallback
       (Buffer.contents encoded)
 
+(* A type a browser opens as a document of the origin it came from, able to
+   run script there: HTML, and any XML, where an XHTML [script] runs. One
+   that does not parse is taken as one, since how a browser reads it is not
+   ours to know. *)
+let is_active content_type =
+  match Media_type.parse content_type with
+  | Error _ -> true
+  | Ok m -> (
+      match (m.type_, m.subtype) with
+      | "text", ("html" | "xml") | "application", "xml" -> true
+      | _, subtype -> String.ends_with ~suffix:"+xml" subtype)
+
 (* A file with a precompressed sibling is several representations, each
    looked for beneath the subtree; all vary by Accept-Encoding. *)
 let choose_representation root req f =
@@ -193,9 +207,19 @@ let answer_file root o req segments =
     | Ok None -> Error Refusal.not_found
     | Ok (Some original) -> (
         let f, coding_headers = choose_representation root req original in
+        let content_type =
+          File_types.content_type ~types:o.types original.name
+        in
+        let active = is_active content_type in
+        (* A sandboxed document has an origin of its own and runs nothing,
+           where the browser is asked to show it all the same. *)
+        let sandbox =
+          if active then [ ("content-security-policy", "sandbox") ] else []
+        in
         let v = validators f
         and headers =
-          ("cache-control", "no-cache") :: File_types.nosniff :: coding_headers
+          ("cache-control", "no-cache")
+          :: File_types.nosniff :: (sandbox @ coding_headers)
         in
         let decision = Conditional.decide req v ~length:f.size in
         match
@@ -206,7 +230,7 @@ let answer_file root o req segments =
             let headers =
               Conditional.representation_headers v ~headers
               @
-              if o.download then
+              if o.download || (active && not o.inline_active) then
                 [ ("content-disposition", content_disposition f.name) ]
               else []
             in
@@ -224,10 +248,7 @@ let answer_file root o req segments =
                   (`OK, headers, 0, f.size)
             in
             Ok
-              (Response.stream ~status ~headers
-                 ~content_type:
-                   (File_types.content_type ~types:o.types original.name)
-                 ~length:count
+              (Response.stream ~status ~headers ~content_type ~length:count
                  (send_file root f ~first ~count)))
 
 let files_route ?(at = Path.root) o root =
@@ -247,23 +268,26 @@ let files_route ?(at = Path.root) o root =
                      checks it, and Spindle.serve calls that"))
        (Dep.both (Input.param file) Conditional.inputs))
 
-let options ?index ?(dotfiles = false) ?(download = false) ?(types = []) () =
+let options ?index ?(dotfiles = false) ?(download = false)
+    ?(inline_active = false) ?(types = []) () =
   {
     index;
     dotfiles;
     download;
+    inline_active;
     types = List.map (fun (ext, t) -> (String.lowercase_ascii ext, t)) types;
   }
 
-let route ?at ?index ?dotfiles ?download ?types root =
-  files_route ?at (options ?index ?dotfiles ?download ?types ()) (fun () ->
-      Some root)
+let route ?at ?index ?dotfiles ?download ?inline_active ?types root =
+  files_route ?at (options ?index ?dotfiles ?download ?inline_active ?types ())
+    (fun () -> Some root)
 
 (* Written once, as the server starts, before it accepts anything. *)
-let directory ?at ?index ?dotfiles ?download ?types path =
+let directory ?at ?index ?dotfiles ?download ?inline_active ?types path =
   let root = Atomic.make None in
   let r =
-    files_route ?at (options ?index ?dotfiles ?download ?types ()) (fun () ->
+    files_route ?at
+      (options ?index ?dotfiles ?download ?inline_active ?types ()) (fun () ->
         Atomic.get root)
   in
   {

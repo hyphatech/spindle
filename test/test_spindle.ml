@@ -5823,9 +5823,12 @@ let test_a_static_file_answers_a_range () =
 (* ---------------------------------------------------------------- *)
 (* Files from disk *)
 
-let files ?index ?dotfiles ?download root =
+let files ?index ?dotfiles ?download ?inline_active ?types root =
   Spindle.Test.app
-    [ Spindle.Files.route ?index ?dotfiles ?download Eio.Path.(root / "files") ]
+    [
+      Spindle.Files.route ?index ?dotfiles ?download ?inline_active ?types
+        Eio.Path.(root / "files");
+    ]
 
 let disk =
   [
@@ -6033,6 +6036,73 @@ let test_a_download_is_named () =
     (Spindle.Test.header
        (Spindle.Test.call a `GET "/caf%C3%A9.txt")
        "content-disposition")
+
+(* A file a user uploaded is not the site's: one a browser would open as a
+   document of the site's origin -- HTML, SVG, any XML -- is handed over as
+   a file, and opened, where a route asks, with no origin of its own. *)
+let test_an_active_file_is_an_attachment () =
+  with_site
+    [
+      ("files/x.html", "<script>alert(1)</script>");
+      ("files/x.svg", "<svg/>");
+      ("files/x.xml", "<x/>");
+      ("files/x.xhtml", "<html/>");
+      ("files/x.rss", "<rss/>");
+      ("files/x.page", "<p/>");
+      ("files/x.odd", "<p/>");
+      ("files/x.png", "PNG");
+      ("files/x.txt", "TEXT");
+    ]
+  @@ fun root ->
+  let types =
+    [
+      (".xhtml", "application/xhtml+xml");
+      (".rss", "application/rss+xml");
+      (".page", "Text/HTML; charset=utf-8");
+      (".odd", "no type at all");
+    ]
+  in
+  let disposition a target =
+    Spindle.Test.header (Spindle.Test.call a `GET target) "content-disposition"
+  and policy a target =
+    Spindle.Test.header
+      (Spindle.Test.call a `GET target)
+      "content-security-policy"
+  in
+  let a = files ~types root in
+  List.iter
+    (fun name ->
+      check_header name
+        (Some (Printf.sprintf {|attachment; filename="%s"|} name))
+        (disposition a ("/" ^ name));
+      check_header (name ^ " has no origin") (Some "sandbox")
+        (policy a ("/" ^ name)))
+    [ "x.html"; "x.svg"; "x.xml"; "x.xhtml"; "x.rss"; "x.page"; "x.odd" ];
+  check_header "and so is a part of one"
+    (Some {|attachment; filename="x.html"|})
+    (Spindle.Test.header
+       (Spindle.Test.call a `GET "/x.html" ~headers:[ ("range", "bytes=0-1") ])
+       "content-disposition");
+  List.iter
+    (fun name ->
+      check_header (name ^ " is shown") None (disposition a ("/" ^ name));
+      check_header (name ^ " needs no sandbox") None (policy a ("/" ^ name)))
+    [ "x.png"; "x.txt" ];
+  let inline = files ~types ~inline_active:true root in
+  List.iter
+    (fun name ->
+      check_header
+        (name ^ ", inline where asked")
+        None
+        (disposition inline ("/" ^ name));
+      check_header
+        (name ^ ", still with no origin")
+        (Some "sandbox")
+        (policy inline ("/" ^ name)))
+    [ "x.html"; "x.svg" ];
+  check_header "a download is a download all the same"
+    (Some {|attachment; filename="x.png"|})
+    (disposition (files ~download:true ~inline_active:true root) "/x.png")
 
 (* The head is written from the file as it was; a file replaced before its
    body is read sends none of another file under the first one's length. *)
@@ -7567,6 +7637,8 @@ let () =
             test_a_file_answers_its_conditions_and_ranges;
           Alcotest.test_case "a download is named" `Quick
             test_a_download_is_named;
+          Alcotest.test_case "an active file is an attachment" `Quick
+            test_an_active_file_is_an_attachment;
           Alcotest.test_case "a file replaced before its body sends nothing"
             `Quick test_a_file_replaced_before_its_body_sends_nothing;
           Alcotest.test_case "a directory not there is refused at start" `Quick
