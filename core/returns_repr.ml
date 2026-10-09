@@ -25,7 +25,7 @@ type 'r t =
   | Response : (Response.t, Refusal.t) result t
   | Events : {
       declared : 's Event.declared list;
-      keep_alive_s : float;
+      keep_alive_s : float option;
     }
       -> ('s Event.stream, Refusal.t) result t
   | Websocket : {
@@ -245,7 +245,7 @@ let respond : type r.
       | Error refusal -> refuse refusal
       | Ok stream ->
           with_outgoing
-            (Response.events ~keep_alive_s (fun send ->
+            (Response.events ?keep_alive_s (fun send ->
                  stream (send_checked ~pattern declared send))))
   | Websocket { protocol; keep_alive_s; max_message } -> (
       match r with

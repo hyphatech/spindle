@@ -135,7 +135,12 @@ let takeover ~protocol ?(headers = []) ?(cookies = []) handle =
 
 (* A cache or a buffering proxy holding events back defeats them, and nginx
    buffers unless told [x-accel-buffering: no]. *)
-let events ?headers ?(keep_alive_s = 15.) produce =
+(* Under the minute after which common proxies drop a quiet connection
+   (nginx's proxy_read_timeout is 60 s), and how late a client that has gone
+   is noticed: SSE practice is 15 to 30 seconds. *)
+let events_keep_alive_s = 15.
+
+let events ?headers ?(keep_alive_s = events_keep_alive_s) produce =
   let r =
     stream ~content_type:"text/event-stream"
       ~headers:

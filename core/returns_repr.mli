@@ -25,7 +25,7 @@ type 'r t =
   | Response : (Response.t, Refusal.t) result t
   | Events : {
       declared : 's Event.declared list;
-      keep_alive_s : float;
+      keep_alive_s : float option;
     }
       -> ('s Event.stream, Refusal.t) result t
   | Websocket : {

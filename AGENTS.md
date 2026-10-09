@@ -172,7 +172,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   results, a socket's handler and caller return one, and how a handler's
   loop ended decides its close; nothing in the framework raises into the
   application or cancels a handler whose peer has gone -- it learns at its
-  next `receive` or `send`. Symptom: a `try` around a send, or work stopped
+  next `receive` or `send`, or sooner by waiting on `Spindle.client_gone`,
+  which the server resolves and the handler reads as a value. Symptom: a `try` around a send, or work stopped
   mid-transaction under a handler.
 - **A file is read for a request only by `Static`'s lookup or beneath a
   `Files` directory's subtree**, never by a path joined from a request:

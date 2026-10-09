@@ -32,6 +32,12 @@ val with_matched : matched -> t -> t
 (** The request, once the route table has chosen. *)
 
 val matched : t -> matched option
+val client_gone : t -> unit Eio.Promise.t
+
+val mark_client_gone : t -> unit
+(** Resolves {!client_gone}: the server's to call, and only the server's -- or a
+    test's, standing in for it. *)
+
 val meth : t -> Spindle_http.Meth.t
 val version : t -> Spindle_http.Head.version
 val target : t -> string

@@ -85,8 +85,10 @@ val events :
     stream's left out of the list is sent and logged as the route's bug. A
     [: keep-alive] comment goes whenever nothing has been sent for
     [keep_alive_s] (15) seconds, so nothing in between closes a quiet stream as
-    idle. A reconnecting browser's [Last-Event-ID] is an input like any header,
-    [Spindle.Header.optional "last-event-id" codec]. *)
+    idle, and a client that has gone is found by the keep-alive it cannot be
+    sent ({!Spindle.client_gone}). A reconnecting browser's [Last-Event-ID] is
+    an input like any header, [Spindle.Header.optional "last-event-id" codec].
+*)
 
 val websocket :
   ?keep_alive_s:float ->

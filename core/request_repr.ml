@@ -29,6 +29,9 @@ type t = {
   proxy_header : proxy_header;
   now : unit -> int;
   matched : matched option;  (** set once the route table has chosen *)
+  client_gone : unit Eio.Promise.t * unit Eio.Promise.u;
+      (** resolved by the server once the exchange is over, or sooner where it
+          learns the client has gone *)
 }
 
 (* As the client spelled it: [Uri.path] would turn a segment of "%2F" into a
@@ -80,10 +83,16 @@ let make ?id ?(peer = "") ?client ?(proxied = false)
     proxy_header;
     now;
     matched = None;
+    client_gone = Eio.Promise.create ();
   }
 
 let with_matched m t = { t with matched = Some m }
 let matched t = t.matched
+let client_gone t = fst t.client_gone
+
+(* A resolver may be told twice: by the stream that saw the client go, then
+   by the exchange as it ends. *)
+let mark_client_gone t = ignore (Eio.Promise.try_resolve (snd t.client_gone) ())
 let meth t = t.meth
 let version t = t.version
 let target t = t.target

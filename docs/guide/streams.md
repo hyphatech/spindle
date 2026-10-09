@@ -72,7 +72,7 @@ let events =
   Spindle.get
     Spindle.Path.(s "rooms" / room / s "events")
     (Spindle.Returns.events Spindle.Event.[ declare count ])
-    (let+ room = Spindle.param room in
+    (let+ room = Spindle.param room and+ gone = Spindle.client_gone in
      Ok
        (fun send ->
          let sub = Spindle.Broadcast.subscribe hub ~topic:room () in
@@ -80,11 +80,11 @@ let events =
            ~finally:(fun () -> Spindle.Broadcast.unsubscribe hub sub)
            (fun () ->
              let rec loop () =
-               match Spindle.Broadcast.next sub with
+               match Spindle.Broadcast.next ~until:gone sub with
                | Some event ->
                    let* () = send event in
                    loop ()
-               | None -> Ok () (* dropped as slow, or unsubscribed *)
+               | None -> Ok () (* dropped as slow, unsubscribed, or gone *)
              in
              loop ())))
 
@@ -94,6 +94,12 @@ let () =
 ```
 
 - **An event is encoded once**, however many subscribers get it.
+- **A client that leaves a quiet topic ends its producer.** The keep-alive
+  it can no longer be sent resolves `Spindle.client_gone`, and
+  `Broadcast.next ~until:gone` answers `None`, so the subscription and the
+  connection are let go without waiting for the next event. Nothing is
+  cancelled: a producer that does not pass `~until` learns at its next
+  `send`.
 - **A slow subscriber is dropped, never waited for.** One more than
   `~depth` events (16) behind gets `None` from `next`. So send whole
   states, not changes, and a client that reconnects is up to date.

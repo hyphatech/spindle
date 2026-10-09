@@ -365,6 +365,7 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
         | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
         | exception ex ->
             failure := Some ex;
+            Request_repr.mark_client_gone req;
             Error Response.Gone)
   in
   (* Encoded here, where every byte is sent, so a keep-alive's filler is part
@@ -392,8 +393,9 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
     | Chunked | Raw -> ()
   in
   (* The filler runs beside the producer and they take turns under a lock of
-     this stream's own. A filler that cannot be written stops; the producer
-     learns it at its next send. *)
+     this stream's own. A filler that cannot be written stops, and says the
+     client has gone, so a producer waiting on [Request.client_gone] ends
+     now; one that is not learns it at its next send. *)
   let produce () =
     match stream.keep_alive with
     | None -> stream.produce send
@@ -421,7 +423,9 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
         in
         Eio.Fiber.first (fun () -> stream.produce send) keep_alive
   in
-  match produce () with
+  match
+    Fun.protect ~finally:(fun () -> Request_repr.mark_client_gone req) produce
+  with
   | Ok () | Error Response.Gone -> (
       match !failure with
       | Some Stalled ->
@@ -681,6 +685,10 @@ let exchange ~clock ~now ~limits ~trace ~instruments ~state ~deadline app ic oc
             | [] -> None
             | vs -> Some (String.concat "," vs))
       in
+      (* Whatever the route handed [Request.client_gone] is told the
+         exchange is over, however it ended. *)
+      Fun.protect ~finally:(fun () -> Request_repr.mark_client_gone req)
+      @@ fun () ->
       Log.with_request_id ?traceparent ?tracestate ?trace (Request.id req)
       @@ fun () ->
       let send_body (body, gzip, keep) =

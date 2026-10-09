@@ -122,6 +122,7 @@ let now = Dep.of_request ~needs:[] (fun r -> Ok (Request.now r))
 let peer = Dep.of_request ~needs:[] (fun r -> Ok (Request.peer r))
 let client = Dep.of_request ~needs:[] (fun r -> Ok (Request.client r))
 let request_id = Dep.of_request ~needs:[] (fun r -> Ok (Request.id r))
+let client_gone = Dep.of_request ~needs:[] (fun r -> Ok (Request.client_gone r))
 let body = Dep.of_body ~need:Dep.Raw (fun s -> Ok s)
 
 let body_stream ?content_type ~max () : Body.t Dep.t =

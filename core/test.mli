@@ -107,11 +107,12 @@ val events :
     ({!Spindle_http.Event_stream}) -- to [f], until the stream ends or [f]
     answers [`Stop]: a stream that never ends can be read three events of and
     left. Stopping is the client going, so the route's next [send] is
-    [Error Gone], and a producer waiting for something to send is cancelled
-    rather than waited on. [Error] is the answer where the route answered
-    without a stream. It runs inside [Eio_main.run], as {!websocket} does.
-    Raises as {!call} does, for a refusal nothing declares, and for an event
-    longer than a reader holds (1 MiB): the route's bug, in a test. *)
+    [Error Gone] and {!Spindle.client_gone} is resolved, and a producer waiting
+    for something to send is cancelled rather than waited on. [Error] is the
+    answer where the route answered without a stream. It runs inside
+    [Eio_main.run], as {!websocket} does. Raises as {!call} does, for a refusal
+    nothing declares, and for an event longer than a reader holds (1 MiB): the
+    route's bug, in a test. *)
 
 type websocket_error =
   | Refused of response  (** the route answered without a [101] *)

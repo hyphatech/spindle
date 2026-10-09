@@ -66,7 +66,8 @@ let test_count () =
 ```
 
 Each event has its `name`, `data` and `id`, as a client reads them.
-`` `Stop `` is the client leaving: the route's next `send` is `Error Gone`.
+`` `Stop `` is the client leaving: the route's next `send` is `Error Gone`,
+and `Spindle.client_gone` is resolved.
 `Error r` is the answer when the route did not stream.
 
 ## Testing WebSockets and real connections

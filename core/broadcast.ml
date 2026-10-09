@@ -53,9 +53,18 @@ let drop_subscription t s =
 let unsubscribe t s = locked t (fun () -> drop_subscription t s)
 
 (* Once told it is over, asking again is told again, never left waiting. *)
-let next s =
+let next ?until s =
   if (not s.alive) && Eio.Stream.is_empty s.queue then None
-  else Eio.Stream.take s.queue
+  else
+    match until with
+    | None -> Eio.Stream.take s.queue
+    | Some p when Eio.Promise.is_resolved p -> None
+    | Some p ->
+        Eio.Fiber.first
+          (fun () -> Eio.Stream.take s.queue)
+          (fun () ->
+            Eio.Promise.await p;
+            None)
 
 (* Every topic out of the table at once, then every subscriber told: one
    pass, where dropping each from its topic's list would walk it again. *)

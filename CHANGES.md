@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `Spindle.client_gone`, a dependency, is a promise the server resolves
+  once a request's client has gone: an events stream's write failing, its
+  keep-alive's included, or the exchange ending. `Broadcast.next ~until`
+  answers `None` once it resolves, so a producer waiting on a quiet topic
+  ends when its client leaves, and gives back its fiber and connection
+  slot, rather than at the next event. Nothing is cancelled; a producer
+  that does not wait on it learns at its next `send`, as before.
+
 - `spindle_cli`: every command's `--help` lists exit status 1, what `api
   check` exits with on a stale file, and no longer lists 123, which no
   command exits with.

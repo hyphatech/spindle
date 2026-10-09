@@ -259,8 +259,9 @@ let events ?(now = 0) ?(headers = []) app target f =
       let reader = Spindle_http.Event_stream.reader () in
       let gone = ref false in
       let stopped, resolve_stopped = Eio.Promise.create () in
-      (* Stopping is the client leaving: the next send is Gone, and a
-         producer waiting to send is cancelled. *)
+      (* Stopping is the client leaving: the next send is Gone, the
+         request's [client_gone] is resolved, and a producer still waiting
+         to send is cancelled, since a test has no server to wait for it. *)
       let send s =
         if !gone then Error Response.Gone
         else (
@@ -271,6 +272,7 @@ let events ?(now = 0) ?(headers = []) app target f =
                 | `Continue -> ()
                 | `Stop ->
                     gone := true;
+                    Request_repr.mark_client_gone req;
                     Eio.Promise.resolve resolve_stopped ())
             (match Spindle_http.Event_stream.feed reader s with
             | Ok events -> events

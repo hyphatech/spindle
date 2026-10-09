@@ -32,10 +32,14 @@ val subscribe :
 
 val unsubscribe : ('tag, 'event) t -> ('tag, 'event) subscription -> unit
 
-val next : ('tag, 'event) subscription -> 'event option
+val next :
+  ?until:unit Eio.Promise.t -> ('tag, 'event) subscription -> 'event option
 (** The next event, waiting until there is one. [None] once the subscriber has
     been dropped or unsubscribed -- and again every time after -- which is how
-    the fiber writing it to a socket learns to stop. *)
+    the fiber writing it to a socket learns to stop; and [None] once [until] is
+    resolved, which a stream's producer gives as {!Spindle.client_gone}, so one
+    waiting on a quiet topic ends when its client goes rather than at the next
+    event. An event that arrives as [until] resolves may be lost with it. *)
 
 val close : ('tag, 'event) t -> unit
 (** Unsubscribes everybody on every topic: each {!next} answers [None], which is

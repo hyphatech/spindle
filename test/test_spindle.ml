@@ -2257,16 +2257,18 @@ let test_a_test_reads_a_stream_that_never_ends () =
                        e
                  in
                  go 1))))
-  and waits =
+  and heard_gone = ref None in
+  let waits =
     Spindle.get
       Spindle.Path.(s "waits")
       Spindle.Returns.response
-      (Spindle.Dep.return
-         (Ok
-            (Spindle.Response.events (fun send ->
-                 let ( let* ) = Result.bind in
-                 let* () = send "data: one\n\n" in
-                 Eio.Fiber.await_cancel ()))))
+      (let+ gone = Spindle.client_gone in
+       heard_gone := Some gone;
+       Ok
+         (Spindle.Response.events (fun send ->
+              let ( let* ) = Result.bind in
+              let* () = send "data: one\n\n" in
+              Eio.Fiber.await_cancel ())))
   in
   let a = Spindle.Test.app [ forever; waits; hello ] in
   let seen = ref [] in
@@ -2285,6 +2287,9 @@ let test_a_test_reads_a_stream_that_never_ends () =
   (match Spindle.Test.events a "/waits" (fun _ -> `Stop) with
   | Ok () -> ()
   | Error _ -> Alcotest.fail "a stream that waits is still a stream");
+  Alcotest.(check bool)
+    "and its client_gone resolved" true
+    (Option.fold ~none:false ~some:Eio.Promise.is_resolved !heard_gone);
   match Spindle.Test.events a "/hello/kim" (fun _ -> `Continue) with
   | Error r ->
       check_int "an answer that is no stream is the answer" 200 r.status
@@ -4493,6 +4498,98 @@ let test_a_stop_lets_a_stream_of_known_length_finish domains () =
   Alcotest.(check (float 1e-6))
     "and it returned as the stream ended" sending_s
     (seconds_between started (Eio.Promise.await returned))
+
+(* An events route on a topic nothing is published to, its producer
+   waiting on [Broadcast.next] -- told [until] the client has gone, or not
+   -- and resolving [returned] as it returns. *)
+let quiet_topic ~hub ~returned ~heard_gone ~until =
+  Spindle.get
+    Spindle.Path.(s "events")
+    Spindle.Returns.response
+    (let+ gone = Spindle.client_gone in
+     Ok
+       (Spindle.Response.events (fun send ->
+            let ( let* ) = Result.bind in
+            Eio.Promise.resolve heard_gone gone;
+            let sub = Spindle.Broadcast.subscribe hub ~topic:"quiet" () in
+            Fun.protect
+              ~finally:(fun () ->
+                Spindle.Broadcast.unsubscribe hub sub;
+                Eio.Promise.resolve returned ())
+              (fun () ->
+                let* () = send ": open\n\n" in
+                let rec loop () =
+                  match
+                    Spindle.Broadcast.next
+                      ?until:(if until then Some gone else None)
+                      sub
+                  with
+                  | Some e ->
+                      let* () = send e in
+                      loop ()
+                  | None -> Ok ()
+                in
+                loop ()))))
+
+(* A client that opens the stream and leaves, once it has been sent its
+   first comment. *)
+let open_and_leave connect =
+  Eio.Switch.run @@ fun inner ->
+  let flow = connect ~sw:inner in
+  Eio.Flow.copy_string "GET /events HTTP/1.1\r\nHost: t\r\n\r\n" flow;
+  let r = Eio.Buf_read.of_flow flow ~max_size:4096 in
+  check_string "the stream is answered" "HTTP/1.1 200 OK" (Eio.Buf_read.line r);
+  let rec until_open () =
+    if not (String.equal (Eio.Buf_read.line r) ": open") then until_open ()
+  in
+  until_open ()
+
+(* A client that leaves a quiet topic ends a producer that waits [until]
+   it goes: the keep-alive that cannot be written says so, the producer
+   returns and its connection slot is the next client's. Nothing is
+   published. *)
+let test_a_client_leaving_a_quiet_topic_ends_its_producer domains () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let hub : (unit, string) Spindle.Broadcast.t = Spindle.Broadcast.create () in
+  let returned, return = Eio.Promise.create () in
+  let _, heard_gone = Eio.Promise.create () in
+  let connect =
+    serve_in_memory ~sw env ~domains ~max_connections:1
+      (Spindle.Test.app
+         [ quiet_topic ~hub ~returned:return ~heard_gone ~until:true; hello ])
+  in
+  open_and_leave connect;
+  Eio.Promise.await returned;
+  check_int "nobody is subscribed" 0
+    (List.length (Spindle.Broadcast.subscribers hub ~topic:"quiet"));
+  Eio.Switch.run @@ fun inner ->
+  let next = connect ~sw:inner in
+  Eio.Flow.copy_string
+    "GET /hello/a HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n" next;
+  check_string "the slot is the next client's" "HTTP/1.1 200 OK"
+    (Eio.Buf_read.line (Eio.Buf_read.of_flow next ~max_size:4096))
+
+(* A producer that does not wait on it is told at its next send, as
+   before: the client's going is known, and nothing cancels the producer. *)
+let test_a_producer_that_ignores_the_client_going_ends_at_its_send domains () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let hub : (unit, string) Spindle.Broadcast.t = Spindle.Broadcast.create () in
+  let returned, return = Eio.Promise.create () in
+  let gone, heard_gone = Eio.Promise.create () in
+  let connect =
+    serve_in_memory ~sw env ~domains
+      (Spindle.Test.app
+         [ quiet_topic ~hub ~returned:return ~heard_gone ~until:false ])
+  in
+  open_and_leave connect;
+  Eio.Promise.await (Eio.Promise.await gone);
+  Alcotest.(check bool)
+    "known gone, the producer still waits" false
+    (Eio.Promise.is_resolved returned);
+  Spindle.Broadcast.publish hub ~topic:"quiet" "data: x\n\n";
+  Eio.Promise.await returned
 
 (* Past its cap the server accepts nothing more, and serves the next
    connection once one closes: until then it waits to be accepted. *)
@@ -7958,6 +8055,12 @@ let () =
             test_a_background_raise_is_logged_not_raised;
           Alcotest.test_case "past the cap a connection waits" `Quick
             (test_past_the_cap_a_connection_waits 1);
+          Alcotest.test_case "a client leaving a quiet topic ends its producer"
+            `Quick
+            (test_a_client_leaving_a_quiet_topic_ends_its_producer 1);
+          Alcotest.test_case
+            "a producer that ignores the client going ends at its send" `Quick
+            (test_a_producer_that_ignores_the_client_going_ends_at_its_send 1);
           Alcotest.test_case "a client that never reads frees its slot" `Quick
             (test_a_client_that_never_reads_frees_its_slot 1);
           Alcotest.test_case "the send limit is on a stop, not a length" `Quick
@@ -8026,6 +8129,12 @@ let () =
             (test_a_stream_ends_when_its_client_goes 4);
           Alcotest.test_case "a client that never reads frees its slot" `Quick
             (test_a_client_that_never_reads_frees_its_slot 4);
+          Alcotest.test_case "a client leaving a quiet topic ends its producer"
+            `Quick
+            (test_a_client_leaving_a_quiet_topic_ends_its_producer 4);
+          Alcotest.test_case
+            "a producer that ignores the client going ends at its send" `Quick
+            (test_a_producer_that_ignores_the_client_going_ends_at_its_send 4);
           Alcotest.test_case "the send limit is on a stop, not a length" `Quick
             (test_the_send_limit_is_on_a_stop_not_a_length 4);
           Alcotest.test_case "a stream ends when its client stops reading"
