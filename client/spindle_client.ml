@@ -69,11 +69,11 @@ type response = {
   body : string;
 }
 
-type error = Unreachable of string | Timed_out of float
+type error = Unreachable of string | Timeout of float
 
 let error_to_string = function
   | Unreachable m -> m
-  | Timed_out s -> Printf.sprintf "no answer within %.0fs" s
+  | Timeout s -> Printf.sprintf "no answer within %.0fs" s
 
 (* Four times what the server allows a request's head. *)
 let max_head = 65_536
@@ -594,7 +594,7 @@ let within_client_span meth uri f =
         if status >= 400 then Trace.fail span (string_of_int status)
       and failed = function
         | Unreachable _ -> Trace.fail span "unreachable"
-        | Timed_out _ -> Trace.fail span "timeout"
+        | Timeout _ -> Trace.fail span "timeout"
       in
       f ~answered ~failed)
 
@@ -610,7 +610,7 @@ let call t ?timeout_s ?(headers = []) ?body meth url =
         (fun () -> Ok (exchange t ~headers ~body meth (target_of uri) ~reused))
     with
     | Ok answer -> Ok answer
-    | Error `Timeout -> Error (Timed_out deadline)
+    | Error `Timeout -> Error (Timeout deadline)
     | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
     | exception ex -> (
         match error_of_exn ex with Some e -> Error e | None -> raise ex)
@@ -666,7 +666,7 @@ module Body = struct
                   (Framing.read_some b.reader ~max:max_int ~reserve:(fun _ ->
                        true)))
           with
-          | Error `Timeout -> failed (Timed_out b.wait_s)
+          | Error `Timeout -> failed (Timeout b.wait_s)
           | Ok (Ok (`Data s)) -> Ok (`Data s)
           | Ok (Ok `End) ->
               b.state <- Ended;
@@ -728,8 +728,8 @@ let stream t ?timeout_s ?read_timeout_s ?(headers = []) ?body meth url f =
         Ok (target, open_answer t ~headers ~body meth target))
   with
   | Error `Timeout ->
-      failed (Timed_out deadline);
-      Error (Timed_out deadline)
+      failed (Timeout deadline);
+      Error (Timeout deadline)
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
   | exception ex -> (
       match error_of_exn ex with
@@ -959,7 +959,7 @@ let open_websocket t ?timeout_s ?(headers = []) ?keep_alive_s ?max_message
               raise ex)
     with
     | Ok opened -> Ok opened
-    | Error `Timeout -> Error (Failed (Timed_out deadline))
+    | Error `Timeout -> Error (Failed (Timeout deadline))
     | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
     | exception ex -> (
         match error_of_exn ex with

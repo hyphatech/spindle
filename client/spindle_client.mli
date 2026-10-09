@@ -105,7 +105,7 @@ type error =
           that cannot be read, whose length cannot be told, that is cut short or
           is longer than [max_body], or an event longer than it; and the
           connection failing or closing under the call *)
-  | Timed_out of float  (** the deadline, in seconds, that passed *)
+  | Timeout of float  (** the deadline, in seconds, that passed *)
 
 val error_to_string : error -> string
 

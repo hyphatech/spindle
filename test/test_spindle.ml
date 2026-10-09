@@ -3456,7 +3456,7 @@ let test_the_client_answers_times_out_and_reports domains () =
          && not (contains ~sub:{|"request_id":"r-4"|} l))
        !lines);
   (match Spindle_client.call impatient `GET (url "/slow") with
-  | Error (Spindle_client.Timed_out _) -> ()
+  | Error (Spindle_client.Timeout _) -> ()
   | Ok _ | Error (Spindle_client.Unreachable _) ->
       Alcotest.fail "a call past its deadline should have been given up");
   (match Spindle_client.call client `GET (url "/events") with
@@ -3474,7 +3474,7 @@ let test_the_client_answers_times_out_and_reports domains () =
   | Error e -> Alcotest.fail (Spindle_client.error_to_string e));
   match Spindle_client.call client `GET "http://127.0.0.1:1/nobody" with
   | Error (Spindle_client.Unreachable _) -> ()
-  | Ok _ | Error (Spindle_client.Timed_out _) ->
+  | Ok _ | Error (Spindle_client.Timeout _) ->
       Alcotest.fail "nobody listening is unreachable"
 
 (* A handshake that fails -- here against a server that speaks no TLS and
@@ -3530,7 +3530,7 @@ let test_a_refused_address_leaves_no_socket () =
   for _ = 1 to 20 do
     match Spindle_client.call client `GET "http://127.0.0.1:1/nobody" with
     | Error (Spindle_client.Unreachable _) -> ()
-    | Ok _ | Error (Spindle_client.Timed_out _) ->
+    | Ok _ | Error (Spindle_client.Timeout _) ->
         Alcotest.fail "nobody listening is unreachable"
   done;
   check_int "no descriptor left behind" before (open_descriptors ())
@@ -3759,7 +3759,7 @@ let test_the_client_reads_as_it_arrives () =
         let second = Spindle_client.Body.read a.body in
         (first, second))
   with
-  | Ok (Ok (`Data "first"), Error (Spindle_client.Timed_out _)) -> ()
+  | Ok (Ok (`Data "first"), Error (Spindle_client.Timeout _)) -> ()
   | _ ->
       Alcotest.fail
         "each wait is bounded, and the first piece came as it was sent"
@@ -3802,9 +3802,9 @@ let test_a_failed_read_is_answered_again () =
           match Spindle_client.Body.read a.body with
           | Ok (`Data _) -> until_failed ()
           | Ok `End -> "the body ended"
-          | Error (Spindle_client.Timed_out _) -> (
+          | Error (Spindle_client.Timeout _) -> (
               match Spindle_client.Body.read a.body with
-              | Error (Spindle_client.Timed_out _) -> "the same failure"
+              | Error (Spindle_client.Timeout _) -> "the same failure"
               | Ok _ | Error _ -> "something else")
           | Error _ -> "another failure"
         in
@@ -4982,7 +4982,7 @@ let test_https_is_never_spoken_as_plain_http domains () =
     Spindle_client.call client `GET
       (Printf.sprintf "https://127.0.0.1:%d/hello/kim" port)
   with
-  | Error (Spindle_client.Unreachable _ | Spindle_client.Timed_out _) -> ()
+  | Error (Spindle_client.Unreachable _ | Spindle_client.Timeout _) -> ()
   | Ok _ -> Alcotest.fail "an https call was answered in the clear"
 
 (* The framework logs no header value and no query string: a request's

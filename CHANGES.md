@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `Spindle_client.error`'s deadline that passed is `Timeout`, where it was
+  `Timed_out`: the word postgres-eio and Eio's own `Timeout.run` give the
+  same failure. Breaking: a match on a call's error names `Timeout`.
+
 - A body's failures have one word each, in `Spindle.Body.error` and in
   `Spindle_http.Framing.read` and `read_some` alike: a body that could not
   be read is `Unreadable` in both, where `Framing` answered

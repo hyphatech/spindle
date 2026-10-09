@@ -26,7 +26,7 @@ its connections when `f` returns.
 `call client meth url` answers `Ok` with the `status`, the `headers` (names
 lower-cased) and the whole `body` -- **any status is an answer**, so a `404`
 is `Ok`. `Error` is `Unreachable` (no connection, bad TLS, an unreadable
-answer) or `Timed_out`. Send a body with `~body` and `~headers`:
+answer) or `Timeout`. Send a body with `~body` and `~headers`:
 
 ```ocaml
 match
