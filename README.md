@@ -20,7 +20,7 @@ The Eio-native web framework for modern OCaml.
 - **Front end in sync**: schemas for your front end, derived from your OCaml types.
 - **Typed end to end**: JSON derived from your types, every input validated.
 - **Eio-native**: straight-line handlers on OCaml 5, on every CPU core.
-- **Battle-tested**: its own HTTP/1.1 engine, every requirement backed by a test.
+- **Battle-tested**: its own HTTP/1.1 engine, every requirement it meets a test: RFC 9112 and 9110 for HTTP, 6455 for WebSockets, 7578 for forms, and RFC 9651's published suite for Structured Fields.
 - **Batteries included**: Postgres, WebSockets, sessions, logging, traces and metrics.
 
 ## Install

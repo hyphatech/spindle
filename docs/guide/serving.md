@@ -86,7 +86,8 @@ a signal, pass your own promise as `~stop`.
 ## What the server handles for you
 
 Spindle reads and writes HTTP/1.1 itself, and every requirement of RFC 9112
-and RFC 9110 it meets is a test. Among them:
+and RFC 9110 it meets is a test, as is every one of RFC 9111's
+`Cache-Control` and RFC 7239's `Forwarded`. Among them:
 
 - A malformed request -- a bad head, a missing or doubled `Host`, a body
   framed two ways -- is `400` and its connection closed, so nothing can
@@ -98,6 +99,10 @@ and RFC 9110 it meets is a test. Among them:
 - `Content-Length`, `Transfer-Encoding` and `Connection` are the server's
   to write; a route that sets one itself answers `500`.
 - HTTP/1.0 clients are answered as HTTP/1.0.
+
+The same holds beyond HTTP itself: WebSockets are tested against RFC 6455,
+a form's multipart body against RFC 7578 and RFC 2046, and Structured
+Fields against RFC 9651's published test suite, run whole.
 
 ## Without Spindle.serve
 
