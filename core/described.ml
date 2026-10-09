@@ -18,7 +18,7 @@ type returns =
 and data = Json_data of S.t | Text_data | Binary_data
 
 type body =
-  | Json_body of { schema : S.t; examples : string list }
+  | Json_body of { schema : S.t; examples : string list; required : bool }
   | Form_body of { fields : S.t; files : Dep.file list }
   | Parts_body
   | Raw_body
@@ -172,6 +172,9 @@ let body_of ctx (i : Route.info) =
                  schema =
                    S.walk ctx Decode ~at:(route_name i ^ " body") description;
                  examples = encode_examples description vs;
+                 (* Spindle.json reads an empty body as {}, so the body is
+                    required exactly where {} does not decode. *)
+                 required = Result.is_error (Wiretype.decode description "{}");
                })
       | Dep.Path _ | Dep.Query _ | Dep.Header _ | Dep.Cookie _ | Dep.Field _
       | Dep.File _ | Dep.Custom _ ->

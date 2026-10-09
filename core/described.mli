@@ -20,12 +20,17 @@ type returns =
 and data = Json_data of Wiretype.Schema.t | Text_data | Binary_data
 
 type body =
-  | Json_body of { schema : Wiretype.Schema.t; examples : string list }
+  | Json_body of {
+      schema : Wiretype.Schema.t;
+      examples : string list;
+      required : bool;
+          (** an empty body, which [Spindle.json] reads as [{}], is refused *)
+    }
   | Form_body of { fields : Wiretype.Schema.t; files : Dep.file list }
       (** a form: an object of its fields, each its codec's, and a repeated one
           a list of them; and its files, which only a multipart body holds *)
   | Parts_body  (** a body read a part at a time *)
-  | Raw_body
+  | Raw_body  (** read as it arrived, so an empty one is read too *)
 
 type route = {
   info : Route.info;

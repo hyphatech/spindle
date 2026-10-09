@@ -111,7 +111,9 @@ name. What to know when you read the document:
   header's name is matched without case. Two that read it as different
   things -- an `int` and a `string`, one value and a list -- are refused
   when the app is made, since one document cannot say both.
-- **A JSON or raw body is `required`**, as the route reads one.
+- **A body is `required` where an empty one is refused.** An empty JSON
+  body is read as `{}`, so one is required unless every member may be left
+  out; a raw body is read as it arrived, empty or not, so it never is.
 - **Enums and bounds** are in the schema exactly as the decoder checks them.
 - **The report lists what is loose**: a route that may read more than it
   declares (a `Dep.bind`, or `Dep.of_request` without `~needs`) and any

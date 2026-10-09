@@ -311,7 +311,7 @@ let security (r : D.route) =
 
 let request_body (r : D.route) =
   match r.body with
-  | Some (D.Json_body { schema = s; examples = xs }) ->
+  | Some (D.Json_body { schema = s; examples = xs; required }) ->
       [
         ( "requestBody",
           Obj
@@ -322,7 +322,7 @@ let request_body (r : D.route) =
                     ( "application/json",
                       Obj ([ ("schema", schema s) ] @ examples xs) );
                   ] );
-              ("required", Bool true);
+              ("required", Bool required);
             ] );
       ]
   | Some (D.Form_body { fields; files }) ->
@@ -420,7 +420,6 @@ let request_body (r : D.route) =
                     ( "application/octet-stream",
                       Obj [ ("schema", Obj [ ("type", String "string") ]) ] );
                   ] );
-              ("required", Bool true);
             ] );
       ]
   | None -> []

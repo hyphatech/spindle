@@ -327,24 +327,61 @@ let test_two_reads_of_one_input_are_one_parameter () =
         Ok ""))
 
 (* OpenAPI 3.2 §4.8.13.1: a request body is optional unless it says
-   [required]. A JSON body is refused when absent, and a raw one is read
-   whole, so both say it. *)
-let test_a_body_says_it_is_required () =
-  let raw =
-    Spindle.post
-      Spindle.Path.(s "raw")
-      Spindle.Returns.text
-      (let+ b = Spindle.body in
-       Ok b)
+   [required]. What the document says is held to what the server answers
+   an empty body, so the two cannot drift: a JSON body is read as [{}],
+   refused unless every member may be left out, and a raw one is read as
+   it arrived, empty or not. *)
+let test_a_body_is_required_where_an_empty_one_is_refused () =
+  let note =
+    Wiretype.Object.map (fun note -> note)
+    |> Wiretype.Object.mem "note" Wiretype.string ~absent:"" ~enc:Fun.id
+    |> Wiretype.Object.finish
   in
-  let j = json_of_doc (Spindle.Test.app [ add; raw ]) in
+  let post path dep =
+    Spindle.post
+      Spindle.Path.(s path)
+      Spindle.Returns.text
+      (let+ _ = dep in
+       Ok "")
+  in
+  let stream =
+    Spindle.post
+      Spindle.Path.(s "stream")
+      Spindle.Returns.text
+      (let+ _ = Spindle.body_stream ~max:1024 () in
+       Ok "")
+  in
+  let a =
+    Spindle.Test.app
+      [
+        add;
+        post "defaults" (Spindle.json note);
+        post "raw" Spindle.body;
+        stream;
+      ]
+  in
+  let j = json_of_doc a in
   List.iter
-    (fun (what, path) ->
-      Alcotest.(check string)
-        what "true"
-        (Yojson.Safe.to_string
-           (member [ "paths"; path; "post"; "requestBody"; "required" ] j)))
-    [ ("a JSON body", "/orders/{order_id}/items"); ("a raw body", "/raw") ]
+    (fun (what, path, target) ->
+      let refused = (Spindle.Test.call a `POST target ~body:"").status = 400 in
+      let required =
+        match member [ "paths"; path; "post"; "requestBody"; "required" ] j with
+        | `Bool b -> b
+        | `Null -> false
+        | other ->
+            Alcotest.failf "%s: required is %s" what
+              (Yojson.Safe.to_string other)
+      in
+      Alcotest.(check bool)
+        (Printf.sprintf "%s is required: %b, as an empty one is refused" what
+           refused)
+        refused required)
+    [
+      ("a JSON body", "/orders/{order_id}/items", "/orders/1/items");
+      ("a JSON body whose members have defaults", "/defaults", "/defaults");
+      ("a raw body", "/raw", "/raw");
+      ("a body read as it arrives", "/stream", "/stream");
+    ]
 
 (* An operation's id is made from its path, and two paths that make one
    id would be one name in a generated client. *)
@@ -617,8 +654,8 @@ let () =
             `Quick test_two_paths_that_make_one_operation_are_refused;
           Alcotest.test_case "two reads of one input are one parameter" `Quick
             test_two_reads_of_one_input_are_one_parameter;
-          Alcotest.test_case "a body says it is required" `Quick
-            test_a_body_says_it_is_required;
+          Alcotest.test_case "a body is required where an empty one is refused"
+            `Quick test_a_body_is_required_where_an_empty_one_is_refused;
           Alcotest.test_case "nothing is said as its status" `Quick
             test_nothing_is_said_as_its_status;
           Alcotest.test_case "a body refused for its type says 415" `Quick

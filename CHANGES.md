@@ -97,8 +97,10 @@
   name is matched without case, a cookie, a form's field -- are one
   parameter, required where either is; it was listed once per dependency,
   which OpenAPI forbids. Two that read it as different things, two codecs
-  or one value and a list, are refused by `App.make`. A JSON or raw
-  request body says `"required": true`.
+  or one value and a list, are refused by `App.make`. A JSON request
+  body says `"required": true` unless every member of its description
+  may be left out, since an empty one is read as `{}`; a raw one, read
+  empty or not, says nothing.
 - Breaking: a framework code a route answers is declared only where its
   document lists it, from what the route reads, so a handler answering
   `Refusal.not_found` declares it in `~refuses` as its own. Any route
