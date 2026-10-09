@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Breaking: `Rate.limit` counts a key that is an IPv6 address by its /64,
+  and one mapped from IPv4 as that IPv4 address. Each address was its own
+  key, so a client changing its address within its /64 grew the table and
+  was never limited.
+
 - Breaking: `Compress.make` raises `Invalid_argument` for a `~level`
   outside 1 to 9 or a negative `~min_bytes`, and `Rate.create` for a
   `~limit` or `~burst` below one or a `~per_s` that is not a positive

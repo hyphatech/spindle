@@ -37,4 +37,7 @@ val create :
 
 val limit : t -> key:string Dep.t -> unit Dep.t
 (** The request counted against its key -- the client's address, a session, a
-    token, a path parameter -- or refused past the limit. *)
+    token, a path parameter -- or refused past the limit. A key that is an IPv6
+    address is counted by its /64, within which a client makes its own address
+    and may change it at will, so rotating addresses is one key; an IPv4
+    address, or one mapped into IPv6, by the address itself. *)

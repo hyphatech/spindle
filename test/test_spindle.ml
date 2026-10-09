@@ -2083,6 +2083,32 @@ let test_a_burst_is_its_own_figure () =
   check_status "one at half a second" 200 (call ());
   check_status "and only one" 429 (call ())
 
+(* A network hands an IPv6 client a /64, and its addresses rotate within
+   it, so a limit by address counts the /64; IPv4's address is its own. *)
+let test_an_ipv6_client_is_counted_by_its_network () =
+  let mono_clock = Eio_mock.Clock.Mono.make () in
+  let calls = Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:60. () in
+  let a =
+    Spindle.Test.app
+      [
+        Spindle.post
+          Spindle.Path.(s "call")
+          Spindle.Returns.text
+          (let+ () = Spindle.Rate.limit calls ~key:Spindle.client in
+           Ok "in");
+      ]
+  in
+  let call peer = (Spindle.Test.call ~peer a `POST "/call").status in
+  check_status "the first in a /64" 200 (call "2001:db8:0:1::1");
+  check_status "another address in that /64 shares its limit" 429
+    (call "2001:db8:0:1:ffff:ffff:ffff:ffff");
+  check_status "another /64 is its own" 200 (call "2001:db8:0:2::1");
+  check_status "an IPv4 address is its own" 200 (call "192.0.2.1");
+  check_status "and its neighbour too" 200 (call "192.0.2.2");
+  check_status "an IPv4 address mapped into IPv6 is that address" 429
+    (call "::ffff:192.0.2.1");
+  check_status "a key that is no address is its own" 200 (call "unix:/tmp/s")
+
 let test_a_limit_refuses_past_its_rate () =
   let mono_clock = Eio_mock.Clock.Mono.make () in
   let sign_ins = Spindle.Rate.create ~mono_clock ~limit:10 ~per_s:1. () in
@@ -7804,6 +7830,8 @@ let () =
             test_a_burst_is_its_own_figure;
           Alcotest.test_case "a limit refuses past its rate" `Quick
             test_a_limit_refuses_past_its_rate;
+          Alcotest.test_case "an IPv6 client is counted by its network" `Quick
+            test_an_ipv6_client_is_counted_by_its_network;
         ] );
       ( "compression",
         [

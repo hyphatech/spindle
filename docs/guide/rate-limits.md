@@ -35,7 +35,9 @@ retry-after: 6
   `burst` below one, or a `per_s` that is not a positive number of seconds,
   raises `Invalid_argument` there.
 - `~key` is what is counted: `Spindle.client` (the client's address), or any
-  `string Dep.t` -- a session, a token, a path parameter.
+  `string Dep.t` -- a session, a token, a path parameter. An IPv6 address is
+  counted by its /64, since a client may change its address within one at
+  will; an IPv4 address by itself.
 - `Retry-After` is in whole seconds, at least one.
 - Behind a proxy, `Spindle.client` is the address your `~trusted_proxies`
   vouch for; without them every request has the proxy's address.

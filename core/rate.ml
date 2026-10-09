@@ -56,12 +56,26 @@ let check t key =
         if t.writes_since_sweep mod writes_per_sweep = 0 then sweep t now;
         `Pass))
 
+(* An IPv6 host makes its own address within its link's /64 (RFC 4862), and
+   may make a new one as often as it likes (RFC 8981), so the /64 is who is
+   counted. An IPv4 address mapped into IPv6 is that IPv4 address. *)
+let counted key =
+  match Ipaddr.of_string key with
+  | Ok (Ipaddr.V6 a) -> (
+      match Ipaddr.v4_of_v6 a with
+      | Some v4 -> Ipaddr.V4.to_string v4
+      | None ->
+          Ipaddr.V6.Prefix.to_string
+            (Ipaddr.V6.Prefix.prefix (Ipaddr.V6.Prefix.make 64 a)))
+  | Ok (Ipaddr.V4 a) -> Ipaddr.V4.to_string a
+  | Error _ -> key
+
 let limit t ~key =
   Dep.join
     ~refuses:[ Refusal.Code.rate_limited ]
     (Dep.map
        (fun k ->
-         match check t k with
+         match check t (counted k) with
          | `Pass -> Ok ()
          | `Wait ns ->
              Error
