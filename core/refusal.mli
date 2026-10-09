@@ -119,13 +119,13 @@ val invalid : problem list -> t
 
 val too_large : t
 
-val rate_limited : retry_after:int -> unit -> t
-(** [429 rate_limited] with [Retry-After], at least a second: what {!Rate.limit}
-    refuses with. *)
+val rate_limited : retry_after_s:int -> unit -> t
+(** [429 rate_limited] with [Retry-After] of [retry_after_s] seconds, at least
+    one: what {!Rate.limit} refuses with. *)
 
-val busy : ?retry_after:int -> ?detail:string -> unit -> t
+val busy : ?retry_after_s:int -> ?detail:string -> unit -> t
 (** Something the request needed did not come free in time -- a connection, room
-    for its body: [503 busy], with [Retry-After] ([retry_after] seconds, 1).
+    for its body: [503 busy], with [Retry-After] ([retry_after_s] seconds, 1).
     Refusing at once is what keeps an overloaded server answering; the client is
     the one that can wait. *)
 

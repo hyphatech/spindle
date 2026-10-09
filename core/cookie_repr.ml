@@ -105,11 +105,11 @@ let decode s =
   | Ok d when String.equal (encode d) s -> Some d
   | Ok _ | Error _ -> None
 
-(* A sealed cookie's declared age caps [max_age]: reading holds it to that
+(* A sealed cookie's declared age caps [max_age_s]: reading holds it to that
    age whatever the browser was told. *)
-let make ?path ?max_age ?http_only ?same_site n v =
+let make ?path ?max_age_s ?http_only ?same_site n v =
   let max_age =
-    match (max_age, n.age) with
+    match (max_age_s, n.age) with
     | Some a, Some b -> Some (min a b)
     | Some a, None | None, Some a -> Some a
     | None, None -> None

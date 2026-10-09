@@ -506,7 +506,7 @@ let test_a_silent_server_is_given_up_on () =
       in
       match
         Spindle_postgres.connect ~sw:(Db_target.sw ()) ~net:(Db_target.net ())
-          ~mono_clock:(Db_target.mono ()) ~connect_timeout_s:1
+          ~mono_clock:(Db_target.mono ()) ~connect_timeout_s:1.
           (Printf.sprintf "postgres://nobody@127.0.0.1:%d/none?sslmode=disable"
              port)
       with

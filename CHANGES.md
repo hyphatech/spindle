@@ -80,6 +80,18 @@
   RFC 8615 places it; one deeper is a dot-name like any other, skipped
   unless `~dotfiles:true`.
 
+- Breaking: every duration names its unit, and its type is what the value
+  is: a wait counted on a clock a float of seconds, a value a protocol
+  writes in whole seconds an int. `spindle_postgres`'s
+  `?connect_timeout_s`, in `connect`, `Pool.create` and `Pool.run`, takes
+  a float, as `?timeout_s` and `?wait_s` beside it do and as postgres-eio
+  holds it; `Cookie.make`'s `?max_age` is `?max_age_s`;
+  `Refusal.rate_limited`'s `~retry_after` and `Refusal.busy`'s
+  `?retry_after` are `~retry_after_s` and `?retry_after_s`;
+  `Event.retry` and `Spindle_http.Event_stream.retry` take `~ms`; and
+  `Response.stream`'s `keep_alive` is a record, `{ quiet_s; filler }`,
+  where it was a pair.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

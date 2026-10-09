@@ -21,12 +21,16 @@ type gone =
       (** What a stream's [send] answers once its client has gone, and every
           time after. *)
 
+type keep_alive = {
+  quiet_s : float;
+  filler : string;
+      (** written whenever nothing else has been for [quiet_s] seconds, so a
+          quiet stream is not closed as idle by something in between *)
+}
+
 type stream = {
   produce : (string -> (unit, gone) result) -> (unit, gone) result;
-  keep_alive : (float * string) option;
-      (** [(s, filler)]: [filler] is written whenever nothing else has been for
-          [s] seconds, so a quiet stream is not closed as idle by something in
-          between *)
+  keep_alive : keep_alive option;
   length : int option;  (** how many bytes it sends, where that is known *)
 }
 (** A body written as it happens: see {!val-stream}. *)

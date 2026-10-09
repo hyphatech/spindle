@@ -34,8 +34,8 @@ let make ?id (k : _ kind) v =
       L.err (fun f -> f "the event %s could not be made: %s" k.name m);
       { name = Some k.name; wire = "" }
 
-let retry ms =
-  match Spindle_http.Event_stream.retry ms with
+let retry ~ms =
+  match Spindle_http.Event_stream.retry ~ms with
   | Ok wire -> { name = None; wire }
   | Error m ->
       L.err (fun f -> f "%s" m);

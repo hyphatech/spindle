@@ -1,10 +1,11 @@
 module Status = Spindle_http.Status
 
 type gone = Gone
+type keep_alive = { quiet_s : float; filler : string }
 
 type stream = {
   produce : (string -> (unit, gone) result) -> (unit, gone) result;
-  keep_alive : (float * string) option;
+  keep_alive : keep_alive option;
   length : int option;
 }
 
@@ -141,7 +142,8 @@ let events ?headers ?(keep_alive_s = 15.) produce =
       Stream
         {
           produce;
-          keep_alive = Some (keep_alive_s, ": keep-alive\n\n");
+          keep_alive =
+            Some { quiet_s = keep_alive_s; filler = ": keep-alive\n\n" };
           length = None;
         };
   }

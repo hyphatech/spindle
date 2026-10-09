@@ -854,7 +854,7 @@ let with_cookie =
           (Spindle.Response.empty
              ~cookies:
                [
-                 Spindle.Cookie.make ~path:"/in" ~max_age:60
+                 Spindle.Cookie.make ~path:"/in" ~max_age_s:60
                    (Spindle.Cookie.named "k" Spindle.Codec.string)
                    "v";
                ]
@@ -1125,8 +1125,8 @@ let test_a_sealed_cookie_ages make =
   Alcotest.(check bool)
     "its age is its Max-Age" true
     (contains ~sub:"Max-Age=60" header);
-  let shorter = written (Spindle.Cookie.make ~max_age:30 c "x")
-  and longer = written (Spindle.Cookie.make ~max_age:600 c "x") in
+  let shorter = written (Spindle.Cookie.make ~max_age_s:30 c "x")
+  and longer = written (Spindle.Cookie.make ~max_age_s:600 c "x") in
   Alcotest.(check bool)
     "a make may shorten it" true
     (contains ~sub:"Max-Age=30" shorter);
@@ -2122,7 +2122,7 @@ let test_a_test_browser_keeps_what_the_app_set () =
         (let+ g = Spindle.param (Spindle.Path.str "g")
          and+ set_cookie = Spindle.set_cookie in
          set_cookie
-           (Spindle.Cookie.make ~path:("/games/" ^ g) ~max_age:60
+           (Spindle.Cookie.make ~path:("/games/" ^ g) ~max_age_s:60
               (Spindle.Cookie.named "seat" Spindle.Codec.string)
               g);
          Ok "seated");
@@ -6657,7 +6657,7 @@ let test_a_stream_sends_its_declared_events () =
          (Ok
             (fun send ->
               let ( let* ) = Result.bind in
-              let* () = send (Spindle.Event.retry 1000) in
+              let* () = send (Spindle.Event.retry ~ms:1000) in
               let* () = send (Spindle.Event.make ~id:"7" state 7) in
               let* () = send (Spindle.Event.make token "two\r\nlines") in
               let* () = send (Spindle.Event.comment "keep-alive") in
@@ -7053,9 +7053,9 @@ let test_a_name_is_one_line_and_a_retry_is_digits () =
   check_string "a broken name sends nothing" ""
     (Spindle.Event.to_string (Spindle.Event.make broken 1));
   check_string "a negative retry sends nothing" ""
-    (Spindle.Event.to_string (Spindle.Event.retry (-1)));
+    (Spindle.Event.to_string (Spindle.Event.retry ~ms:(-1)));
   check_string "a retry of none is one" "retry: 0\n\n"
-    (Spindle.Event.to_string (Spindle.Event.retry 0))
+    (Spindle.Event.to_string (Spindle.Event.retry ~ms:0))
 
 (* On virtual time, whose timers can be counted: once the last wake-up has
    come, nothing may be left scheduled -- not the superseded one, set to

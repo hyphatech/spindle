@@ -396,7 +396,7 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
   let produce () =
     match stream.keep_alive with
     | None -> stream.produce send
-    | Some (quiet_s, filler) ->
+    | Some { Response.quiet_s; filler } ->
         let lock = Eio.Mutex.create () and last_sent = ref started in
         let send s =
           Eio.Mutex.use_ro lock (fun () ->

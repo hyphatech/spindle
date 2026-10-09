@@ -4,7 +4,7 @@
 module Pg = Rowtype_postgres
 
 let apply ?(statement_timeout_ms = 10_000)
-    ?(idle_in_transaction_timeout_ms = 30_000) ?(connect_timeout_s = 10)
+    ?(idle_in_transaction_timeout_ms = 30_000) ?(connect_timeout_s = 10.)
     ?(parameters = []) target =
   Result.map
     (fun (c : Pg.Conninfo.t) ->
@@ -23,9 +23,7 @@ let apply ?(statement_timeout_ms = 10_000)
       ( {
           c with
           connect_timeout_s =
-            Some
-              (Option.value c.connect_timeout_s
-                 ~default:(float_of_int connect_timeout_s));
+            Some (Option.value c.connect_timeout_s ~default:connect_timeout_s);
         },
         List.filter (fun (k, _) -> not (List.mem_assoc k parameters)) framework
         @ parameters ))

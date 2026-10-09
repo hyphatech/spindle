@@ -21,9 +21,9 @@ val event : ?name:string -> ?id:string -> string -> (string, string) result
     holding a line break, which would end its field early, or an id holding a
     line break or a NUL, which a browser ignores. *)
 
-val retry : int -> (string, string) result
-(** [retry: ms]: how long a client waits before it reconnects; [Error] for a
-    negative one, which a browser ignores. *)
+val retry : ms:int -> (string, string) result
+(** [retry ~ms]: how long, in milliseconds, a client waits before it reconnects;
+    [Error] for a negative one, which a browser ignores. *)
 
 val comment : string -> string
 (** A comment, which every reader passes over: what keeps a quiet stream from

@@ -12,7 +12,7 @@ val create :
   ?wait_s:float ->
   ?statement_timeout_ms:int ->
   ?idle_in_transaction_timeout_ms:int ->
-  ?connect_timeout_s:int ->
+  ?connect_timeout_s:float ->
   ?parameters:(string * string) list ->
   ?timeout_s:float ->
   ?statement_cache:int ->
@@ -110,7 +110,7 @@ val run :
   ?wait_s:float ->
   ?statement_timeout_ms:int ->
   ?idle_in_transaction_timeout_ms:int ->
-  ?connect_timeout_s:int ->
+  ?connect_timeout_s:float ->
   ?parameters:(string * string) list ->
   ?timeout_s:float ->
   ?statement_cache:int ->

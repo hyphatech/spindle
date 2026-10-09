@@ -53,9 +53,10 @@ val make : ?id:string -> ('a, 's) kind -> 'a -> 's t
     kind whose name holds a line break, which would end its field early, is our
     bug: logged as an error where it is made, and the event sends nothing. *)
 
-val retry : int -> 's t
-(** [retry: ms]: how long a browser waits before it reconnects. A negative one,
-    which a browser ignores, is our bug: logged, and it sends nothing. *)
+val retry : ms:int -> 's t
+(** [retry ~ms]: how long, in milliseconds, a browser waits before it
+    reconnects. A negative one, which a browser ignores, is our bug: logged, and
+    it sends nothing. *)
 
 val comment : string -> 's t
 (** A comment, which every client ignores. The framework sends one on a stream

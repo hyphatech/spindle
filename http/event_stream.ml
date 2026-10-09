@@ -40,7 +40,7 @@ let event ?name ?id data =
   in
   Ok (name_line ^ id_line ^ field_lines "data: " data ^ "\n")
 
-let retry ms =
+let retry ~ms =
   if ms < 0 then
     Error (Printf.sprintf "a retry of %d ms, which no reader takes" ms)
   else Ok (Printf.sprintf "retry: %d\n\n" ms)

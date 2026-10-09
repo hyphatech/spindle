@@ -4,7 +4,7 @@
 val apply :
   ?statement_timeout_ms:int ->
   ?idle_in_transaction_timeout_ms:int ->
-  ?connect_timeout_s:int ->
+  ?connect_timeout_s:float ->
   ?parameters:(string * string) list ->
   string ->
   ( Rowtype_postgres.Conninfo.t * (string * string) list,

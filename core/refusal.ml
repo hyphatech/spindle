@@ -136,14 +136,14 @@ let internal ~detail =
 let raised ex bt =
   { (internal ~detail:(Printexc.to_string ex)) with raised = Some (ex, bt) }
 
-let rate_limited ~retry_after () =
+let rate_limited ~retry_after_s () =
   make Code.rate_limited
-    ~headers:[ ("retry-after", string_of_int (max 1 retry_after)) ]
+    ~headers:[ ("retry-after", string_of_int (max 1 retry_after_s)) ]
     "That was asked too often. Please try again in a moment."
 
-let busy ?(retry_after = 1) ?detail () =
+let busy ?(retry_after_s = 1) ?detail () =
   make ?detail Code.busy
-    ~headers:[ ("retry-after", string_of_int retry_after) ]
+    ~headers:[ ("retry-after", string_of_int retry_after_s) ]
     "The server is busy. Please try again in a moment."
 
 let unsupported_media_type =

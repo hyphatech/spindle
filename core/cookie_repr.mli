@@ -32,7 +32,7 @@ end
 
 val make :
   ?path:string ->
-  ?max_age:int ->
+  ?max_age_s:int ->
   ?http_only:bool ->
   ?same_site:same_site ->
   'a named ->

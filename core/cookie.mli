@@ -77,15 +77,15 @@ type t = Cookie_repr.t
 
 val make :
   ?path:string ->
-  ?max_age:int ->
+  ?max_age_s:int ->
   ?http_only:bool ->
   ?same_site:same_site ->
   'a named ->
   'a ->
   t
 (** [make cookie value]: the value printed by the cookie's codec. [path]
-    defaults to ["/"]; without [max_age] the cookie lasts as long as the
-    browser's session.
+    defaults to ["/"]; [max_age_s] is its [Max-Age], in seconds, and without it
+    the cookie lasts as long as the browser's session.
 
     Raises [Invalid_argument] for a printed value or a path RFC 6265 does not
     allow -- a space, a quote, a comma, a semicolon, a backslash or a control

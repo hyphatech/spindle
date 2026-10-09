@@ -37,7 +37,7 @@ Visit number 2.
   refuses without it. A value that does not parse is `400 invalid` at
   `cookie.<name>`.
 - `Cookie.make` defaults to `Path=/; HttpOnly; SameSite=Lax`, and lasts the
-  browser's session unless you give `~max_age` (seconds).
+  browser's session unless you give `~max_age_s` (seconds).
   `Cookie.clear` removes one.
 - **Spindle decides `Secure`:** on every host but a loopback one, where Safari
   would drop it over plain http.
@@ -72,7 +72,7 @@ match Spindle.Key.of_secret secret with
   (`None`), never an error.
 - **`~max_age_s` is required**, in seconds, and is checked by the server too,
   not only sent as `Max-Age`, so a copied cookie stops working when it
-  expires. It is also the longest `Cookie.make` writes: a `~max_age` given
+  expires. It is also the longest `Cookie.make` writes: a `~max_age_s` given
   there may shorten it, never lengthen it.
 - `Key.sign`/`Key.verify` and `Key.seal`/`Key.unseal` do the same for
   anything else, such as a token in a link.

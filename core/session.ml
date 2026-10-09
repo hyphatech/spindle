@@ -130,7 +130,7 @@ let find t id ~now =
 let start t ~set_cookie ~now data =
   let id = Cookie_repr.encode (Mirage_crypto_rng_unix.getrandom id_bytes) in
   let* session = save t ~digest:(digest_of_id id) ~created:now ~now data in
-  set_cookie (Cookie.make ~max_age:t.absolute_s t.named id);
+  set_cookie (Cookie.make ~max_age_s:t.absolute_s t.named id);
   Ok session
 
 let renew t old ~set_cookie ~now data =
