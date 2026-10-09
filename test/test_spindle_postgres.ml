@@ -73,6 +73,29 @@ let test_a_lost_race_is_run_again () =
           Alcotest.(check int) "run twice" 2 !attempts;
           Alcotest.(check int) "each saw the other" 12 (ok (total a))))
 
+(* A failure is told in rowtype's words: a statement's as
+   [Rowtype.error_to_string] tells it, and a transaction's and a pool's own as
+   rowtype's printers do, so one failure reads the same whichever library
+   logs it. *)
+let test_every_failure_has_its_words () =
+  let told what expected e =
+    Alcotest.(check string) what expected (Spindle_postgres.error_to_string e)
+  in
+  List.iter
+    (fun e -> told "a statement's failure" (S.error_to_string e) e)
+    [
+      `Conflict (Some "users_email_key");
+      `Conflict None;
+      `Not_serializable "could not serialize access";
+      `Closed;
+      `Lost "the connection timed out";
+      `Db "relation \"users\" does not exist";
+    ];
+  told "not committed"
+    "the transaction was not committed: commit: the server refused it"
+    (`Not_committed "commit: the server refused it");
+  told "busy" "no connection came free within the pool's wait" `Busy
+
 (* A failure its retries did not get past is the client's to ask again, as a
    busy pool is: 503, not a 500 that says the server is broken. *)
 let test_a_lost_race_answers_busy () =
@@ -761,6 +784,11 @@ let () =
         [
           Alcotest.test_case "sessions are kept in a table" `Quick
             test_sessions_are_kept_in_a_table;
+        ] );
+      ( "errors",
+        [
+          Alcotest.test_case "every failure has its words" `Quick
+            test_every_failure_has_its_words;
         ] );
       ( "logs",
         [

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `spindle_postgres`: `error_to_string` tells any `Spindle_postgres.error`
+  in words for a log, as rowtype tells it, with no value in them.
 - Breaking: OCaml 5.5 or later is required. The opam files asked for 5.4,
   which CI tested and nothing else did; every switch the code is written
   in is 5.5.

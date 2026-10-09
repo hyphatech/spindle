@@ -3,6 +3,15 @@ module Session = Session
 
 type error = [ Rowtype.error | Rowtype_postgres.Transaction.failure | `Busy ]
 
+(* [`Not_committed] and [`Busy] are worded as rowtype's own printers word
+   them, sentence for sentence, so one failure reads the same whichever
+   library logs it; the rowtype this builds against prints a statement's
+   failure and no transaction's. *)
+let error_to_string : [< error ] -> string = function
+  | `Busy -> "no connection came free within the pool's wait"
+  | `Not_committed m -> "the transaction was not committed: " ^ m
+  | #Rowtype.error as e -> Rowtype.error_to_string e
+
 let instant = Instant.ms
 
 module L = (val Logs.src_log Source.src : Logs.LOG)

@@ -135,6 +135,14 @@ handle into a status, with the detail in the log:
 - Everything else -- `` `Conflict ``, `` `Lost ``, `` `Not_committed ``,
   `` `Db ``, ... -- `500 internal`.
 
+Where a failure is logged rather than answered,
+`Spindle_postgres.error_to_string` tells any of them in words, and puts no
+value in them:
+
+```ocaml
+--8<-- "sql_transaction.ml:log"
+```
+
 Handle the ones you expect first. A unique-constraint violation is a
 `` `Conflict `` with the constraint's name:
 

@@ -16,6 +16,11 @@ type error =
 (** Every failure this library answers: a statement's, and a pool's or a
     transaction's own. *)
 
+val error_to_string : [< error ] -> string
+(** A failure in words for a log, as rowtype tells it: a statement's as
+    [Rowtype.error_to_string] does, a transaction's and a pool's own as
+    [Rowtype_postgres]'s printers do. No value is in the words. *)
+
 val instant : int Rowtype.ty
 (** An instant as {!Spindle.now} gives it, epoch milliseconds, in a
     [timestamptz] column: converted exactly to and from [Rowtype.instant]'s
