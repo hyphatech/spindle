@@ -713,6 +713,21 @@ let bodies =
          [ "Host: t"; "Transfer-Encoding: chunked" ])
       (parsed ~meth:"POST" ~body:"hello"
          [ ("Host", "t"); ("Transfer-Encoding", "chunked") ]);
+    row "9112 §7.1.1" "a chunk extension's name alone, with BWS, is read"
+      (request ~line:"POST / HTTP/1.1"
+         ~body:"5 ; a ;b = \"x\\\"y\" ;c=d\r\nhello\r\n0;z\r\n\r\n"
+         [ "Host: t"; "Transfer-Encoding: chunked" ])
+      (parsed ~meth:"POST" ~body:"hello"
+         [ ("Host", "t"); ("Transfer-Encoding", "chunked") ]);
+    row "9112 §7.1.1" "a control byte in a chunk extension is refused"
+      (request ~line:"POST / HTTP/1.1"
+         ~body:"5;ext=a\x01b\r\nhello\r\n0\r\n\r\n"
+         [ "Host: t"; "Transfer-Encoding: chunked" ])
+      Body_broken;
+    row "9112 §7.1.1" "an unclosed quote in a chunk extension is refused"
+      (request ~line:"POST / HTTP/1.1" ~body:"5;ext=\"abc\r\nhello\r\n0\r\n\r\n"
+         [ "Host: t"; "Transfer-Encoding: chunked" ])
+      Body_broken;
     row "9112 §7.1.2" "a trailer is read and left out of the body"
       (request ~line:"POST / HTTP/1.1" ~body:"5\r\nhello\r\n0\r\nX-T: 1\r\n\r\n"
          [ "Host: t"; "Transfer-Encoding: chunked" ])

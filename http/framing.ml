@@ -1,3 +1,5 @@
+module A = Angstrom
+
 type t = No_body | Fixed of int | Chunked | Until_close
 
 let is_digits s =
@@ -137,20 +139,36 @@ let is_hex = function
   | '0' .. '9' | 'a' .. 'f' | 'A' .. 'F' -> true
   | _ -> false
 
+(* RFC 9112 §7.1.1's [*( BWS ";" BWS chunk-ext-name [ BWS "=" BWS
+   chunk-ext-val ] )]. No extension is understood, but each is read: a byte
+   one reader skips and another stops at is where the two part ways. *)
+let chunk_extensions =
+  A.(
+    many
+      (Grammar.ows *> char ';' *> Grammar.ows *> Grammar.token
+      *> option "" (Grammar.ows *> char '=' *> Grammar.ows *> Grammar.value))
+    *> return ())
+
 (* chunk-size [BWS ";" chunk-ext]. Fifteen hex digits is past any int a body
    could be. *)
 let chunk_size line =
   let size =
     match String.index_opt line ';' with
-    | Some i ->
-        let s = String.sub line 0 i in
-        let rec trimmed_length n =
-          if n > 0 && (s.[n - 1] = ' ' || s.[n - 1] = '\t') then
-            trimmed_length (n - 1)
-          else n
-        in
-        String.sub s 0 (trimmed_length (String.length s))
     | None -> line
+    | Some i -> (
+        match
+          Grammar.parse ~what:"chunk extensions" chunk_extensions
+            (String.sub line i (String.length line - i))
+        with
+        | Error m -> raise (Broken m)
+        | Ok () ->
+            let s = String.sub line 0 i in
+            let rec trimmed_length n =
+              if n > 0 && (s.[n - 1] = ' ' || s.[n - 1] = '\t') then
+                trimmed_length (n - 1)
+              else n
+            in
+            String.sub s 0 (trimmed_length (String.length s)))
   in
   if
     String.length size > 0

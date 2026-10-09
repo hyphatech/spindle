@@ -43,6 +43,10 @@
   the bytes, and a JSON route that answered with them a `500`, unable to
   write them.
 
+- A chunked body's extensions are held to RFC 9112 §7.1.1, a server's
+  and a client's alike: a control byte or an unclosed quote in one breaks
+  the body. Anything after the size's `;` passed unread.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

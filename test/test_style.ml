@@ -15,6 +15,7 @@ let allowed_opens =
     ("http/auth.ml", "A");
     ("http/cache_control.ml", "A");
     ("http/etag.ml", "A");
+    ("http/framing.ml", "A");
     ("http/forwarded.ml", "A");
     ("http/grammar.ml", "A");
     ("http/media_type.ml", "A");
