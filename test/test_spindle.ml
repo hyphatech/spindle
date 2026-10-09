@@ -1083,23 +1083,25 @@ let test_a_sealed_cookie_reads_only_as_it_was_made make =
 
 let test_a_signed_cookie_reads_only_as_it_was_made () =
   test_a_sealed_cookie_reads_only_as_it_was_made (fun ring name ->
-      Spindle.Cookie.signed ring name Spindle.Codec.string)
+      Spindle.Cookie.signed ring ~max_age_s:60 name Spindle.Codec.string)
 
 let test_an_encrypted_cookie_reads_only_as_it_was_made () =
   test_a_sealed_cookie_reads_only_as_it_was_made (fun ring name ->
-      Spindle.Cookie.encrypted ring name Spindle.Codec.string);
+      Spindle.Cookie.encrypted ring ~max_age_s:60 name Spindle.Codec.string);
   let c =
     Spindle.Cookie.encrypted
       (Spindle.Key.ring new_key [])
-      "prefs" Spindle.Codec.string
+      ~max_age_s:60 "prefs" Spindle.Codec.string
   in
   Alcotest.(check bool)
     "and nothing of its value is on the wire" false
     (contains ~sub:"dark" (issued (sealed_app c) "dark"))
 
-let test_a_sealed_cookie_ages () =
+(* A signed or encrypted cookie is declared with its age, which the server
+   holds it to as well as the browser: one without would replay for ever. *)
+let test_a_sealed_cookie_ages make =
   let ring = Spindle.Key.ring new_key [] in
-  let c = Spindle.Cookie.signed ring ~max_age:60 "who" Spindle.Codec.string in
+  let c = make ring ~max_age_s:60 "who" Spindle.Codec.string in
   let app = sealed_app c in
   let made = 1_000_000 in
   let cookie = issued ~now:made app "kim" in
@@ -1136,6 +1138,12 @@ let test_a_sealed_cookie_ages () =
     (Spindle.Test.call required `GET "/who"
        ~headers:[ ("cookie", "who=forged") ])
       .status
+
+let test_a_signed_cookie_ages () =
+  test_a_sealed_cookie_ages Spindle.Cookie.signed
+
+let test_an_encrypted_cookie_ages () =
+  test_a_sealed_cookie_ages Spindle.Cookie.encrypted
 
 (* ---------------------------------------------------------------- *)
 (* Sessions *)
@@ -7432,8 +7440,10 @@ let () =
             test_a_signed_cookie_reads_only_as_it_was_made;
           Alcotest.test_case "an encrypted cookie reads only as it was made"
             `Quick test_an_encrypted_cookie_reads_only_as_it_was_made;
-          Alcotest.test_case "a sealed cookie ages" `Quick
-            test_a_sealed_cookie_ages;
+          Alcotest.test_case "a signed cookie ages" `Quick
+            test_a_signed_cookie_ages;
+          Alcotest.test_case "an encrypted cookie ages" `Quick
+            test_an_encrypted_cookie_ages;
           Alcotest.test_case "a session is kept on the server" `Quick
             test_a_session_is_kept_on_the_server;
           Alcotest.test_case "a session ends by its limits" `Quick

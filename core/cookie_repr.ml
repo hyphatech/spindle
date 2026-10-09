@@ -61,7 +61,8 @@ type 'a named = {
   cookie : string;
   codec : 'a Codec.t;
   sealer : sealer option;
-  age : int option;  (** a signed or encrypted cookie's, in seconds *)
+  age : int option;
+      (** a signed or encrypted cookie's, which it always has, in seconds *)
 }
 
 let checked_name name =
@@ -128,11 +129,9 @@ let make ?path ?max_age ?http_only ?same_site n v =
    dots, so a value cannot move to another cookie or change its stamp.
    Encrypted: stamp and value sealed with the name as associated data. *)
 let seconds_of_ms now = now / 1000
+let is_expired ~age_s ~now stamp = seconds_of_ms now - stamp > age_s
 
-let is_expired ~age ~now stamp =
-  match age with Some age -> seconds_of_ms now - stamp > age | None -> false
-
-let signed ring ?max_age name codec =
+let signed ring ~max_age_s name codec =
   let cookie = checked_name name in
   let signed_payload stamp v = String.concat "\000" [ cookie; stamp; v ] in
   let seal ~now v =
@@ -146,14 +145,14 @@ let signed ring ?max_age name codec =
         match (int_of_string_opt stamp, decode v, decode mac) with
         | Some t, Some v, Some mac
           when Key.verify ring ~mac (signed_payload stamp v)
-               && not (is_expired ~age:max_age ~now t) ->
+               && not (is_expired ~age_s:max_age_s ~now t) ->
             Some v
         | _ -> None)
     | _ -> None
   in
-  { cookie; codec; sealer = Some { seal; unseal }; age = max_age }
+  { cookie; codec; sealer = Some { seal; unseal }; age = Some max_age_s }
 
-let encrypted ring ?max_age name codec =
+let encrypted ring ~max_age_s name codec =
   let cookie = checked_name name in
   let seal ~now v =
     encode
@@ -168,11 +167,11 @@ let encrypted ring ?max_age name codec =
         | None -> None
         | Some i -> (
             match int_of_string_opt (String.sub opened 0 i) with
-            | Some t when not (is_expired ~age:max_age ~now t) ->
+            | Some t when not (is_expired ~age_s:max_age_s ~now t) ->
                 Some (String.sub opened (i + 1) (String.length opened - i - 1))
             | Some _ | None -> None))
   in
-  { cookie; codec; sealer = Some { seal; unseal }; age = max_age }
+  { cookie; codec; sealer = Some { seal; unseal }; age = Some max_age_s }
 
 let clear ?path n = make_cookie ?path ~max_age:0 n.cookie ""
 

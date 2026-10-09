@@ -60,6 +60,11 @@
   refusal line or the body's `unreadable` warning, where a token sent in
   its place was written out.
 
+- Breaking: `Cookie.signed` and `Cookie.encrypted` take the age the server
+  holds a cookie to as `~max_age_s`, in seconds, and it is required. It was
+  `?max_age`, and a cookie declared without one was accepted for ever,
+  however long ago it was made or copied.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

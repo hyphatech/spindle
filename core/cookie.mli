@@ -29,9 +29,11 @@ val named : string -> 'a Codec.t -> 'a named
 
     {[
     let prefs =
-      Spindle.Cookie.encrypted keys ~max_age:(30 * 86400) "prefs" prefs_codec
+      Spindle.Cookie.encrypted keys ~max_age_s:(30 * 86400) "prefs" prefs_codec
 
-    let who = Spindle.Cookie.signed keys "who" Spindle.Codec.string
+    let who =
+      Spindle.Cookie.signed keys ~max_age_s:(8 * 3600) "who"
+        Spindle.Codec.string
     ]}
 
     Both are {!type-named}, read and set as any declared cookie is. Each value
@@ -41,17 +43,17 @@ val named : string -> 'a Codec.t -> 'a named
     {b One that fails its signature, its seal or its age is absent} --
     [Cookie.optional] answers [None], and the failure is a [debug] line naming
     the cookie -- because a browser holding one from a retired key or an old
-    visit has done nothing wrong. [max_age] is the server's as well as the
-    browser's: one made longer ago is refused whatever the browser was told,
-    since a copied cookie replays for ever; it is also the most {!make} writes
-    as its [Max-Age]. *)
+    visit has done nothing wrong. [max_age_s], in seconds, is required and is
+    the server's as well as the browser's: one made longer ago is refused
+    whatever the browser was told, since a copied cookie would otherwise replay
+    for ever; it is also the most {!make} writes as its [Max-Age]. *)
 
-val signed : Key.ring -> ?max_age:int -> string -> 'a Codec.t -> 'a named
+val signed : Key.ring -> max_age_s:int -> string -> 'a Codec.t -> 'a named
 (** The value readable by the browser, and an HMAC-SHA256 over the name, the
     stamp and the value beside it ({!Key.sign}), compared in constant time.
     Raises as {!val-named} does. *)
 
-val encrypted : Key.ring -> ?max_age:int -> string -> 'a Codec.t -> 'a named
+val encrypted : Key.ring -> max_age_s:int -> string -> 'a Codec.t -> 'a named
 (** The value and its stamp sealed with AES-256-GCM ({!Key.seal}), the name
     bound to them: a browser can read nothing of it. Raises as {!val-named}
     does. *)

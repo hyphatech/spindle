@@ -56,8 +56,10 @@ match Spindle.Key.of_secret secret with
 | Ok key ->
     let keys = Spindle.Key.ring key [] in
     let prefs =
-      Spindle.Cookie.encrypted keys ~max_age:(30 * 86400) "prefs" prefs_codec
-    and who = Spindle.Cookie.signed keys "who" Spindle.Codec.string in
+      Spindle.Cookie.encrypted keys ~max_age_s:(30 * 86400) "prefs" prefs_codec
+    and who =
+      Spindle.Cookie.signed keys ~max_age_s:(8 * 3600) "who" Spindle.Codec.string
+    in
     ...
 | Error sentence -> ...
 ```
@@ -68,8 +70,10 @@ match Spindle.Key.of_secret secret with
   with any, so put the new key first and the old one after it.
 - **A cookie that fails its signature, its seal or its age is absent**
   (`None`), never an error.
-- `~max_age` is checked by the server too, not only sent as `Max-Age`, so a
-  copied cookie stops working when it expires.
+- **`~max_age_s` is required**, in seconds, and is checked by the server too,
+  not only sent as `Max-Age`, so a copied cookie stops working when it
+  expires. It is also the longest `Cookie.make` writes: a `~max_age` given
+  there may shorten it, never lengthen it.
 - `Key.sign`/`Key.verify` and `Key.seal`/`Key.unseal` do the same for
   anything else, such as a token in a link.
 
