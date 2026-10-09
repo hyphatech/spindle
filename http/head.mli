@@ -94,8 +94,9 @@ module Response : sig
       empty line before the status line is not skipped, as a server skips one
       before a request: to a client it is the last response ending somewhere its
       framing did not say. A field is what {!Field.parse} reads, but for an
-      obsolete fold, joined by {!Field.unfold}; a bare CR and a head past [max]
-      bytes are malformed, and a line may end in a bare LF.
+      obsolete fold, joined to the field before it as RFC 9112 §5.2 has a user
+      agent join one; a bare CR and a head past [max] bytes are malformed, and a
+      line may end in a bare LF.
 
       A 1xx is a head of its own, with no body, and the final response follows
       it. *)

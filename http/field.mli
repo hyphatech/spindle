@@ -15,14 +15,6 @@ val parse : string -> (string * string, string) result
     it), no colon, a name that is not a token, a control character in the value
     -- in words for a log. *)
 
-val unfold : string * string -> string -> (string * string, string) result
-(** [continued field line]: [field] with an obsolete folded [line] after it --
-    one beginning with whitespace -- joined on as RFC 9112 §5.2 has a user agent
-    join one, the fold replaced with one SP. [Error] for a line holding what a
-    value may not. Only a response is read this way: a server refuses a fold,
-    because a proxy that joins it and one that does not read two different
-    fields. *)
-
 val is_text : string -> bool
 (** Whether a string holds only what a field value may: visible characters,
     [obs-text], spaces and tabs -- which is what a reason phrase may hold too.
@@ -55,12 +47,3 @@ val has_element : (string * string) list -> string -> string -> bool
 (** [has_element fields name e]: whether any field named [name] lists [e],
     compared without regard to case -- [Connection: close] for [name]
     ["connection"] and [e] ["close"]. *)
-
-val line :
-  Eio.Buf_read.t ->
-  (string, [ `Bare_lf | `Bare_cr | `Too_long | `Closed ]) result
-(** The next line, which must end in CRLF, without it: where RFC 9112 §7.1 gives
-    no leniency -- a chunk-size line, a chunk's end, a trailer line -- a bare LF
-    is refused, since a reader that takes one and a proxy that does not read the
-    same bytes as two different bodies. [`Too_long] is a line past the buffer's
-    limit; [`Closed], the connection ending before the line did. *)

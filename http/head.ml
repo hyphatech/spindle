@@ -29,19 +29,34 @@ let parse_field l =
   | Ok f -> f
   | Error detail -> refuse_bad_request detail
 
+let trim_ows s =
+  let n = String.length s in
+  let rec first i = if i < n && is_ows s.[i] then first (i + 1) else i in
+  let rec last j = if j > 0 && is_ows s.[j - 1] then last (j - 1) else j in
+  let i = first 0 in
+  let j = last n in
+  if j <= i then "" else String.sub s i (j - i)
+
 (* Up to the empty line. A line beginning with whitespace is an obsolete
    fold, which [Field.parse] refuses unless [unfold] joins it to the field
-   before, as a user agent must (RFC 9112 §5.2). *)
+   before, the fold replaced with one SP, as a user agent must (RFC 9112
+   §5.2). *)
 let read_fields ~max ~used ~unfold ic =
   let rec more acc =
     match read_line ~max ~used ic with
     | "" -> List.rev acc
     | l when unfold && is_ows l.[0] -> (
+        let folded = trim_ows l in
         match acc with
-        | f :: rest -> (
-            match Field.unfold f l with
-            | Ok f -> more (f :: rest)
-            | Error detail -> refuse_bad_request detail)
+        | _ :: _ when not (Field.is_text folded) ->
+            refuse_bad_request "a control character in a field value"
+        | (name, value) :: rest ->
+            let value =
+              if String.equal value "" then folded
+              else if String.equal folded "" then value
+              else value ^ " " ^ folded
+            in
+            more ((name, value) :: rest)
         | [] -> refuse_bad_request "whitespace before the first field")
     | l -> more (parse_field l :: acc)
   in

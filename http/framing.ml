@@ -119,15 +119,28 @@ let read_or_break r f =
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
   | exception ex -> raise (Broken (Printexc.to_string ex))
 
-(* CRLF only: a reader that took a bare LF here would find a different body
-   in the same bytes. *)
+(* CRLF only, where RFC 9112 §7.1 gives no leniency -- a chunk-size line, a
+   chunk's end, a trailer line: a reader that took a bare LF here would find
+   a different body in the same bytes. *)
 let read_crlf_line r =
-  match read_or_break r Field.line with
-  | Ok l -> l
-  | Error `Bare_lf -> raise (Broken "a line in a chunked body ending in LF")
-  | Error `Bare_cr -> raise (Broken "a bare CR in a chunked body")
-  | Error `Too_long -> raise (Broken "a line in a chunked body past the buffer")
-  | Error `Closed -> raise (Broken "the body ended early")
+  match
+    read_or_break r (fun ic ->
+        match Eio.Buf_read.take_while (fun c -> not (Char.equal c '\n')) ic with
+        | exception Eio.Buf_read.Buffer_limit_exceeded -> None
+        | l ->
+            Eio.Buf_read.char '\n' ic;
+            Some l)
+  with
+  | None -> raise (Broken "a line in a chunked body past the buffer")
+  | Some l ->
+      let n = String.length l in
+      if n = 0 || not (Char.equal l.[n - 1] '\r') then
+        raise (Broken "a line in a chunked body ending in LF")
+      else
+        let l = String.sub l 0 (n - 1) in
+        if String.contains l '\r' then
+          raise (Broken "a bare CR in a chunked body")
+        else l
 
 (* Up to [n] of what is buffered, waiting for at least one byte. *)
 let take_buffered r n =

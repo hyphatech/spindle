@@ -121,6 +121,10 @@
   `spindle_cli` no longer links `eio_main`. Write
   `Eio_main.run @@ fun env -> Spindle_cli.run ~name ~app env`.
 
+- Breaking: `Spindle_http.Field.line` and `Field.unfold` are gone. Each
+  was one step of one reader -- a chunked body's line, a response's
+  folded field -- and is now inside it.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an
