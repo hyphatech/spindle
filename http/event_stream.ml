@@ -51,7 +51,7 @@ type event = {
   name : string;
   data : string;
   id : string option;
-  retry : int option;
+  retry_ms : int option;
 }
 
 type reader = {
@@ -61,7 +61,7 @@ type reader = {
   mutable event_type : string;
   mutable id_buffer : string;
   mutable last_id : string;
-  mutable retry : int option;
+  mutable retry_ms : int option;
   mutable after_cr : bool;
       (** the last piece ended at a CR, whose LF may follow *)
   mutable past_bom : bool;  (** past where a byte-order mark may be *)
@@ -79,7 +79,7 @@ let reader ?(last_id = "") ?(max_event = default_max_event) () =
     event_type = "";
     id_buffer = last_id;
     last_id;
-    retry = None;
+    retry_ms = None;
     after_cr = false;
     past_bom = false;
     bom_prefix = "";
@@ -106,7 +106,7 @@ let dispatch r =
         name = (if String.equal event_type "" then "message" else event_type);
         data;
         id = non_empty r.last_id;
-        retry = r.retry;
+        retry_ms = r.retry_ms;
       }
 
 let process_line r line =
@@ -133,7 +133,7 @@ let process_line r line =
         if
           String.length value > 0
           && String.for_all (function '0' .. '9' -> true | _ -> false) value
-        then r.retry <- int_of_string_opt value
+        then r.retry_ms <- int_of_string_opt value
     | _ -> ());
     None
 

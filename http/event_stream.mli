@@ -9,7 +9,7 @@
 
     let r = Event_stream.reader () in
     Event_stream.feed r "event: state\ndata: a\n\ndata: b"
-    = Ok [ { name = "state"; data = "a"; id = None; retry = None } ]
+    = Ok [ { name = "state"; data = "a"; id = None; retry_ms = None } ]
     ]} *)
 
 (** {1 Writing} *)
@@ -37,7 +37,8 @@ type event = {
   id : string option;
       (** the last id the stream set, at the event: what a reconnecting client
           sends back as [Last-Event-ID] *)
-  retry : int option;  (** the reconnection time the stream last set, in ms *)
+  retry_ms : int option;
+      (** the reconnection time the stream last set, in milliseconds *)
 }
 
 type reader

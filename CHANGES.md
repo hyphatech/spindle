@@ -88,7 +88,9 @@
   holds it; `Cookie.make`'s `?max_age` is `?max_age_s`;
   `Refusal.rate_limited`'s `~retry_after` and `Refusal.busy`'s
   `?retry_after` are `~retry_after_s` and `?retry_after_s`;
-  `Event.retry` and `Spindle_http.Event_stream.retry` take `~ms`; and
+  `Event.retry` and `Spindle_http.Event_stream.retry` take `~ms`, and an
+  event read from a stream, `Spindle_http.Event_stream.event`, holds its
+  reconnection time as `retry_ms`, where it was `retry`; and
   `Response.stream`'s `keep_alive` is a record, `{ quiet_s; filler }`,
   where it was a pair.
 

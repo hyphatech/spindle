@@ -102,7 +102,7 @@ read. To stop early, return: the connection is then closed.
 ## Server-Sent Events
 
 `Spindle_client.events client url f` asks for `text/event-stream` and hands
-each event (its `name`, `data`, `id` and `retry`) to `f`, which answers
+each event (its `name`, `data`, `id` and `retry_ms`) to `f`, which answers
 `` `Continue `` or `` `Stop ``. It answers `Finished` (the server ended it) or
 `Stopped`, each with the last event id, or `Refused` with the answer when it
 was not an event stream. To reconnect, call it again with

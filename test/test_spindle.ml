@@ -3494,7 +3494,7 @@ module Es = Spindle_http.Event_stream
 let show_event (e : Es.event) =
   Printf.sprintf "%s[%s]%s%s" e.name e.data
     (match e.id with Some i -> "#" ^ i | None -> "")
-    (match e.retry with Some r -> "~" ^ string_of_int r | None -> "")
+    (match e.retry_ms with Some r -> "~" ^ string_of_int r | None -> "")
 
 (* Every event a stream holds, fed to one reader in these pieces. *)
 let read_events ?max_event pieces =
