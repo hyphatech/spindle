@@ -195,6 +195,10 @@ switch, `opam exec --switch=<root> --` from the repository's root, or
 through the Makefile; no `eval`. `make setup` installs Merlin and
 `ocaml-lsp-server` with the rest.
 
+**The switch is ignored as `_opam`, never `_opam/`.** A worktree's switch
+is a link to the checkout's, which a pattern for a directory does not
+match, so `git add -A` there would commit it.
+
 **`ocamllsp` runs as the agent's language server**, from the repository's
 own switch. It answers every edit to OCaml source with its type errors,
 and gives a name's definition, its references, tests included, its type
