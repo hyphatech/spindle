@@ -33,13 +33,15 @@ let allowed_opens =
 
 (* A banned identifier allowed where the [.mli] documents it. Each
    [invalid_arg] refuses a constant written in source, as AGENTS.md lists
-   them; a server that cannot start exits, and says where it listens; and a
-   command line prints its answer and exits with its status. *)
+   them; a server that cannot start exits, and says where it listens; the
+   log's default sink writes its lines to stderr; and a command line prints
+   its answer and exits with its status. *)
 let allowed_banned =
   [
     ("core/broadcast.ml", "invalid_arg");
     ("core/cookie_repr.ml", "invalid_arg");
     ("core/cors.ml", "invalid_arg");
+    ("core/log.ml", "stderr");
     ("core/metrics.ml", "invalid_arg");
     ("core/openapi.ml", "invalid_arg");
     ("core/server.ml", "invalid_arg");
@@ -68,21 +70,46 @@ let banned =
     ("List.nth", "partial: use List.nth_opt");
     ("Obj.magic", "unsafe");
     ("compare", "polymorphic: use Int.compare, String.compare, ...");
-    ("Stdlib.compare", "polymorphic: use Int.compare, String.compare, ...");
     ("Sys.getenv", "a library reads no environment: take it as an argument");
     ("Sys.getenv_opt", "a library reads no environment: take it as an argument");
     ("Unix.getenv", "a library reads no environment: take it as an argument");
     ("Unix.environment", "a library reads no environment");
-    ("print_string", "a library never prints: log through Logs");
-    ("print_endline", "a library never prints: log through Logs");
-    ("prerr_string", "a library never prints: log through Logs");
-    ("prerr_endline", "a library never prints: log through Logs");
-    ("Printf.printf", "a library never prints: log through Logs");
-    ("Printf.eprintf", "a library never prints: log through Logs");
-    ("Format.printf", "a library never prints: log through Logs");
-    ("Format.eprintf", "a library never prints: log through Logs");
     ("exit", "a library never exits");
   ]
+  @ List.map
+      (fun name -> (name, "a library never prints: log through Logs"))
+      [
+        "print_string";
+        "print_endline";
+        "print_bytes";
+        "print_char";
+        "print_int";
+        "print_float";
+        "print_newline";
+        "prerr_string";
+        "prerr_endline";
+        "prerr_bytes";
+        "prerr_char";
+        "prerr_int";
+        "prerr_float";
+        "prerr_newline";
+        "stdout";
+        "stderr";
+        "Printf.printf";
+        "Printf.eprintf";
+        "Format.printf";
+        "Format.eprintf";
+        "Format.print_string";
+        "Format.std_formatter";
+        "Format.err_formatter";
+      ]
+
+(* A name is read with a leading [Stdlib.] taken off, so [Stdlib.exit] is
+   [exit]. *)
+let unqualified word =
+  if String.starts_with ~prefix:"Stdlib." word then
+    String.sub word 7 (String.length word - 7)
+  else word
 
 let read path = In_channel.with_open_bin path In_channel.input_all
 
@@ -232,6 +259,7 @@ let no_banned_identifier () =
       (fun file ->
         let code = code_of (read_source file) in
         identifiers code
+        |> List.map (fun (line, word) -> (line, unqualified word))
         |> List.filter (fun (_, word) ->
             not
               (List.exists
@@ -371,24 +399,54 @@ let the_client_links_no_framework () =
   Alcotest.(check bool) "and not spindle" false (List.mem "spindle" words)
 
 (* Spindle reads and writes HTTP/1.1 itself: no library links another HTTP
-   implementation, and no source names one. *)
+   implementation, and no source names one. A package is its name or one of
+   its parts ([cohttp-eio], [h2.eio]); a module is its name or one made after
+   it ([Cohttp_eio]), but for [Http], since [Http_1_1] is a version here. *)
+let http_packages =
+  [ "cohttp"; "http"; "httpun"; "httpaf"; "h1"; "h2"; "piaf"; "paf"; "ezcurl" ]
+
+let names_package word package =
+  String.equal word package
+  || String.starts_with ~prefix:(package ^ "-") word
+  || String.starts_with ~prefix:(package ^ ".") word
+
+let names_module word package =
+  let name = String.capitalize_ascii package in
+  String.equal word name
+  || String.starts_with ~prefix:(name ^ "_") word
+     && not (String.equal package "http")
+
 let no_other_http_library () =
   let found =
     List.concat_map
       (fun dir ->
-        let dune = code_of_dune (read_source (Filename.concat dir "dune")) in
-        if contains dune "cohttp" || contains dune " http\n" then
-          [ dir ^ "/dune links an HTTP library" ]
-        else [])
+        let words =
+          String.split_on_char ' '
+            (String.map
+               (function '(' | ')' | '\n' | '\t' -> ' ' | c -> c)
+               (code_of_dune (read_source (Filename.concat dir "dune"))))
+        in
+        List.filter_map
+          (fun package ->
+            if List.exists (fun word -> names_package word package) words then
+              Some (Printf.sprintf "%s/dune links %s" dir package)
+            else None)
+          http_packages)
       dirs
     @ List.concat_map
         (fun file ->
-          let code = code_of (read_source file) in
-          List.filter_map
-            (fun word ->
-              if contains code word then Some (file ^ " names " ^ word)
-              else None)
-            [ "Cohttp"; "Http." ])
+          identifiers (code_of (read_source file))
+          |> List.filter_map (fun (line, word) ->
+              let first =
+                match String.index_opt word '.' with
+                | Some i -> String.sub word 0 i
+                | None -> word
+              in
+              List.find_opt
+                (fun package -> names_module first package)
+                http_packages
+              |> Option.map (fun package ->
+                  Printf.sprintf "%s:%d: %s names %s" file line word package)))
         (sources ".ml" @ sources ".mli")
   in
   Alcotest.(check (list string)) "other HTTP libraries" [] found

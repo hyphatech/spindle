@@ -85,7 +85,7 @@ let parse_float s =
   | Some _ | None -> None
 
 (* The fewest digits that read back as the same float. *)
-let print_float v =
+let shortest_float v =
   let rec shortest precision =
     let text = Printf.sprintf "%.*g" precision v in
     if precision >= 17 then text
@@ -99,7 +99,7 @@ let print_float v =
 let float =
   {
     parse = parse_float;
-    print = print_float;
+    print = shortest_float;
     expects = "a number";
     shape = Number;
     kind = None;
