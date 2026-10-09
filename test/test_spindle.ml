@@ -872,7 +872,7 @@ let set_cookie ?proxied ?(headers = []) () =
 let test_cookie_is_secure_except_on_loopback () =
   check_header "a real host"
     (Some "k=v; Path=/in; HttpOnly; Secure; SameSite=Lax; Max-Age=60")
-    (set_cookie ~headers:[ ("host", "getsente.io") ] ());
+    (set_cookie ~headers:[ ("host", "example.com") ] ());
   check_header "loopback"
     (Some "k=v; Path=/in; HttpOnly; SameSite=Lax; Max-Age=60")
     (set_cookie ~headers:[ ("host", "localhost:8443") ] ());
