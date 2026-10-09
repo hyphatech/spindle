@@ -30,7 +30,7 @@
  (name spindle)
  (synopsis "The Eio-native web framework for modern OCaml")
  (description
-  "Routes as values, dependencies that list what a route reads, failures as values, streams and WebSockets, the API described as OpenAPI and zod, and HTTP/1.1 read and written by itself. spindle.client calls other servers and links no framework.")
+  "Routes as values, dependencies that list what a route reads, failures as values, streams and WebSockets, the API described as OpenAPI and Zod, and HTTP/1.1 read and written by itself. The spindle.client package calls other servers and links no framework.")
  (depends
   (ocaml
    (>= 5.5))

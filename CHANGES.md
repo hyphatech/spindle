@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `spindle_postgres`: a pool's failures are its states under `` `Pool ``:
+- In `spindle_postgres`, a pool's failures are its states under `` `Pool ``:
   `` `Pool `Busy `` where `Spindle_postgres.error`, `Pool.use`, `query` and
   `transaction` answered `` `Busy ``, and `` `Pool `Closed `` for a pool
   closed, or closing under a borrow waiting, where rowtype tells it apart;
@@ -20,11 +20,11 @@
   slot, rather than at the next event. Nothing is cancelled; a producer
   that does not wait on it learns at its next `send`, as before.
 
-- `spindle_cli`: every command's `--help` lists exit status 1, what `api
+- In `spindle_cli`, every command's `--help` lists exit status 1, what `api
   check` exits with on a stale file, and no longer lists 123, which no
   command exits with.
 
-- `spindle_postgres`: `Session` quotes its table's name in every statement
+- In `spindle_postgres`, `Session` quotes its table's name in every statement
   and in its schema, so a name SQL reserves, such as `user` or `order`, is
   a table like any other. Each statement failed as a syntax error.
 
@@ -61,7 +61,7 @@
   browser from guessing a type, not from running the one it is given.
   `~inline_active:true` shows one inline, still sandboxed.
 
-- `spindle_postgres`: `error_to_string` tells any `Spindle_postgres.error`
+- In `spindle_postgres`, `error_to_string` tells any `Spindle_postgres.error`
   in words for a log, as rowtype tells it, with no value in them.
 - Breaking: OCaml 5.5 or later is required. The opam files asked for 5.4,
   which CI tested and nothing else did; every switch the code is written
@@ -69,13 +69,13 @@
 - Breaking: `spindle_postgres` logs on the source `spindle_postgres`, its
   library's name, where it was `spindle.postgres`, which read as a part of
   `spindle`. A level set for the old name no longer reaches it.
-- `spindle_postgres` names postgres-eio among its dependencies, which it
-  pins, so installing it from source no longer warns.
-- `spindle.client`: a `Body.read` after one that failed answers that
+- The `spindle_postgres` package names postgres-eio among its dependencies,
+  which it pins, so installing it from source no longer warns.
+- In `spindle.client`, a `Body.read` after one that failed answers that
   failure again. Over HTTPS it raised `Eio.Cancel.Cancelled` into a caller
   nobody had cancelled, after a read that timed out. Breaking: over HTTP
   such a read waited again.
-- `spindle_postgres`: a `Pool.run` whose fiber is cancelled passes the
+- In `spindle_postgres`, a `Pool.run` whose fiber is cancelled passes the
   cancellation on. It raised `Fun.Finally_raised` instead, which a
   `Fiber.first` it lost re-raised.
 - `Server.run`: on Linux, `localhost` whose port another process holds on
@@ -190,12 +190,12 @@
   was one step of one reader -- a chunked body's line, a response's
   folded field -- and is now inside it.
 
-- `spindle_postgres`: an exhausted pool's `503 busy`, from
+- In `spindle_postgres`, an exhausted pool's `503 busy`, from
   `Spindle_postgres.refusal`, is logged as a warning on
   `spindle_postgres`. It was the refusal's detail, which every `5xx` logs
   as an error, so a server under load paged as though broken.
 
-- `spindle_cli`: `api check` checks both files and names each that is
+- In `spindle_cli`, `api check` checks both files and names each that is
   stale or missing. It stopped at the first, so a run that named the
   OpenAPI document left a stale Zod module for the next.
 

@@ -9,7 +9,7 @@
 
     {v
     myapp api openapi [-o FILE]                  the OpenAPI 3.2 document
-    myapp api zod [-o FILE]                      the TypeScript module of zod schemas
+    myapp api zod [-o FILE]                      the TypeScript module of Zod schemas
     myapp api check --openapi FILE --zod FILE    fail when either is not what the routes make
     v}
 

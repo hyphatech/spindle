@@ -118,7 +118,7 @@ NOTES   = ./_build/default/bin/notes.exe
 OPENAPI = web/src/openapi.gen.json
 WIRE    = web/src/wire.gen.ts
 
-wire: ## write the API's document and the client's zod from the routes
+wire: ## write the API's document and the client's Zod from the routes
 	dune build
 	$(NOTES) api openapi -o $(OPENAPI)
 	$(NOTES) api zod -o $(WIRE)

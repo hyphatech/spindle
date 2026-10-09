@@ -142,7 +142,7 @@ let run ~name ?(title = name) ~app:make env =
           (write `Openapi);
         Cmd.v
           (Cmd.info "zod" ~exits
-             ~doc:"Write the TypeScript module of zod schemas.")
+             ~doc:"Write the TypeScript module of Zod schemas.")
           (write `Zod);
         Cmd.v
           (Cmd.info "check" ~exits

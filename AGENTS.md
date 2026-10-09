@@ -83,26 +83,27 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   `Spindle.Test.websocket`, which refuse an undeclared code, or a status its
   route does not list -- and `Test.events` an event past its reader's
   limit -- in a test and nowhere else. Nothing else raises
-  across a library boundary. Symptom: `test_style` names the line, and
+  across a library boundary. Test: `test_style` names the line, and
   its list of exceptions is this one.
 - **Spindle reads and writes HTTP itself, names no driver, and its client
   links no framework.** No library links another HTTP implementation or
   names one; `spindle_postgres` reaches Postgres through rowtype's backend
   alone, so a second driver is a second backend and no change here; and
   `spindle.client` links `spindle.http` and never `spindle`, so a program
-  that calls other servers compiles no framework. Symptom: `test_style`'s
+  that calls other servers compiles no framework. Test: `test_style`'s
   boundaries.
 - **A route is one value, and a dependency hands over an input.** A method
   and a path are declared together (`Spindle.post Path.(...)`), so a route no
   method can reach cannot be written. Every input a request carries -- a
   path parameter included -- is a dependency, and nothing else reads the
-  request, so what a route reads can be listed.
+  request, so what a route reads can be listed. Symptom: a route that reads the request
+  outside a dependency, so its document does not list what it reads.
 - **A dependency value runs once per request**, unless read through
   `Dep.uncached`: every value but `Dep.return` and `Dep.both` has an
   identity, and every use of it in a request is given its first answer,
   through `Dep_repr.exec`, which is the only thing that runs one. A value
   lists the identities it is made of, so what a route reads is listed once
-  and a route that reads nothing twice keeps no table. Symptom: a
+  and a route that reads nothing twice keeps no table. Test: a
   signed-in person read twice from the database, or an input listed twice
   in the document; `test_spindle` counts both.
 - **A cookie that fails its signature, its seal or its age is absent, never
@@ -110,12 +111,12 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   browser holding one from a retired key or an old visit did nothing wrong,
   and a copied one would otherwise replay for ever. A signed or sealed value
   is bound to its cookie's name and stamped from the application's `now` as
-  the answer is written. Symptom: a `400` for a cookie an old deploy made, or
+  the answer is written. Test: a `400` for a cookie an old deploy made, or
   a value moved from one cookie to another reading as it; `test_spindle`'s
   cookie cases edit, move, age and rotate one.
 - **A limit is a dependency**, so a route's `429` is in its document and on
   no route without one: `Rate.limit` declares `Refusal.Code.rate_limited`,
-  which is not among the framework's codes every route may give. Symptom: a
+  which is not among the framework's codes every route may give. Test: a
   document that promises every route may answer `429`, or a limit a reader
   of the route cannot see; `test_spindle`'s rate case reads the document.
 - **A secret has no span.** No header value, body, query string or
@@ -123,7 +124,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   request's span carries its access line's fields, a call's where it went and
   never its query, and a statement's its text. A span's name is a route, a
   method or `postgresql`, never a path or a string a caller chose, since a
-  name per URL is a series per URL in every collector. Symptom: a token in a
+  name per URL is a series per URL in every collector. Test: a token in a
   collector; `test_spindle` sends one in a header and a query and searches
   every attribute of the trace.
 - **Spindle frames every body, and its connection loop is the only thing
@@ -140,7 +141,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   its connection lasts -- `Wire.render` and the loop, nothing else: a
   response that sets one itself, or answers a final status outside 200–599,
   is the route's bug and answered `500`, because a second length beside the
-  framework's is a response desync. Symptom: a body's bytes answered as a
+  framework's is a response desync. Test: a body's bytes answered as a
   second request, or two `Content-Length`s on one answer; `test_wire` sends
   several requests down one connection to catch it, and `test_http_rfc` a
   thousand random sequences, handlers that frame themselves among them.
@@ -180,7 +181,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   `Static` reads its files when the server starts and answers from memory,
   and `Files` refuses a segment that steps anywhere before it opens
   anything, then opens beneath `Eio.Path.with_subtree`, which the operating
-  system holds to the directory. Symptom: `/../` or a symlink reaching a
+  system holds to the directory. Test: `/../` or a symlink reaching a
   file outside; `test_spindle`'s files cases send both.
 - **`localhost` and a wildcard bind both families.**
   `localhost` resolves to `::1` as well as `127.0.0.1`, and browsers prefer
@@ -206,7 +207,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   the process ends, and a wait re-armed on every byte holds one for as long
   as the body's length allows. The server owns its connection's writer for
   this: Eio's `Buf_write.with_flow` flushes before an exception leaves it,
-  which to a client that is not reading never returns. Symptom:
+  which to a client that is not reading never returns. Test:
   `max_connections` clients that never read, or a connection slot held by a
   byte a minute; `test_spindle` holds one slot with one, and `test_wire`
   cuts off a body sent a byte a second.

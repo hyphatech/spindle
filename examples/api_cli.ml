@@ -1,4 +1,4 @@
-(* An application's command line: its API's document and its client's zod
+(* An application's command line: its API's document and its client's Zod
    schemas, written from the routes without serving them.
 
      dune exec examples/api_cli.exe -- api openapi
