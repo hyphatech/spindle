@@ -42,7 +42,7 @@ framework's `404`.
   takes the type it is given and never guesses one from the bytes.
 - **A name that starts with a dot is skipped**, at any depth -- what a build
   leaves beside a site, `.env` or `.git`, is never served -- but
-  `.well-known`, which is the site's. `~dotfiles:true` reads them all.
+  `.well-known` at the site's root, which is the site's. `~dotfiles:true` reads them all.
 
 ## Static files beside an API
 

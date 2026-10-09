@@ -46,8 +46,9 @@ val load :
     - [index] is the file a directory answers with, ["index.html"] unless told.
     - [dotfiles] reads a name that begins with a dot, at any depth: [false]
       unless told, so what a build leaves beside a site -- [.env], [.git] -- is
-      never served. [.well-known] is read either way, being the site's by
-      definition (RFC 8615); a dot-name under it is not.
+      never served. [.well-known] at the directory's root is read either way,
+      being the site's by definition (RFC 8615); a dot-name under it is not, and
+      nor is a [.well-known] below the root.
     - [not_found] is the file served, with a [404], for a path with no file:
       ["/404.html"].
     - [shell] is a file and the prefixes it answers with a [200]:

@@ -72,6 +72,14 @@
   every file with `X-Content-Type-Options: nosniff`, so a browser never
   runs one whose bytes look like HTML as a page of the site.
 
+- `Codec.custom` takes `?list:true` for a list field of the application's
+  own, so a header it reads sent on several lines is read as one, its
+  lines joined by `, `, as the framework's list codecs read one. Without
+  it such a header is refused as `malformed`.
+- Breaking: `Static` reads `.well-known` at the site's root alone, where
+  RFC 8615 places it; one deeper is a dot-name like any other, skipped
+  unless `~dotfiles:true`.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

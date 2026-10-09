@@ -764,6 +764,11 @@ let test_a_query_is_read_as_a_form () =
    joined by a comma; §5.5: a singleton field sent twice is an invalid
    message, refused rather than read by its first line or its last. *)
 let test_a_header_sent_on_several_lines () =
+  let tags =
+    Spindle.Codec.custom ~kind:"tags" ~list:true
+      ~parse:(fun s -> Some (List.map String.trim (String.split_on_char ',' s)))
+      ~print:(String.concat ", ") ()
+  in
   let route =
     Spindle.get
       Spindle.Path.(s "lines")
@@ -773,7 +778,8 @@ let test_a_header_sent_on_several_lines () =
        and+ cache =
          Spindle.Header.optional "cache-control" Spindle.Codec.cache_control
        and+ size = Spindle.Header.default "x-size" Spindle.Codec.int 20
-       and+ name = Spindle.Header.optional "x-name" Spindle.Codec.string in
+       and+ name = Spindle.Header.optional "x-name" Spindle.Codec.string
+       and+ tags = Spindle.Header.optional "x-tags" tags in
        Ok
          [
            Option.fold language ~none:"-"
@@ -782,11 +788,12 @@ let test_a_header_sent_on_several_lines () =
              ~some:(Spindle.Codec.print Spindle.Codec.cache_control);
            string_of_int size;
            Option.value name ~default:"-";
+           Option.fold tags ~none:"-" ~some:(String.concat "|");
          ])
   in
   let app = Spindle.Test.app [ route ] in
   check_string "list fields, each line read"
-    {|["en, fr;q=0.5","no-cache, max-age=5","20","-"]|}
+    {|["en, fr;q=0.5","no-cache, max-age=5","20","-","a|b|c"]|}
     (Spindle.Test.call app `GET "/lines"
        ~headers:
          [
@@ -794,6 +801,8 @@ let test_a_header_sent_on_several_lines () =
            ("cache-control", "no-cache");
            ("Accept-Language", "fr;q=0.5");
            ("cache-control", "max-age=5");
+           ("x-tags", "a, b");
+           ("X-Tags", "c");
          ])
       .body;
   let refused what ~at headers =
@@ -809,7 +818,7 @@ let test_a_header_sent_on_several_lines () =
     [ ("x-size", "1"); ("X-Size", "1") ];
   refused "text sent twice" ~at:"header.x-name"
     [ ("x-name", "a"); ("x-name", "b") ];
-  check_string "a singleton sent once" {|["-","-","3","a"]|}
+  check_string "a singleton sent once" {|["-","-","3","a","-"]|}
     (Spindle.Test.call app `GET "/lines"
        ~headers:[ ("x-size", "3"); ("x-name", "a") ])
       .body
@@ -5794,8 +5803,9 @@ let test_files_never_leave_their_directory () =
 
 (* A built site holds what its build left beside the pages -- an [.env], a
    [.git] -- and none of it is the site's. A dot-name is skipped as the
-   directory is read, at any depth, but [.well-known] (RFC 8615), which is
-   the site's by definition; [~dotfiles:true] reads them all. *)
+   directory is read, at any depth, but [.well-known] at the site's root,
+   which RFC 8615 §3 makes the site's, and nowhere below it;
+   [~dotfiles:true] reads them all. *)
 let test_a_site_skips_its_dotfiles () =
   with_site
     [
@@ -5805,6 +5815,7 @@ let test_a_site_skips_its_dotfiles () =
       ("about/.htaccess", "Deny");
       (".well-known/security.txt", "Contact: x");
       (".well-known/.draft", "DRAFT");
+      ("about/.well-known/security.txt", "Contact: y");
     ]
   @@ fun root ->
   let t = loaded root in
@@ -5813,11 +5824,17 @@ let test_a_site_skips_its_dotfiles () =
   let status target = (Spindle.Test.call a `GET target).status in
   List.iter
     (fun target -> check_status target 404 (status target))
-    [ "/.env"; "/.git/config"; "/about/.htaccess"; "/.well-known/.draft" ];
+    [
+      "/.env";
+      "/.git/config";
+      "/about/.htaccess";
+      "/.well-known/.draft";
+      "/about/.well-known/security.txt";
+    ];
   check_status ".well-known is the site's" 200
     (status "/.well-known/security.txt");
   match Spindle.Static.load ~dotfiles:true root with
-  | Ok t -> check_int "every file, where asked" 6 (Spindle.Static.files t)
+  | Ok t -> check_int "every file, where asked" 7 (Spindle.Static.files t)
   | Error m -> Alcotest.fail m
 
 (* A file's type is the one its answer names, never one a browser sniffs

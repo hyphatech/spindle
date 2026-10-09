@@ -142,7 +142,7 @@ let enum ~kind to_string values =
     list = false;
   }
 
-let custom ~kind ?expects ~parse ~print () =
+let custom ~kind ?expects ?(list = false) ~parse ~print () =
   {
     parse;
     print;
@@ -150,7 +150,7 @@ let custom ~kind ?expects ~parse ~print () =
     expects = Option.value expects ~default:("a valid " ^ kind);
     shape = String;
     kind = Some kind;
-    list = false;
+    list;
   }
 
 let parse c s = c.parse s

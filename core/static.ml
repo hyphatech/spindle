@@ -26,16 +26,19 @@ let etag_of_body body =
   }
 
 (* What a build leaves beside a site -- [.env], [.git] -- is none of it;
-   [.well-known] is the site's by definition (RFC 8615). *)
-let is_dot_name entry =
-  String.starts_with ~prefix:"." entry && not (String.equal entry ".well-known")
+   [.well-known] at the site's root is the site's by definition (RFC 8615
+   §3), and below it is a dot-name like any other. *)
+let is_dot_name ~at entry =
+  String.starts_with ~prefix:"." entry
+  && not (String.equal at "" && String.equal entry ".well-known")
 
 (* A symlink is followed here, at startup, never at request time. *)
 let rec walk_files dir ~dotfiles ~at ~add =
   List.iter
     (fun entry ->
+      let skip = (not dotfiles) && is_dot_name ~at entry in
       let path = Eio.Path.(dir / entry) and at = at ^ "/" ^ entry in
-      if dotfiles || not (is_dot_name entry) then
+      if not skip then
         match Eio.Path.kind ~follow:true path with
         | `Directory -> walk_files path ~dotfiles ~at ~add
         | `Regular_file -> add at (Eio.Path.load path)

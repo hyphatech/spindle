@@ -68,6 +68,7 @@ val enum : kind:string -> ('a -> string) -> 'a list -> 'a t
 val custom :
   kind:string ->
   ?expects:string ->
+  ?list:bool ->
   parse:(string -> 'a option) ->
   print:('a -> string) ->
   unit ->
@@ -75,7 +76,12 @@ val custom :
 (** A value of the application's own, read and written as text. [kind] names it;
     [expects] ends the sentence a client is told when a text is not one --
     ["This is not ..."] -- and is ["a valid <kind>"] unless given. Described as
-    a string. *)
+    a string.
+
+    [list] says the value is a list field's, as RFC 9110 §5.3 defines one: a
+    header sent on several lines is read as one text, its lines joined by
+    [", "], which [parse] then splits as it would one line. [false] unless told,
+    and a header read by such a codec sent twice is refused. *)
 
 val parse : 'a t -> string -> 'a option
 val print : 'a t -> 'a -> string
@@ -95,10 +101,11 @@ val kind : 'a t -> string option
     [invalid] at its place.
 
     A list -- {!accept}, {!weighted}, {!cache_control}, {!forwarded},
-    {!structured_list}, {!structured_dictionary} -- is read from every line of
-    its header, joined by [", "], as RFC 9110 §5.3 has a recipient combine them.
-    Every other codec reads one value, and a header sent on more than one line
-    is refused for it ({!Header}). *)
+    {!structured_list}, {!structured_dictionary}, and a {!custom} codec given
+    [~list:true] -- is read from every line of its header, joined by [", "], as
+    RFC 9110 §5.3 has a recipient combine them. Every other codec reads one
+    value, and a header sent on more than one line is refused for it
+    ({!Header}). *)
 
 val media_type : Spindle_http.Media_type.t t
 (** A media type, as [Content-Type] holds one. *)

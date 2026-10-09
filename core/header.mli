@@ -6,8 +6,9 @@
 
     A header sent on several lines is one field (RFC 9110 §5.2). A codec of a
     list -- {!Codec.accept}, {!Codec.weighted}, {!Codec.cache_control},
-    {!Codec.forwarded}, {!Codec.structured_list}, {!Codec.structured_dictionary}
-    -- reads every line, joined by [", "], as one value (§5.3). Any other codec
+    {!Codec.forwarded}, {!Codec.structured_list},
+    {!Codec.structured_dictionary}, and a {!Codec.custom} given [~list:true] --
+    reads every line, joined by [", "], as one value (§5.3). Any other codec
     reads a value sent once, and a header sent on more than one line is
     [malformed] at its place: a field that holds one value, sent twice, is an
     invalid message (§5.5), and reading its first line where a proxy read its
