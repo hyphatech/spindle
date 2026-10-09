@@ -130,6 +130,10 @@
   `spindle_postgres`. It was the refusal's detail, which every `5xx` logs
   as an error, so a server under load paged as though broken.
 
+- `spindle_cli`: `api check` checks both files and names each that is
+  stale or missing. It stopped at the first, so a run that named the
+  OpenAPI document left a stale zod module for the next.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

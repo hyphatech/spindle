@@ -85,6 +85,33 @@ let test_check_fails_on_a_stale_file () =
         "naming the file" true
         (contains ~sub:(zod ^ " is not what the routes make") r.err))
 
+let test_check_fails_on_a_stale_document () =
+  with_files (fun ~openapi ~zod ->
+      Out_channel.with_open_bin openapi (fun oc ->
+          Out_channel.output_string oc "{}");
+      let r = run [ "api"; "check"; "--openapi"; openapi; "--zod"; zod ] in
+      check_status "fails" 1 r.status;
+      Alcotest.(check bool)
+        "naming the file" true
+        (contains ~sub:(openapi ^ " is not what the routes make") r.err))
+
+(* Both stale is both reported, so one run says everything to regenerate. *)
+let test_check_reports_both_stale_files () =
+  with_files (fun ~openapi ~zod ->
+      List.iter
+        (fun f ->
+          Out_channel.with_open_bin f (fun oc ->
+              Out_channel.output_string oc "stale"))
+        [ openapi; zod ];
+      let r = run [ "api"; "check"; "--openapi"; openapi; "--zod"; zod ] in
+      check_status "fails" 1 r.status;
+      List.iter
+        (fun f ->
+          Alcotest.(check bool)
+            ("naming " ^ f) true
+            (contains ~sub:(f ^ " is not what the routes make") r.err))
+        [ openapi; zod ])
+
 let test_check_fails_on_a_missing_file () =
   with_files (fun ~openapi ~zod:_ ->
       let r =
@@ -121,6 +148,10 @@ let () =
             test_check_passes_on_what_the_routes_make;
           Alcotest.test_case "check fails on a stale file" `Quick
             test_check_fails_on_a_stale_file;
+          Alcotest.test_case "check fails on a stale document" `Quick
+            test_check_fails_on_a_stale_document;
+          Alcotest.test_case "check reports both stale files" `Quick
+            test_check_reports_both_stale_files;
           Alcotest.test_case "check fails on a missing file" `Quick
             test_check_fails_on_a_missing_file;
           Alcotest.test_case "--strict fails on what is loose" `Quick

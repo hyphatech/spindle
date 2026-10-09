@@ -61,14 +61,23 @@ let check env app ~title ~openapi ~zod ~strict =
       in
       let loose = Spindle.Openapi.report a in
       List.iter (fun l -> prerr_endline ("loose: " ^ l)) loose;
-      let* () = matches_committed `Openapi openapi in
-      let* () = matches_committed `Zod zod in
-      match (strict, loose) with
-      | true, _ :: _ ->
+      (* Each file is checked, so one run names every file to generate. *)
+      let stale =
+        List.filter_map
+          (fun (what, path) ->
+            Result.fold
+              ~ok:(fun () -> None)
+              ~error:Option.some
+              (matches_committed what path))
+          [ (`Openapi, openapi); (`Zod, zod) ]
+      in
+      match (stale, strict, loose) with
+      | _ :: _, _, _ -> Error (String.concat "\n" stale)
+      | [], true, _ :: _ ->
           Error
             (Printf.sprintf "%d places are described loosely"
                (List.length loose))
-      | true, [] | false, _ -> Ok ())
+      | [], true, [] | [], false, _ -> Ok ())
 
 (* ------------------------------------------------------------------ *)
 (* The command line *)

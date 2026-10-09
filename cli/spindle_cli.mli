@@ -33,5 +33,5 @@ val run :
 
     [api openapi] and [api zod] write what {!Spindle.Openapi} makes of the
     routes, and [api check --openapi FILE --zod FILE] fails when either
-    committed file is not that, reporting every place described loosely -- and
-    failing on those too with [--strict]. *)
+    committed file is not that, naming each that is not, reporting every place
+    described loosely -- and failing on those too with [--strict]. *)
