@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `spindle_cli`: every command's `--help` lists exit status 1, what `api
+  check` exits with on a stale file, and no longer lists 123, which no
+  command exits with.
+
 - `spindle_postgres`: `Session` quotes its table's name in every statement
   and in its schema, so a name SQL reserves, such as `user` or `order`, is
   a table like any other. Each statement failed as a syntax error.

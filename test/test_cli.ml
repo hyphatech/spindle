@@ -137,6 +137,29 @@ let test_a_command_line_it_cannot_read_is_124 () =
   check_status "cmdliner's status" 124 r.status;
   Alcotest.(check bool) "with its usage" true (contains ~sub:"Usage" r.err)
 
+(* Every status a command exits with is in its help, and only those. *)
+let test_the_help_names_every_exit_status () =
+  List.iter
+    (fun args ->
+      let r = run (args @ [ "--help=plain" ]) in
+      let says = String.concat " " args in
+      check_status (says ^ " --help") 0 r.status;
+      Alcotest.(check bool)
+        (says ^ ": 1, a file not what the routes make")
+        true
+        (contains ~sub:"1   when it could not do what was asked" r.out);
+      Alcotest.(check bool)
+        (says ^ ": 124, the command line")
+        true
+        (contains ~sub:"124 on command line parsing errors" r.out);
+      Alcotest.(check bool)
+        (says ^ ": never 123, which nothing exits with")
+        false
+        (contains ~sub:"123" r.out))
+    [
+      []; [ "api" ]; [ "api"; "check" ]; [ "api"; "openapi" ]; [ "api"; "zod" ];
+    ]
+
 let () =
   Alcotest.run "cli"
     [
@@ -158,5 +181,7 @@ let () =
             test_strict_fails_on_what_is_loose;
           Alcotest.test_case "a command line it cannot read is 124" `Quick
             test_a_command_line_it_cannot_read_is_124;
+          Alcotest.test_case "the help names every exit status" `Quick
+            test_the_help_names_every_exit_status;
         ] );
     ]

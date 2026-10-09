@@ -92,6 +92,20 @@ let exit_code = function
       prerr_endline m;
       1
 
+(* What [exit_code] and [Cmd.eval'] exit with, and nothing else: cmdliner's
+   own list names 123, which only a term of results exits with. *)
+let exits =
+  [
+    Cmd.Exit.info Cmd.Exit.ok ~doc:"on success.";
+    Cmd.Exit.info 1
+      ~doc:
+        "when it could not do what was asked: a committed file that is not \
+         what the routes make, or an app that could not be made; the reason is \
+         on standard error.";
+    Cmd.Exit.info Cmd.Exit.cli_error ~doc:"on command line parsing errors.";
+    Cmd.Exit.info Cmd.Exit.internal_error ~doc:"on unexpected internal errors.";
+  ]
+
 let run ~name ?(title = name) ~app:make env =
   let output =
     Arg.value
@@ -121,20 +135,21 @@ let run ~name ?(title = name) ~app:make env =
   in
   let api =
     Cmd.group
-      (Cmd.info "api" ~doc:"The HTTP API, described from the routes.")
+      (Cmd.info "api" ~exits ~doc:"The HTTP API, described from the routes.")
       [
         Cmd.v
-          (Cmd.info "openapi" ~doc:"Write the OpenAPI 3.2 document.")
+          (Cmd.info "openapi" ~exits ~doc:"Write the OpenAPI 3.2 document.")
           (write `Openapi);
         Cmd.v
-          (Cmd.info "zod" ~doc:"Write the TypeScript module of zod schemas.")
+          (Cmd.info "zod" ~exits
+             ~doc:"Write the TypeScript module of zod schemas.")
           (write `Zod);
         Cmd.v
-          (Cmd.info "check"
+          (Cmd.info "check" ~exits
              ~doc:
                "Write nothing; fail if either committed file is not what the \
                 routes make, and report every place described loosely.")
           check;
       ]
   in
-  exit (Cmd.eval' (Cmd.group (Cmd.info name) [ api ]))
+  exit (Cmd.eval' (Cmd.group (Cmd.info name ~exits) [ api ]))

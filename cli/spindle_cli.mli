@@ -27,9 +27,10 @@ val run :
   name:string -> ?title:string -> app:app -> Eio_unix.Stdenv.base -> unit
 (** [run ~name ~app env] parses [Sys.argv], runs the command and exits: [0] when
     it did what was asked, [1] when it could not -- a stale file under [check]
-    -- with the reason on stderr, and [124] for a command line it cannot read,
-    with its usage, as cmdliner answers one. [name] is the command's own;
-    [title] is what the API's document is called ([name]).
+    -- with the reason on stderr, [124] for a command line it cannot read, with
+    its usage, and [125] for an exception nothing caught, as cmdliner answers
+    them. Every command's [--help] lists these four, and no other. [name] is the
+    command's own; [title] is what the API's document is called ([name]).
 
     [api openapi] and [api zod] write what {!Spindle.Openapi} makes of the
     routes, and [api check --openapi FILE --zod FILE] fails when either
