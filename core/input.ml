@@ -5,16 +5,29 @@ type source = {
   where : string;  (** as a problem names it: [query], [header], [cookie] *)
   need : Dep.input -> Dep.need;
   read : Request.t -> string -> string list;
+  field : bool;  (** a header's, whose lines are one field (RFC 9110 §5.2) *)
 }
 
 let query =
-  { where = "query"; need = (fun i -> Dep.Query i); read = Request.queries }
+  {
+    where = "query";
+    need = (fun i -> Dep.Query i);
+    read = Request.queries;
+    field = false;
+  }
 
 let header =
   {
     where = "header";
     need = (fun i -> Dep.Header i);
-    read = (fun r n -> Option.to_list (Request.header r n));
+    read =
+      (fun r n ->
+        let n = String.lowercase_ascii n in
+        List.filter_map
+          (fun (k, v) ->
+            if String.equal k n then Some (String.trim v) else None)
+          (Request.headers r));
+    field = true;
   }
 
 let cookie =
@@ -22,6 +35,7 @@ let cookie =
     where = "cookie";
     need = (fun i -> Dep.Cookie i);
     read = (fun r n -> Option.to_list (Request.cookie r n));
+    field = false;
   }
 
 let input_dep ?default source name codec ~required ~many =
@@ -55,24 +69,42 @@ let parse ~at codec v =
 
 let parse_value source name codec v = parse ~at:(input_path source name) codec v
 
+(* The one text an input names: a query's first value, or a header's field.
+   A list's lines are joined by ", " (RFC 9110 §5.3); any other field sent
+   on two lines is an invalid message (§5.5), refused rather than read by
+   its first line where a proxy may have read its last. *)
+let one source name (codec : _ Codec_repr.t) r =
+  match source.read r name with
+  | [] -> Ok None
+  | [ v ] -> Ok (Some v)
+  | v :: _ when not source.field -> Ok (Some v)
+  | lines when codec.list -> Ok (Some (String.concat ", " lines))
+  | _ :: _ ->
+      Error
+        (Dep.problem ~at:(input_path source name) ~code:"malformed"
+           "This is one value, and was sent more than once.")
+
 let optional source name codec =
   input_dep source name codec ~required:false ~many:false (fun r ->
-      match source.read r name with
-      | [] -> Ok None
-      | v :: _ -> Result.map Option.some (parse_value source name codec v))
+      match one source name codec r with
+      | Ok None -> Ok None
+      | Ok (Some v) -> Result.map Option.some (parse_value source name codec v)
+      | Error e -> Error e)
 
 let default source name codec value =
   input_dep ~default:value source name codec ~required:false ~many:false
     (fun r ->
-      match source.read r name with
-      | [] -> Ok value
-      | v :: _ -> parse_value source name codec v)
+      match one source name codec r with
+      | Ok None -> Ok value
+      | Ok (Some v) -> parse_value source name codec v
+      | Error e -> Error e)
 
 let required source name codec =
   input_dep source name codec ~required:true ~many:false (fun r ->
-      match source.read r name with
-      | [] -> Error (missing ~at:(input_path source name))
-      | v :: _ -> parse_value source name codec v)
+      match one source name codec r with
+      | Ok None -> Error (missing ~at:(input_path source name))
+      | Ok (Some v) -> parse_value source name codec v
+      | Error e -> Error e)
 
 (* One value that does not parse is the input's one problem. *)
 let list source name codec =

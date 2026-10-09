@@ -261,6 +261,24 @@ let routes =
       (let+ _ = Spindle.body
        and+ v = Spindle.Header.optional "x-id" Spindle.Codec.string in
        Ok (Spindle.Response.make (Option.value v ~default:"none")));
+    (* A list field and a singleton one, each as its codec reads it. *)
+    Spindle.get
+      Spindle.Path.(s "languages")
+      Spindle.Returns.response
+      (let+ v =
+         Spindle.Header.optional "accept-language" Spindle.Codec.weighted
+       in
+       Ok
+         (Spindle.Response.make
+            (Option.fold v ~none:"none"
+               ~some:(Spindle.Codec.print Spindle.Codec.weighted))));
+    Spindle.get
+      Spindle.Path.(s "count")
+      Spindle.Returns.response
+      (let+ v = Spindle.Header.optional "x-count" Spindle.Codec.int in
+       Ok
+         (Spindle.Response.make
+            (Option.fold v ~none:"none" ~some:string_of_int)));
     Spindle.get
       Spindle.Path.(s "nothing")
       Spindle.Returns.response
@@ -1014,6 +1032,21 @@ let server =
              answer ~headers:[ ("www-authenticate", Is {|Test realm="t"|}) ] 401;
            ],
            Open ));
+    row "9110 §5.3" "a list field's lines are one list, joined by a comma"
+      (request ~line:"GET /languages HTTP/1.1"
+         [
+           "Host: t";
+           "Accept-Language: en";
+           "Accept-Language: fr;q=0.5, de;q=0.2";
+         ])
+      (Answers ([ answer ~body:"en, fr;q=0.5, de;q=0.2" 200 ], Open));
+    row "9110 §5.5" "a singleton field sent twice is refused"
+      (request ~line:"GET /count HTTP/1.1"
+         [ "Host: t"; "X-Count: 1"; "X-Count: 2" ])
+      (Answers ([ answer 400 ], Open));
+    row "9110 §5.5" "a singleton field sent once is read"
+      (request ~line:"GET /count HTTP/1.1" [ "Host: t"; "X-Count: 1" ])
+      (Answers ([ answer ~body:"1" 200 ], Open));
     row "9112 §3.2" "Host names the request's host" (get "/host")
       (Answers ([ answer ~body:"t" 200 ], Open));
     row "9112 §3.2.2" "an absolute-form target names it instead"

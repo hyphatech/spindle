@@ -13,10 +13,10 @@
     reads as a {!type-shape}, so a document generated from the routes can
     describe the input exactly. *)
 
-type 'a t
+type 'a t = 'a Codec_repr.t
 
 (** What a codec reads, for whatever describes it. *)
-type shape =
+type shape = Codec_repr.shape =
   | String
   | Format of Wiretype.Shape.format  (** a string written in this format *)
   | Integer
@@ -92,7 +92,13 @@ val kind : 'a t -> string option
 
     Each read by its parser in {!Spindle_http}, so an application reads a
     structured header as an input like any other, and one that does not parse is
-    [invalid] at its place. *)
+    [invalid] at its place.
+
+    A list -- {!accept}, {!weighted}, {!cache_control}, {!forwarded},
+    {!structured_list}, {!structured_dictionary} -- is read from every line of
+    its header, joined by [", "], as RFC 9110 §5.3 has a recipient combine them.
+    Every other codec reads one value, and a header sent on more than one line
+    is refused for it ({!Header}). *)
 
 val media_type : Spindle_http.Media_type.t t
 (** A media type, as [Content-Type] holds one. *)

@@ -1,18 +1,4 @@
-type shape =
-  | String
-  | Format of Wiretype.Shape.format
-  | Integer
-  | Number
-  | Boolean
-  | Enum of string list
-
-type 'a t = {
-  parse : string -> 'a option;
-  print : 'a -> string;
-  expects : string;
-  shape : shape;
-  kind : string option;
-}
+include Codec_repr
 
 let string =
   {
@@ -21,6 +7,7 @@ let string =
     expects = "some text";
     shape = String;
     kind = None;
+    list = false;
   }
 
 let is_digit c = c >= '0' && c <= '9'
@@ -42,6 +29,7 @@ let int =
     expects = "a whole number";
     shape = Integer;
     kind = None;
+    list = false;
   }
 
 let int64 =
@@ -51,6 +39,7 @@ let int64 =
     expects = "a whole number";
     shape = Integer;
     kind = None;
+    list = false;
   }
 
 (* Digits, an optional fraction and an optional exponent, with an optional
@@ -103,6 +92,7 @@ let float =
     expects = "a number";
     shape = Number;
     kind = None;
+    list = false;
   }
 
 (* Read as wiretype reads the same kind in a body, by handing it the text as
@@ -121,7 +111,7 @@ let of_kind ~expects format kind =
         String.sub json 1 (String.length json - 2)
     | Ok _ | Error _ -> ""
   in
-  { parse; print; expects; shape = Format format; kind = None }
+  { parse; print; expects; shape = Format format; kind = None; list = false }
 
 let uuid = of_kind ~expects:"a UUID" (Uuid None) (Wiretype.uuid ())
 let date = of_kind ~expects:"a date, as 2026-09-30" Date Wiretype.date
@@ -137,6 +127,7 @@ let bool =
     expects = "true or false";
     shape = Boolean;
     kind = None;
+    list = false;
   }
 
 let enum ~kind to_string values =
@@ -148,6 +139,7 @@ let enum ~kind to_string values =
     expects = "one of " ^ String.concat ", " words;
     shape = Enum words;
     kind = Some kind;
+    list = false;
   }
 
 let custom ~kind ?expects ~parse ~print () =
@@ -158,6 +150,7 @@ let custom ~kind ?expects ~parse ~print () =
     expects = Option.value expects ~default:("a valid " ^ kind);
     shape = String;
     kind = Some kind;
+    list = false;
   }
 
 let parse c s = c.parse s
@@ -167,13 +160,14 @@ let shape c = c.shape
 let kind c = c.kind
 
 (* Parsed by spindle_http, never by the application. *)
-let structured ~kind ~expects parse print =
+let structured ~list ~kind ~expects parse print =
   {
     parse = (fun s -> Result.to_option (parse s));
     print;
     expects;
     shape = String;
     kind = Some kind;
+    list;
   }
 
 (* A value no field can hold prints as empty: a codec's printer answers a
@@ -181,12 +175,12 @@ let structured ~kind ~expects parse print =
 let or_empty f v = Result.value (f v) ~default:""
 
 let media_type =
-  structured ~kind:"media type" ~expects:"a media type"
+  structured ~list:false ~kind:"media type" ~expects:"a media type"
     Spindle_http.Media_type.parse
     (or_empty Spindle_http.Media_type.to_string)
 
 let credentials =
-  structured ~kind:"credentials" ~expects:"credentials"
+  structured ~list:false ~kind:"credentials" ~expects:"credentials"
     Spindle_http.Auth.credentials
     (or_empty Spindle_http.Auth.to_string)
 
@@ -204,7 +198,7 @@ let with_weight text w =
   if w >= 1000 then text else text ^ ";q=" ^ qvalue_to_string w
 
 let accept =
-  structured ~kind:"media ranges" ~expects:"an Accept value"
+  structured ~list:true ~kind:"media ranges" ~expects:"an Accept value"
     Spindle_http.Accept.parse_media (fun ranges ->
       String.concat ", "
         (List.map
@@ -220,31 +214,32 @@ let accept =
            ranges))
 
 let weighted =
-  structured ~kind:"weighted tokens" ~expects:"a list of weighted tokens"
-    Spindle_http.Accept.parse_weighted (fun tokens ->
+  structured ~list:true ~kind:"weighted tokens"
+    ~expects:"a list of weighted tokens" Spindle_http.Accept.parse_weighted
+    (fun tokens ->
       String.concat ", " (List.map (fun (t, w) -> with_weight t w) tokens))
 
 let cache_control =
-  structured ~kind:"directives" ~expects:"a Cache-Control value"
+  structured ~list:true ~kind:"directives" ~expects:"a Cache-Control value"
     Spindle_http.Cache_control.parse
     (or_empty Spindle_http.Cache_control.to_string)
 
 let forwarded =
-  structured ~kind:"forwarded elements" ~expects:"a Forwarded value"
+  structured ~list:true ~kind:"forwarded elements" ~expects:"a Forwarded value"
     Spindle_http.Forwarded.parse
     (or_empty Spindle_http.Forwarded.to_string)
 
 let structured_item =
-  structured ~kind:"structured item" ~expects:"a structured item"
+  structured ~list:false ~kind:"structured item" ~expects:"a structured item"
     Spindle_http.Structured.item
     (or_empty Spindle_http.Structured.item_to_string)
 
 let structured_list =
-  structured ~kind:"structured list" ~expects:"a structured list"
+  structured ~list:true ~kind:"structured list" ~expects:"a structured list"
     Spindle_http.Structured.list
     (or_empty Spindle_http.Structured.list_to_string)
 
 let structured_dictionary =
-  structured ~kind:"structured dictionary" ~expects:"a structured dictionary"
-    Spindle_http.Structured.dictionary
+  structured ~list:true ~kind:"structured dictionary"
+    ~expects:"a structured dictionary" Spindle_http.Structured.dictionary
     (or_empty Spindle_http.Structured.dictionary_to_string)

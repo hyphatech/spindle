@@ -760,6 +760,60 @@ let test_a_query_is_read_as_a_form () =
     (body "/search?q=a+b%2C%2B");
   check_string "a name with no value" {|["q="]|} (body "/search?q")
 
+(* RFC 9110 §5.3: a list field sent on several lines is one list, its lines
+   joined by a comma; §5.5: a singleton field sent twice is an invalid
+   message, refused rather than read by its first line or its last. *)
+let test_a_header_sent_on_several_lines () =
+  let route =
+    Spindle.get
+      Spindle.Path.(s "lines")
+      (Spindle.Returns.json Wiretype.(list string))
+      (let+ language =
+         Spindle.Header.optional "accept-language" Spindle.Codec.weighted
+       and+ cache =
+         Spindle.Header.optional "cache-control" Spindle.Codec.cache_control
+       and+ size = Spindle.Header.default "x-size" Spindle.Codec.int 20
+       and+ name = Spindle.Header.optional "x-name" Spindle.Codec.string in
+       Ok
+         [
+           Option.fold language ~none:"-"
+             ~some:(Spindle.Codec.print Spindle.Codec.weighted);
+           Option.fold cache ~none:"-"
+             ~some:(Spindle.Codec.print Spindle.Codec.cache_control);
+           string_of_int size;
+           Option.value name ~default:"-";
+         ])
+  in
+  let app = Spindle.Test.app [ route ] in
+  check_string "list fields, each line read"
+    {|["en, fr;q=0.5","no-cache, max-age=5","20","-"]|}
+    (Spindle.Test.call app `GET "/lines"
+       ~headers:
+         [
+           ("accept-language", "en");
+           ("cache-control", "no-cache");
+           ("Accept-Language", "fr;q=0.5");
+           ("cache-control", "max-age=5");
+         ])
+      .body;
+  let refused what ~at headers =
+    let r = Spindle.Test.call app `GET "/lines" ~headers in
+    check_status what 400 r.status;
+    Alcotest.(check bool)
+      (what ^ ", at its place") true
+      (contains
+         ~sub:(Printf.sprintf {|"at":"%s","code":"malformed"|} at)
+         r.body)
+  in
+  refused "a number sent twice" ~at:"header.x-size"
+    [ ("x-size", "1"); ("X-Size", "1") ];
+  refused "text sent twice" ~at:"header.x-name"
+    [ ("x-name", "a"); ("x-name", "b") ];
+  check_string "a singleton sent once" {|["-","-","3","a"]|}
+    (Spindle.Test.call app `GET "/lines"
+       ~headers:[ ("x-size", "3"); ("x-name", "a") ])
+      .body
+
 (* A default stands in for an input that is absent, and only then: a value
    given is read, and one that does not parse is refused. *)
 let test_a_default_stands_in_for_an_absent_input () =
@@ -7273,6 +7327,8 @@ let () =
             test_a_query_is_read_as_a_form;
           Alcotest.test_case "a default stands in for an absent input" `Quick
             test_a_default_stands_in_for_an_absent_input;
+          Alcotest.test_case "a header sent on several lines" `Quick
+            test_a_header_sent_on_several_lines;
           Alcotest.test_case "a refusal before the body never reads it" `Quick
             test_a_refusal_before_the_body_never_reads_it;
           Alcotest.test_case "a bind after the body reads it" `Quick

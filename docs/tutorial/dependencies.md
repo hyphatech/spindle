@@ -135,6 +135,10 @@ Spindle.Header.optional "x-count" Codec.int      (* name matched without case *)
 - **Structured headers** have codecs that parse them: `media_type`,
   `accept`, `weighted`, `credentials`, `cache_control`, `forwarded`, and
   `structured_item`, `structured_list`, `structured_dictionary`.
+- **A header sent on several lines** is read whole by a codec of a list --
+  `accept`, `weighted`, `cache_control`, `forwarded`, `structured_list`,
+  `structured_dictionary` -- its lines joined by `, `. To any other codec
+  it is malformed, a `400`: a value sent twice is no message HTTP allows.
 
 **A cookie is declared once**, with its name and codec. That one value reads
 it and sets it:

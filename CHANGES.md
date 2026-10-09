@@ -47,6 +47,13 @@
   and a client's alike: a control byte or an unclosed quote in one breaks
   the body. Anything after the size's `;` passed unread.
 
+- Breaking: a header input sent on several lines is read as one field. A
+  list codec (`Codec.accept`, `weighted`, `cache_control`, `forwarded`,
+  `structured_list`, `structured_dictionary`) reads every line, joined by
+  `, `, as RFC 9110 §5.3 has it; any other codec refuses the input as
+  `malformed` at `header.<name>`, since a field that holds one value sent
+  twice is an invalid message. Every codec read the first line alone.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an
