@@ -260,7 +260,7 @@ constructor to a public variant (it breaks exhaustive matches), adding a
 required argument, or changing a default or documented behaviour. Adding a
 function, a module or an optional argument is not breaking, and neither is
 the wording of a refusal's sentence. A refusal's code, a route's place in
-the document and what the OpenAPI and zod printers write for a route are
+the document and what the OpenAPI and Zod printers write for a route are
 behaviour: changing any is breaking.
 
 The version lives only in the git tag (`0.1.0`, no `v`). A release renames

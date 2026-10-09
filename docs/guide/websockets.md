@@ -101,7 +101,7 @@ encoded messages.
   does and runs `f` on the client's end, with no port. A route that refuses
   the upgrade answers `Refused`. Keep-alive never fires in a test.
 - The OpenAPI document lists the route as a `101`, with each side's schema
-  under `x-websocket`; the zod module types it as
+  under `x-websocket`; the Zod module types it as
   `{ websocket: { client, server } }`.
 
 To speak another protocol over a connection, see `Spindle.Response.takeover`

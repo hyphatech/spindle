@@ -40,7 +40,7 @@ type 'r t =
          t
 
 (** What a model describes, its result type forgotten: what the document and the
-    zod module read. *)
+    Zod module read. *)
 type shape =
   | Json : {
       status : Spindle_http.Status.t;

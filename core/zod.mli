@@ -1,4 +1,4 @@
-(** An application's routes as a TypeScript module of {{:https://zod.dev}zod}
+(** An application's routes as a TypeScript module of {{:https://zod.dev}Zod}
     schemas, for a client to parse what the server sends with the same shapes
     the server describes.
 

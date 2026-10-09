@@ -1,7 +1,7 @@
 # Client schemas
 
 Your front end's types come from the same routes as the server: a
-TypeScript module of [zod](https://zod.dev) schemas for every body, answer
+TypeScript module of [Zod](https://zod.dev) schemas for every body, answer
 and error. Change a type in OCaml, generate again, and the front end's
 compiler shows you every place that must change with it.
 
@@ -43,7 +43,7 @@ needs: no database, no service it calls.
 | Command | What it does |
 |---|---|
 | `notes api openapi [-o FILE]` | Writes the OpenAPI 3.2 document, to stdout without `-o` |
-| `notes api zod [-o FILE]` | Writes the zod schemas, to stdout without `-o` |
+| `notes api zod [-o FILE]` | Writes the Zod schemas, to stdout without `-o` |
 | `notes api check --openapi FILE --zod FILE [--strict]` | Exits 1 when either file is not what the routes make now |
 
 Every command has `--help`.
