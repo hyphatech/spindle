@@ -18,7 +18,9 @@
     transaction must agree with, and a store is a record of functions over a
     digest, which has no connection to be handed. [table] is a constant written
     in source, and one that is no lowercase identifier raises
-    [Invalid_argument], since it is written into each statement. *)
+    [Invalid_argument], since it is written into each statement. It is written
+    there quoted, so a word SQL reserves -- [user], [order] -- is a table's name
+    like any other. *)
 
 val schema : table:string -> string
 (** The SQL that makes the table and its index, each commented. *)

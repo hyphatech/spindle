@@ -1,6 +1,11 @@
 module S = Rowtype
 
-(* Written into each statement, so it must be one plain identifier. *)
+(* Written into each statement, so it must be one plain identifier, and is
+   written quoted, since one may be a word SQL reserves: [user], [order]. It
+   holds no quote to double, and is lowercase, so quoted it names the table
+   it names unquoted. *)
+let quoted name = "\"" ^ name ^ "\""
+
 let checked_table_name table =
   let ok =
     String.length table > 0
@@ -16,7 +21,8 @@ let checked_table_name table =
       (Printf.sprintf "Spindle_postgres.Session: %S is not a table's name" table)
 
 let schema ~table =
-  let t = checked_table_name table in
+  let table = checked_table_name table in
+  let t = quoted table and index = quoted (table ^ "_expires_at") in
   Printf.sprintf
     {|create table %s (
   digest text primary key,
@@ -26,14 +32,14 @@ let schema ~table =
   expires_at timestamptz not null
 );
 
-create index %s_expires_at on %s (expires_at);
+create index %s on %s (expires_at);
 
 comment on table %s is 'Sessions: a visit''s data, by the digest of the id its cookie holds.';
 comment on column %s.digest is 'The SHA-256 of the session''s id, never the id itself.';
 comment on column %s.seen_at is 'When the session was last used, moved on at most once a tenth of its idle limit.';
 comment on column %s.expires_at is 'When the first of its idle and absolute limits ends it.';
 |}
-    t t t t t t t
+    t index t t t t t
 
 type statements = {
   find : (string, (string * int * int * int) option) S.statement;
@@ -43,7 +49,7 @@ type statements = {
 }
 
 let statements_for ~table =
-  let t = checked_table_name table in
+  let t = quoted (checked_table_name table) in
   {
     find =
       S.find_opt ~params:S.text

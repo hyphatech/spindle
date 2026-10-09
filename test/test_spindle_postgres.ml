@@ -728,6 +728,39 @@ let test_sessions_are_kept_in_a_table () =
             | _ -> false
             | exception Invalid_argument _ -> true)))
 
+(* A lowercase identifier is a table's name even where SQL reserves it as
+   a word: [user] and [order] are tables an application names. *)
+let test_a_reserved_word_is_a_table's_name () =
+  Db_target.with_postgres (fun target ->
+      let db = Db_target.connect target in
+      Fun.protect
+        ~finally:(fun () -> Pg.close db)
+        (fun () ->
+          ok (Pg.exec_raw db (Spindle_postgres.Session.schema ~table:"user"));
+          (match
+             Pg.verify db (Spindle_postgres.Session.statements ~table:"user")
+           with
+          | Ok () -> ()
+          | Error (`Disagreements ms) -> Alcotest.fail (String.concat "; " ms)
+          | Error (#S.error as e) -> Alcotest.fail (S.error_to_string e));
+          let store =
+            Spindle_postgres.Session.store (pool target) ~table:"user"
+          in
+          let got = function Ok v -> v | Error m -> Alcotest.fail m in
+          got
+            (store.save "d1"
+               {
+                 Spindle.Session.data = {|"kim"|};
+                 created_ms = 1_000;
+                 seen_ms = 2_000;
+                 expires_ms = 10_000;
+               });
+          Alcotest.(check (option string))
+            "kept in it" (Some {|"kim"|})
+            (Option.map
+               (fun (e : Spindle.Session.entry) -> e.data)
+               (got (store.find "d1")))))
+
 let () =
   Db_target.required ~suite:"spindle_postgres";
   Eio_main.run @@ fun env ->
@@ -784,6 +817,8 @@ let () =
         [
           Alcotest.test_case "sessions are kept in a table" `Quick
             test_sessions_are_kept_in_a_table;
+          Alcotest.test_case "a reserved word is a table's name" `Quick
+            test_a_reserved_word_is_a_table's_name;
         ] );
       ( "errors",
         [

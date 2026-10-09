@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `spindle_postgres`: `Session` quotes its table's name in every statement
+  and in its schema, so a name SQL reserves, such as `user` or `order`, is
+  a table like any other. Each statement failed as a syntax error.
+
 - Breaking: `Rate.limit` counts a key that is an IPv6 address by its /64,
   and one mapped from IPv4 as that IPv4 address. Each address was its own
   key, so a client changing its address within its /64 grew the table and
