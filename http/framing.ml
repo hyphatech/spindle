@@ -13,7 +13,7 @@ let content_length values =
   | [] -> Error "an empty Content-Length"
   | first :: rest ->
       if not (is_digits first && String.length first <= 18) then
-        Error (Printf.sprintf "Content-Length %S" first)
+        Error "a Content-Length that is not a length"
       else if not (List.for_all (String.equal first) rest) then
         Error "Content-Length given twice, differently"
       else Ok (int_of_string first)
@@ -175,7 +175,7 @@ let chunk_size line =
     && String.length size <= 15
     && String.for_all is_hex size
   then int_of_string ("0x" ^ size)
-  else raise (Broken (Printf.sprintf "a chunk size %S" size))
+  else raise (Broken "a chunk size that is not one")
 
 (* Held to the head's field grammar: a line that is not a field is where a
    reader that skips it and one that does not part ways. *)

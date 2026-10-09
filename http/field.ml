@@ -24,16 +24,15 @@ let parse line =
     | Some i ->
         let name = String.sub line 0 i in
         let value = String.sub line (i + 1) (String.length line - i - 1) in
-        if not (is_token name) then
-          Error (Printf.sprintf "a field name %S" name)
+        if not (is_token name) then Error "a field name that is not a token"
         else if not (String.for_all is_value_char value) then
-          Error (Printf.sprintf "a control character in %s" name)
+          Error "a control character in a field value"
         else Ok (name, trim_ows value)
 
 let unfold (name, value) line =
   let more = trim_ows line in
   if not (String.for_all is_value_char more) then
-    Error (Printf.sprintf "a control character in %s" name)
+    Error "a control character in a field value"
   else if String.equal value "" then Ok (name, more)
   else if String.equal more "" then Ok (name, value)
   else Ok (name, value ^ " " ^ more)

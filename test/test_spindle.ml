@@ -4744,6 +4744,76 @@ let test_no_header_value_reaches_the_log () =
         (List.exists (contains ~sub:secret) !lines))
     [ "s3cret-token"; "s3cret-cookie"; "s3cret-query" ]
 
+(* A request refused for its framing or its fields is logged by what is
+   wrong, never by the bytes that were: a token sent where a length, a chunk
+   size, a field name, a method or a version belongs reaches no line. *)
+let test_no_refused_byte_reaches_the_log () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let lines = ref [] in
+  Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Debug)
+    ~out:(fun l -> lines := l :: !lines)
+    ();
+  let read =
+    Spindle.post
+      Spindle.Path.(s "read")
+      Spindle.Returns.text
+      (let+ body = Spindle.body in
+       Ok body)
+  in
+  let connect = serve_in_memory ~sw env (Spindle.Test.app [ read ]) in
+  let refused (secret, request) =
+    lines := [];
+    let answer =
+      Eio.Switch.run (fun inner ->
+          let flow = connect ~sw:inner in
+          Eio.Flow.copy_string request flow;
+          Eio.Buf_read.(parse_exn take_all) flow ~max_size:65536)
+    in
+    Alcotest.(check bool)
+      (secret ^ " is refused") true
+      (String.starts_with ~prefix:"HTTP/1.1 4" answer
+      || String.starts_with ~prefix:"HTTP/1.1 5" answer);
+    Alcotest.(check bool) (secret ^ " is logged") true (!lines <> []);
+    List.exists (contains ~sub:secret) !lines
+  in
+  Alcotest.(check (list string))
+    "in no line" []
+    (List.filter_map
+       (fun ((secret, _) as sent) -> if refused sent then Some secret else None)
+       [
+         ( "s3cret-length",
+           "POST /read HTTP/1.1\r\n\
+            Host: t\r\n\
+            Content-Length: s3cret-length\r\n\
+            \r\n" );
+         ( "s3cret-chunk",
+           "POST /read HTTP/1.1\r\n\
+            Host: t\r\n\
+            Transfer-Encoding: chunked\r\n\
+            \r\n\
+            s3cret-chunk\r\n\
+            hello\r\n\
+            0\r\n\
+            \r\n" );
+         ( "s3cret-trailer",
+           "POST /read HTTP/1.1\r\n\
+            Host: t\r\n\
+            Transfer-Encoding: chunked\r\n\
+            \r\n\
+            5\r\n\
+            hello\r\n\
+            0\r\n\
+            s3cret-trailer(): x\r\n\
+            \r\n" );
+         ( "s3cret-name",
+           "GET /read HTTP/1.1\r\nHost: t\r\ns3cret-name(): x\r\n\r\n" );
+         ( "s3cret-valued",
+           "GET /read HTTP/1.1\r\nHost: t\r\ns3cret-valued: a\001b\r\n\r\n" );
+         ("s3cret-method", "s3cret-method() /read HTTP/1.1\r\nHost: t\r\n\r\n");
+         ("s3cret-version", "GET /read s3cret-version\r\nHost: t\r\n\r\n");
+       ])
+
 (* A request id is made from a random state per domain, seeded per domain:
    two hundred requests over four domains, each on a connection of its own
    so any domain may take it, are two hundred ids. *)
@@ -7481,6 +7551,8 @@ let () =
             test_a_whole_batch_is_sent_without_waiting_for_the_tick;
           Alcotest.test_case "no header value reaches the log" `Quick
             test_no_header_value_reaches_the_log;
+          Alcotest.test_case "no refused byte reaches the log" `Quick
+            test_no_refused_byte_reaches_the_log;
           Alcotest.test_case "request ids are distinct across domains" `Quick
             test_request_ids_are_distinct_across_domains;
         ] );

@@ -90,7 +90,7 @@ let version_of_string v =
     | '1', '0' -> Http_1_0
     | '1', _ -> Http_1_1
     | _ -> raise (Refuse (`Http_version_not_supported, "version " ^ v))
-  else refuse_bad_request (Printf.sprintf "a version %S" v)
+  else refuse_bad_request "a version not written as HTTP/<digit>.<digit>"
 
 (* RFC 9112 §9.3 asks about [close] first. An HTTP/1.0 message with
    Transfer-Encoding cannot be trusted to end where it seems to, so its
@@ -294,7 +294,7 @@ module Request = struct
     match String.split_on_char ' ' line with
     | [ m; target; v ] ->
         if not (Field.is_token m) then
-          refuse_bad_request (Printf.sprintf "a method %S" m)
+          refuse_bad_request "a method that is not a token"
         else if String.equal target "" || not (String.for_all is_visible target)
         then refuse_bad_request "a target that is not visible ASCII"
         else

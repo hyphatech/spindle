@@ -54,6 +54,12 @@
   `malformed` at `header.<name>`, since a field that holds one value sent
   twice is an invalid message. Every codec read the first line alone.
 
+- A request refused for its framing or its fields is logged by what is
+  wrong, without the bytes: a Content-Length, a chunk size, a field name, a
+  method or a version that is not one is no longer quoted in the head's
+  refusal line or the body's `unreadable` warning, where a token sent in
+  its place was written out.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an
