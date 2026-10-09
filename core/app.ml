@@ -552,7 +552,10 @@ let origin_host origin =
 (* A browser says where a request came from, by [Sec-Fetch-Site] or, if it
    is older, [Origin]. A request with neither is not a browser's, and
    forgery is a browser's attack. An opaque origin, [null], is a sandboxed
-   frame or a redirect's, any site's, so no list can trust it. *)
+   frame or a redirect's, any site's, so no list can trust it.
+   [Sec-Fetch-Site] is a Structured Field item, a token, read whole as RFC
+   9651 §4.2 has it: anything but the token [same-origin] or [none] is
+   another site. *)
 let is_cross_site t req =
   let origin = Request.header req "origin" in
   let trusted () =
@@ -560,12 +563,12 @@ let is_cross_site t req =
     | Some "null" | None -> false
     | Some o -> List.exists (String.equal o) t.trusted_origins
   in
-  match
-    Option.map String.lowercase_ascii (Request.header req "sec-fetch-site")
-  with
-  | Some ("same-origin" | "none") -> false
-  | Some _ -> not (trusted ())
-  | None -> (
+  match Spindle_http.Field.all (Request.headers req) "sec-fetch-site" with
+  | _ :: _ as lines -> (
+      match Spindle_http.Structured.item (String.concat ", " lines) with
+      | Ok (Spindle_http.Structured.Token ("same-origin" | "none"), _) -> false
+      | Ok _ | Error _ -> not (trusted ()))
+  | [] -> (
       match origin with
       | None -> false
       | Some o -> (

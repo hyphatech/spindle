@@ -1391,7 +1391,23 @@ let test_a_request_from_another_site_is_refused () =
   check_status "no browser at all" 200 (act [ here ]);
   check_status "a GET from anywhere" 200
     (act ~meth:`GET ~path:"/hello/kim"
-       [ here; ("sec-fetch-site", "cross-site") ])
+       [ here; ("sec-fetch-site", "cross-site") ]);
+  (* Sec-Fetch-Site is a Structured Field item, a token (Fetch Metadata
+     §2.4): RFC 9651 §4.2 reads it whole, its lines joined, and §3.3.4's
+     token is its spelling. *)
+  check_status "RFC 9651 §3.3.4: a token with parameters is that token" 200
+    (act [ here; ("sec-fetch-site", "same-origin;x=1") ]);
+  check_status "RFC 9651 §3.3.4: a token in another case is another" 403
+    (act [ here; ("sec-fetch-site", "Same-Origin") ]);
+  check_status "RFC 9651 §3.3.3: a string is no token" 403
+    (act [ here; ("sec-fetch-site", {|"same-origin"|}) ]);
+  check_status "RFC 9651 §4.2: two lines are no item" 403
+    (act
+       [
+         here;
+         ("sec-fetch-site", "same-origin");
+         ("sec-fetch-site", "same-origin");
+       ])
 
 let test_a_trusted_origin_and_a_trusted_proxy_pass () =
   let trusting =

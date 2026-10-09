@@ -134,6 +134,11 @@
   stale or missing. It stopped at the first, so a run that named the
   OpenAPI document left a stale zod module for the next.
 
+- Breaking: the origin check reads `Sec-Fetch-Site` as the Structured
+  Field item it is, a token: `same-origin;x=1` is `same-origin`, and
+  `Same-Origin`, a quoted `"same-origin"` or the field sent on two lines
+  is another site. It was compared as text without case.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

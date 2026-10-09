@@ -60,15 +60,15 @@ val make :
     {b Forgery.} Every request by a method that changes something -- anything
     but [GET], [HEAD] and [OPTIONS] -- that a browser sent from another site is
     {!Refusal.cross_origin}, before any route or the not-found answer sees it. A
-    browser says where a request came from: [Sec-Fetch-Site] passes it when
-    [same-origin] or [none], and otherwise only when its [Origin] is one of
-    [trusted_origins] (each written as the browser writes it,
-    [https://example.com]); a browser too old to send that is judged by
-    [Origin], which passes when trusted or when it names the host the request
-    was sent to ({!Request.host}). [Origin: null] never passes. A request with
-    neither header is not from a browser -- curl, an app, another server -- and
-    passes, since forgery is an attack a browser is made to carry out.
-    [check_origin:false] turns this off, for an application that has other
+    browser says where a request came from: [Sec-Fetch-Site], read as the
+    Structured Field token it is, passes it when [same-origin] or [none], and
+    otherwise only when its [Origin] is one of [trusted_origins] (each written
+    as the browser writes it, [https://example.com]); a browser too old to send
+    that is judged by [Origin], which passes when trusted or when it names the
+    host the request was sent to ({!Request.host}). [Origin: null] never passes.
+    A request with neither header is not from a browser -- curl, an app, another
+    server -- and passes, since forgery is an attack a browser is made to carry
+    out. [check_origin:false] turns this off, for an application that has other
     protection; [SameSite] cookies are a second layer, not a replacement. A form
     a browser posts is read under this check and nothing else, so an application
     that turns it off has turned off what protects its forms. *)
