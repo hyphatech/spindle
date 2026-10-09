@@ -17,7 +17,12 @@ module L = (val Logs.src_log Source.src : Logs.LOG)
 let use ?wait_s t work =
   match Pg.Pool.use ?wait_s t work with
   | Ok answer -> answer
-  | Error `Busy -> Error `Busy
+  | Error e -> (
+      (* Coerced, so it builds against a rowtype whose pool answers only
+         [`Busy] and one that also answers [`Pool_closed]. *)
+      match (e :> [ `Busy | `Pool_closed ]) with
+      | `Busy -> Error `Busy
+      | `Pool_closed -> Error `Pool_closed)
 
 let query ?wait_s t statement args =
   use ?wait_s t (fun db -> Pg.run db statement args)
@@ -55,6 +60,7 @@ let check ?(name = "postgres") t =
         match use t (fun db -> Pg.exec_raw db "select 1") with
         | Ok () -> Ok ()
         | Error `Busy -> Ok ()
+        | Error `Pool_closed -> Error "the pool is closed"
         | Error (#Rowtype.error as e) -> Error (Rowtype.error_to_string e))
 
 let transaction ?wait_s ?keep ?isolation ?retries t work =

@@ -1,7 +1,8 @@
 module Pool = Pool
 module Session = Session
 
-type error = [ Rowtype.error | Rowtype_postgres.Transaction.failure | `Busy ]
+type error =
+  [ Rowtype.error | Rowtype_postgres.Transaction.failure | `Busy | `Pool_closed ]
 
 (* [`Not_committed] and [`Busy] are worded as rowtype's own printers word
    them, sentence for sentence, so one failure reads the same whichever
@@ -9,6 +10,7 @@ type error = [ Rowtype.error | Rowtype_postgres.Transaction.failure | `Busy ]
    failure and no transaction's. *)
 let error_to_string : [< error ] -> string = function
   | `Busy -> "no connection came free within the pool's wait"
+  | `Pool_closed -> "the pool is closed"
   | `Not_committed m -> "the transaction was not committed: " ^ m
   | #Rowtype.error as e -> Rowtype.error_to_string e
 
@@ -24,9 +26,12 @@ let refusal : [< error ] -> Spindle.Refusal.t = function
   | `Busy ->
       L.warn (fun m -> m "busy: no database connection free within the wait");
       Spindle.Refusal.busy ()
+  | `Pool_closed ->
+      L.warn (fun m -> m "the database pool is closed");
+      Spindle.Refusal.busy ()
   | `Not_committed detail -> Spindle.Refusal.internal ~detail
   | `Not_serializable detail -> Spindle.Refusal.busy ~detail ()
-  | (`Conflict _ | `Db _ | `Closed | `Lost _) as e ->
+  | #Rowtype.error as e ->
       Spindle.Refusal.internal ~detail:(Rowtype.error_to_string e)
 
 let connect ~sw ~net ~mono_clock:clock ?statement_timeout_ms

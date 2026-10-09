@@ -81,6 +81,7 @@ let statements ~table =
 
 let error_to_string = function
   | `Busy -> "no connection within the wait"
+  | `Pool_closed -> "the pool is closed"
   | #S.error as e -> S.error_to_string e
 
 let store pool ~table =
