@@ -134,6 +134,6 @@ val run :
 
     Every option is {!create}'s. A pool that cannot be opened -- a database that
     refuses, a connection string that does not parse -- is an [error] line on
-    [spindle.postgres] saying why, and the program exits with status 1, because
+    [spindle_postgres] saying why, and the program exits with status 1, because
     a server that cannot reach its database has nothing to serve. A program that
     would rather go on without one calls {!create}. *)

@@ -1,6 +1,6 @@
 # Install
 
-You need **opam**, OCaml's package manager, and **OCaml 5.4 or later**.
+You need **opam**, OCaml's package manager, and **OCaml 5.5 or later**.
 Spindle brings **dune**, the build tool, with it.
 
 ## 1. Install opam
@@ -47,7 +47,7 @@ terminal does by itself:
 
 ??? note "Already had opam?"
 
-    Check `ocaml -version`. If it is older than 5.4, make a switch -- an
+    Check `ocaml -version`. If it is older than 5.5, make a switch -- an
     environment of its own -- with the latest OCaml:
 
     ```sh
@@ -87,7 +87,7 @@ dune --version
 3.18.0
 ```
 
-OCaml 5.4 or later and dune 3.18 or later means you are ready.
+OCaml 5.5 or later and dune 3.18 or later means you are ready.
 
 ## Your editor
 

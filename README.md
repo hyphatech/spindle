@@ -10,7 +10,7 @@ The Eio-native web framework for modern OCaml.
 [![ci](https://img.shields.io/github/actions/workflow/status/hyphatech/spindle/ci.yml?branch=main&label=ci)](https://github.com/hyphatech/spindle/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/hyphatech/spindle?label=release)](https://github.com/hyphatech/spindle/releases)
 [![license](https://img.shields.io/github/license/hyphatech/spindle)](LICENSE)
-![OCaml 5.4+](https://img.shields.io/badge/OCaml-5.4%2B-EC6813?logo=ocaml&logoColor=white)
+![OCaml 5.5+](https://img.shields.io/badge/OCaml-5.5%2B-EC6813?logo=ocaml&logoColor=white)
 
 **Documentation**: [hyphatech.github.io/spindle](https://hyphatech.github.io/spindle/)
 

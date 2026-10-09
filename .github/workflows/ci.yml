@@ -1,4 +1,4 @@
-# Checks are defined in the Makefile. 5.4 is the supported minimum.
+# Checks are defined in the Makefile. 5.5 is the supported minimum.
 name: ci
 
 on:
@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ocaml: ["5.4", "5.5"]
+        ocaml: ["5.5"]
     services:
       postgres:
         image: postgres:18-alpine
@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ocaml/setup-ocaml@v3
         with:
-          ocaml-compiler: "5.4"
+          ocaml-compiler: "5.5"
       - run: opam install . --deps-only --with-test -y
       - run: opam list --installed --columns=name,version
       - run: opam exec -- dune build -p spindle,spindle_postgres,spindle_cli @install

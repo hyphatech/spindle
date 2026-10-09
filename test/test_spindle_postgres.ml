@@ -283,6 +283,16 @@ let test_a_busy_pool_is_ready () =
       Alcotest.(check int) "while every connection is lent" 200 !held;
       Spindle_postgres.Pool.close pool)
 
+(* A user filters a library's log by the name they installed. *)
+let test_the_log_source_is_the_librarys_name () =
+  let names = List.map Logs.Src.name (Logs.Src.list ()) in
+  Alcotest.(check bool)
+    "spindle_postgres is a source" true
+    (List.exists (String.equal "spindle_postgres") names);
+  Alcotest.(check bool)
+    "spindle.postgres is not" false
+    (List.exists (String.equal "spindle.postgres") names)
+
 (* A statement run in a kept trace is a span of it, with its text and
    never its parameters. *)
 let test_a_statement_is_a_span () =
@@ -723,5 +733,10 @@ let () =
         [
           Alcotest.test_case "sessions are kept in a table" `Quick
             test_sessions_are_kept_in_a_table;
+        ] );
+      ( "logs",
+        [
+          Alcotest.test_case "the log source is the library's name" `Quick
+            test_the_log_source_is_the_librarys_name;
         ] );
     ]

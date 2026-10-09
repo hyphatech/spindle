@@ -1,2 +1,2 @@
 let src =
-  Logs.Src.create "spindle.postgres" ~doc:"The database, and how long it took"
+  Logs.Src.create "spindle_postgres" ~doc:"The database, and how long it took"

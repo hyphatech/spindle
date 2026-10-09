@@ -33,7 +33,7 @@
   "Routes as values, dependencies that list what a route reads, failures as values, streams and WebSockets, the API described as OpenAPI and zod, and HTTP/1.1 read and written by itself. spindle.client calls other servers and links no framework.")
  (depends
   (ocaml
-   (>= 5.4))
+   (>= 5.5))
   (wiretype
    (>= 0.2.0))
   ; The deriver every application describes its JSON with, installed with
@@ -129,7 +129,7 @@
  (synopsis "Postgres for a Spindle server: bounded connections, a pool and its probe, and a failure's refusal")
  (depends
   (ocaml
-   (>= 5.4))
+   (>= 5.5))
   (spindle
    (= :version))
   (rowtype
@@ -192,7 +192,7 @@
  (synopsis "An application's command line: its API, described from the routes")
  (depends
   (ocaml
-   (>= 5.4))
+   (>= 5.5))
   (spindle
    (= :version))
   (cmdliner

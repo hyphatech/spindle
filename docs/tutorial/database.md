@@ -38,7 +38,7 @@ curl localhost:8080/
 that is not there stops the server with exit code 1, saying why:
 
 ```
-{"level":"error","logger.name":"spindle.postgres","message":"the pool could not be opened: Eio.Io Net Connection_failure Refused Unix_error (Connection refused, \"connect\", \"\")"}
+{"level":"error","logger.name":"spindle_postgres","message":"the pool could not be opened: Eio.Io Net Connection_failure Refused Unix_error (Connection refused, \"connect\", \"\")"}
 ```
 
 ??? example "The whole app"

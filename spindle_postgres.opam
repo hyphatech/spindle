@@ -9,7 +9,7 @@ homepage: "https://github.com/hyphatech/spindle"
 bug-reports: "https://github.com/hyphatech/spindle/issues"
 depends: [
   "dune" {>= "3.18"}
-  "ocaml" {>= "5.4"}
+  "ocaml" {>= "5.5"}
   "spindle" {= version}
   "rowtype" {>= "0.2.0"}
   "rowtype-postgres" {>= "0.2.0"}

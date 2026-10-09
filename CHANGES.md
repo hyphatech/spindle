@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Breaking: OCaml 5.5 or later is required. The opam files asked for 5.4,
+  which CI tested and nothing else did; every switch the code is written
+  in is 5.5.
+- Breaking: `spindle_postgres` logs on the source `spindle_postgres`, its
+  library's name, where it was `spindle.postgres`, which read as a part of
+  `spindle`. A level set for the old name no longer reaches it.
 - `spindle_postgres` names postgres-eio among its dependencies, which it
   pins, so installing it from source no longer warns.
 - `spindle.client`: a `Body.read` after one that failed answers that

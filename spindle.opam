@@ -10,7 +10,7 @@ homepage: "https://github.com/hyphatech/spindle"
 bug-reports: "https://github.com/hyphatech/spindle/issues"
 depends: [
   "dune" {>= "3.18"}
-  "ocaml" {>= "5.4"}
+  "ocaml" {>= "5.5"}
   "wiretype" {>= "0.2.0"}
   "ppx_wiretype" {>= "0.2.0"}
   "eio" {>= "1.6"}
