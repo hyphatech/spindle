@@ -49,8 +49,3 @@ val of_app : App.t -> t
 val of_shape : Codec.shape -> Wiretype.Schema.t
 (** A route input's codec: a path parameter, a query parameter, a header, a
     cookie. *)
-
-val framework_codes : Route.info -> Refusal.Code.t list
-(** The framework's own codes a route may answer, from what it reads: [invalid]
-    where it reads typed inputs, the body's where it reads one, [cross_origin]
-    for a method that changes something, and [busy] and [internal] anywhere. *)

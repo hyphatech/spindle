@@ -176,11 +176,14 @@ The client gets `{"error": "conflict", "message": "Somebody moved first."}`.
 The `~detail` goes to the log only.
 
 - **List your codes** in the route's `~refuses`. Codes its inputs bring (a
-  JSON body's `unsupported_media_type`, say) are added for you, and the
-  framework's own -- `not_found`, `invalid`, `too_large`, `internal` and the
-  rest of `Refusal.Code.framework` -- need no listing. A code nobody
-  declared is still answered, but logged as a bug, and `Spindle.Test.call`
-  raises on it.
+  JSON body's `unsupported_media_type`, say) are added for you, and so are
+  the framework's own the route's document lists from what it reads:
+  `invalid` where it reads an input, `unreadable` and `too_large` where it
+  reads a body, `cross_origin` for a method that changes something, and
+  `busy` and `internal` everywhere. Any other -- `Refusal.not_found` from a
+  handler, say -- goes in `~refuses` like your own. A code nobody declared
+  is still answered, but logged as a bug, and `Spindle.Test.call` raises on
+  it.
 - **A name means one thing.** Two codes with the same name but a different
   status or doc are refused when the app is made.
 - **A `401` code needs `~challenge`**, the `WWW-Authenticate` value, e.g.

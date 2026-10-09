@@ -232,7 +232,7 @@ let answer_file root o req segments =
 
 let files_route ?(at = Path.root) o root =
   let file = Path.rest "file" in
-  Route_repr.get ~summary:"A file from disk"
+  Route_repr.get ~summary:"A file from disk" ~refuses:[ Refusal.Code.not_found ]
     Path.(at / file)
     Returns.response
     (Dep.map

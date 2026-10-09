@@ -250,7 +250,7 @@ let responses (r : D.route) =
               ] );
         ]
   in
-  let codes = r.info.codes @ D.framework_codes r.info in
+  let codes = r.info.codes @ Route_repr.framework_codes r.info in
   let statuses =
     List.sort_uniq Int.compare
       (List.map (fun c -> Spindle_http.Status.to_int (Code.status c)) codes)
@@ -322,6 +322,7 @@ let request_body (r : D.route) =
                     ( "application/json",
                       Obj ([ ("schema", schema s) ] @ examples xs) );
                   ] );
+              ("required", Bool true);
             ] );
       ]
   | Some (D.Form_body { fields; files }) ->
@@ -419,6 +420,7 @@ let request_body (r : D.route) =
                     ( "application/octet-stream",
                       Obj [ ("schema", Obj [ ("type", String "string") ]) ] );
                   ] );
+              ("required", Bool true);
             ] );
       ]
   | None -> []

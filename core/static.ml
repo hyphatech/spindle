@@ -189,6 +189,7 @@ let serve_segments t segments req =
 let site_route ?(at = Path.root) site =
   let file = Path.rest "file" in
   Route_repr.get ~summary:"A file of the site"
+    ~refuses:[ Refusal.Code.not_found ]
     Path.(at / file)
     Returns.response
     (Dep.map

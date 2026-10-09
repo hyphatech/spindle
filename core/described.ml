@@ -178,39 +178,6 @@ let body_of ctx (i : Route.info) =
           None)
     i.needs
 
-let reads_inputs (i : Route.info) =
-  (match i.params with [] -> false | _ :: _ -> true)
-  || List.exists
-       (function
-         | Dep.Query _ | Dep.Header _ | Dep.Cookie _ | Dep.Field _ | Dep.File _
-         | Dep.Body _ ->
-             true
-         | Dep.Path _ | Dep.Custom _ -> false)
-       i.needs
-
-let framework_codes (i : Route.info) =
-  let reads_body =
-    List.exists (function Dep.Body _ -> true | _ -> false) i.needs
-  in
-  let is_unsafe =
-    match i.meth with `GET | `HEAD | `OPTIONS -> false | _ -> true
-  in
-  let is_websocket =
-    match i.returns with
-    | Returns.Websocket _ -> true
-    | Returns.Json _ | Json_response _ | Html | Text | Empty _
-    | Empty_response _ | Response | Events _ ->
-        false
-  in
-  List.concat
-    [
-      (if reads_inputs i || is_websocket then [ Code.invalid ] else []);
-      (if is_websocket then [ Code.upgrade_required ] else []);
-      (if reads_body then [ Code.unreadable; Code.too_large ] else []);
-      (if is_unsafe || is_websocket then [ Code.cross_origin ] else []);
-      [ Code.busy; Code.internal ];
-    ]
-
 let dedupe_codes codes =
   List.fold_left
     (fun acc c -> if List.exists (Code.equal c) acc then acc else acc @ [ c ])
@@ -272,7 +239,7 @@ let of_app app =
     codes =
       dedupe_codes
         (List.concat_map
-           (fun (i : Route.info) -> i.codes @ framework_codes i)
+           (fun (i : Route.info) -> i.codes @ Route_repr.framework_codes i)
            infos);
     loose = List.sort_uniq String.compare (opaque @ S.loose ctx);
     errors =

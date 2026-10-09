@@ -171,9 +171,8 @@ val needs : 'a t -> need list
     it is first read. *)
 
 val codes : 'a t -> Refusal.Code.t list
-(** The codes it says it may refuse with. The framework's own
-    ({!Refusal.Code.framework}) need not be among them: every route may give
-    those. *)
+(** The codes it says it may refuse with. The framework's own a route's document
+    lists from what it reads need not be among them ({!Refusal.Code}). *)
 
 val opaque : 'a t -> bool
 (** Whether it may read more than {!needs} says. *)

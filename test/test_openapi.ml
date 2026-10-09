@@ -269,6 +269,83 @@ let test_what_is_loose_is_reported () =
     "and a document that says everything reports nothing" []
     (Spindle.Openapi.report described)
 
+(* OpenAPI 3.2 §4.8.12.1: an operation's parameters are unique by name and
+   location, a header's name compared without case. Two reads of one input
+   are one parameter, required where either is; two that read it as
+   different things are refused, since no document could say both. *)
+let test_two_reads_of_one_input_are_one_parameter () =
+  let pages =
+    Spindle.get
+      Spindle.Path.(s "pages")
+      Spindle.Returns.text
+      (let+ _ = Spindle.Query.optional "page" Spindle.Codec.int
+       and+ _ = Spindle.Query.required "page" Spindle.Codec.int
+       and+ _ = Spindle.Header.optional "X-Trace" Spindle.Codec.string
+       and+ _ = Spindle.Header.optional "x-trace" Spindle.Codec.string in
+       Ok "")
+  in
+  let params =
+    Yojson.Safe.Util.to_list
+      (member
+         [ "paths"; "/pages"; "get"; "parameters" ]
+         (json_of_doc (Spindle.Test.app [ pages ])))
+  in
+  Alcotest.(check (list string))
+    "each input once"
+    [ "page:query:true"; "X-Trace:header:false" ]
+    (List.map
+       (fun p ->
+         str [ "name" ] p ^ ":" ^ str [ "in" ] p ^ ":"
+         ^ Yojson.Safe.to_string (member [ "required" ] p))
+       params);
+  let refused what ~says route =
+    match Spindle.App.make [ route ] with
+    | Ok _ -> Alcotest.failf "%s: the app was made" what
+    | Error m ->
+        Alcotest.(check bool) (what ^ ": " ^ m) true (contains ~sub:says m)
+  in
+  refused "a query read as two things" ~says:"page"
+    (Spindle.get
+       Spindle.Path.(s "q")
+       Spindle.Returns.text
+       (let+ _ = Spindle.Query.optional "page" Spindle.Codec.int
+        and+ _ = Spindle.Query.optional "page" Spindle.Codec.string in
+        Ok ""));
+  refused "a header read as two things" ~says:"x-size"
+    (Spindle.get
+       Spindle.Path.(s "h")
+       Spindle.Returns.text
+       (let+ _ = Spindle.Header.optional "X-Size" Spindle.Codec.int
+        and+ _ = Spindle.Header.optional "x-size" Spindle.Codec.bool in
+        Ok ""));
+  refused "a form's field read as two things" ~says:"count"
+    (Spindle.post
+       Spindle.Path.(s "f")
+       Spindle.Returns.text
+       (let+ _ = Spindle.Form.optional "count" Spindle.Codec.int
+        and+ _ = Spindle.Form.list "count" Spindle.Codec.int in
+        Ok ""))
+
+(* OpenAPI 3.2 §4.8.13.1: a request body is optional unless it says
+   [required]. A JSON body is refused when absent, and a raw one is read
+   whole, so both say it. *)
+let test_a_body_says_it_is_required () =
+  let raw =
+    Spindle.post
+      Spindle.Path.(s "raw")
+      Spindle.Returns.text
+      (let+ b = Spindle.body in
+       Ok b)
+  in
+  let j = json_of_doc (Spindle.Test.app [ add; raw ]) in
+  List.iter
+    (fun (what, path) ->
+      Alcotest.(check string)
+        what "true"
+        (Yojson.Safe.to_string
+           (member [ "paths"; path; "post"; "requestBody"; "required" ] j)))
+    [ ("a JSON body", "/orders/{order_id}/items"); ("a raw body", "/raw") ]
+
 (* An operation's id is made from its path, and two paths that make one
    id would be one name in a generated client. *)
 let test_two_paths_that_make_one_operation_are_refused () =
@@ -538,6 +615,10 @@ let () =
             test_what_is_loose_is_reported;
           Alcotest.test_case "two paths that make one operation are refused"
             `Quick test_two_paths_that_make_one_operation_are_refused;
+          Alcotest.test_case "two reads of one input are one parameter" `Quick
+            test_two_reads_of_one_input_are_one_parameter;
+          Alcotest.test_case "a body says it is required" `Quick
+            test_a_body_says_it_is_required;
           Alcotest.test_case "nothing is said as its status" `Quick
             test_nothing_is_said_as_its_status;
           Alcotest.test_case "a body refused for its type says 415" `Quick

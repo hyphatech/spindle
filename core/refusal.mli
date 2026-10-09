@@ -38,7 +38,13 @@ module Code : sig
 
   (** {1 The framework's own}
 
-      Any route may refuse with these without declaring them. *)
+      What the framework answers by itself. A route may refuse with one
+      undeclared only where its document lists it, from what the route reads:
+      {!invalid} where it reads an input, {!unreadable} and {!too_large} where
+      it reads a body, {!cross_origin} for a method that changes something,
+      {!upgrade_required} for a WebSocket, and {!busy} and {!internal} anywhere.
+      Any other -- {!not_found} from a handler, say -- is declared as the
+      route's own. *)
 
   val not_found : t
   val method_not_allowed : t
@@ -52,7 +58,8 @@ module Code : sig
   val internal : t
 
   val framework : t list
-  (** All of the above. *)
+  (** All of the above: what an answer no route gave -- a [404], a [405], a
+      [501] -- may refuse with. *)
 
   val unsupported_media_type : t
   (** [415]: a body sent as something the route does not read. It is not among

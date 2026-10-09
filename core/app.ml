@@ -157,6 +157,34 @@ let check_body (r : Route_repr.t) =
          (route_name r))
   else Ok ()
 
+(* Two reads of one input that agree are one already (Route_repr); two that
+   remain read it as different things, which no document can say. *)
+let check_inputs (r : Route_repr.t) =
+  let rec first_clash = function
+    | [] -> None
+    | need :: rest -> (
+        match Route_repr.input_key need with
+        | Some key
+          when List.exists
+                 (fun other ->
+                   Option.equal
+                     (fun (w, n) (w', n') ->
+                       String.equal w w' && String.equal n n')
+                     (Some key)
+                     (Route_repr.input_key other))
+                 rest ->
+            Some key
+        | Some _ | None -> first_clash rest)
+  in
+  match first_clash r.info.needs with
+  | None -> Ok ()
+  | Some (where, name) ->
+      Error
+        (Printf.sprintf
+           "%s reads %s %s as two different inputs; read it once and share the \
+            value"
+           (route_name r) where name)
+
 (* Listed statuses are successes, since failing is a refusal, each once. *)
 let check_statuses r =
   let statuses =
@@ -205,7 +233,8 @@ let check r =
          (route_name r))
   else
     Result.bind (check_path r) (fun () ->
-        Result.bind (check_body r) (fun () -> check_statuses r))
+        Result.bind (check_body r) (fun () ->
+            Result.bind (check_inputs r) (fun () -> check_statuses r)))
 
 (* A client branches on a code's name, so a name has one status and one doc
    wherever it is declared. *)
@@ -819,16 +848,17 @@ let handle t req ~body =
   let undeclared =
     match (Response.refused response, matched) with
     | Some r, _ ->
-        let route =
+        (* A route's own refusal is declared where its document lists it,
+           the framework's codes as much as its own; the framework answers
+           the rest -- a 404, a 405, a 501 -- before any route. *)
+        let declared =
           match matched with
-          | Some (info : Route.info) -> info.codes
-          | None -> []
+          | Some (info : Route.info) ->
+              info.codes @ Route_repr.framework_codes info
+          | None -> Refusal.Code.framework
         in
-        if
-          List.exists
-            (Refusal.Code.equal r.code)
-            (Refusal.Code.framework @ t.codes @ route)
-        then None
+        if List.exists (Refusal.Code.equal r.code) (declared @ t.codes) then
+          None
         else Some (Code r.code)
     (* Only a success is the route's to list. *)
     | None, Some (info : Route.info) ->

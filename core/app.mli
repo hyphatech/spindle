@@ -32,9 +32,11 @@ val make :
     one URL -- the second could never be reached; a code of one name declared
     with two statuses, docs or challenges; a [401] code with no challenge
     ({!Refusal.Code.make}); a literal segment that is empty or holds a ["/"]; a
-    path naming one parameter twice; and a handler that reads a path parameter
-    ({!Spindle.param}) its path does not have. A literal beats a parameter
-    wherever the routes are listed, and a parameter that may decline
+    path naming one parameter twice; a handler that reads a path parameter
+    ({!Spindle.param}) its path does not have; and one whose dependencies read
+    one input -- a query parameter, a header, a cookie, a form's field -- as
+    different things: two codecs, or one value and a list. A literal beats a
+    parameter wherever the routes are listed, and a parameter that may decline
     ({!Path.val-param}'s [or_not_found]) beats one that may not; between two
     that both may, the one listed first answers. [not_found] answers every
     request no route claims, once the framework has answered its own -- a [405],
@@ -79,8 +81,9 @@ val routes : t -> Route.info list
 (** What an answer held that nobody declared. *)
 type undeclared =
   | Code of Refusal.Code.t
-      (** a refusal's code that is neither the framework's, one of [make]'s
-          [codes] nor one the matched route declares *)
+      (** a refusal's code that is not one of [make]'s [codes], one the matched
+          route declares, nor one of the framework's its document lists -- or,
+          where no route matched, one of {!Refusal.Code.framework} *)
   | Status of Spindle_http.Status.t
       (** a success status the matched route does not list, where it lists the
           ones it may answer *)

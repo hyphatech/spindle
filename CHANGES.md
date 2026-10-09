@@ -92,6 +92,21 @@
   `Response.stream`'s `keep_alive` is a record, `{ quiet_s; filler }`,
   where it was a pair.
 
+- Breaking: the OpenAPI document is valid for every route. Two
+  dependencies that read one input -- a query parameter, a header, whose
+  name is matched without case, a cookie, a form's field -- are one
+  parameter, required where either is; it was listed once per dependency,
+  which OpenAPI forbids. Two that read it as different things, two codecs
+  or one value and a list, are refused by `App.make`. A JSON or raw
+  request body says `"required": true`.
+- Breaking: a framework code a route answers is declared only where its
+  document lists it, from what the route reads, so a handler answering
+  `Refusal.not_found` declares it in `~refuses` as its own. Any route
+  could answer any of `Refusal.Code.framework` undeclared, and the
+  document promised none of those it did not list; such a refusal is now
+  logged as undeclared, and `Test.call` raises on it. `Static` and `Files`
+  declare their `404`.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

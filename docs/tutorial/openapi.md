@@ -102,7 +102,13 @@ described under one name. What to know when you read the document:
   encoded; otherwise the document calls it required.
 - **Codes are responses**, grouped by status, each with what it means; the
   framework's own (`400 invalid`, `503 busy`, ...) are added from what the
-  route reads.
+  route reads, and a route answering one the document does not list is a
+  bug, as it is for a code of your own.
+- **An input is one parameter**, however many dependencies read it, and a
+  header's name is matched without case. Two that read it as different
+  things -- an `int` and a `string`, one value and a list -- are refused
+  when the app is made, since one document cannot say both.
+- **A JSON or raw body is `required`**, as the route reads one.
 - **Enums and bounds** are in the schema exactly as the decoder checks them.
 - **The report lists what is loose**: a route that may read more than it
   declares (a `Dep.bind`, or `Dep.of_request` without `~needs`) and any

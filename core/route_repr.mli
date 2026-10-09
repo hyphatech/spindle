@@ -36,6 +36,17 @@ type t = {
           {!Static.directory} names *)
 }
 
+val input_key : Dep.need -> (string * string) option
+(** Where an input is read and its name, by which two reads are one input: a
+    header's name lower-cased, and a form's field and file sharing names. [None]
+    for what is no named input -- a path parameter, a body, a custom need. *)
+
+val framework_codes : info -> Refusal.Code.t list
+(** The framework's own codes a route may answer, from what it reads: [invalid]
+    where it reads typed inputs, the body's where it reads one, [cross_origin]
+    for a method that changes something, and [busy] and [internal] anywhere --
+    what its document lists, and so what it may refuse with undeclared. *)
+
 val mark : info -> Request_repr.t -> Request_repr.t
 (** The request, once the table has chosen this route, so a middleware can ask
     which. *)

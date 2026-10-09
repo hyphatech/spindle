@@ -6396,9 +6396,41 @@ let test_a_code_nobody_declared_is_the_routes_bug () =
       Spindle.Returns.response
       (Spindle.Dep.return (Error (Spindle.Refusal.make gone "It went.")))
   in
-  let a = Spindle.Test.app [ declared; carried; undeclared ] in
+  (* The framework's own codes are declared where the route's document
+     lists them: [busy] everywhere, [not_found] nowhere a route answers. *)
+  let missing ?refuses path =
+    Spindle.get ?refuses
+      Spindle.Path.(s path)
+      Spindle.Returns.response
+      (Spindle.Dep.return (Error Spindle.Refusal.not_found))
+  in
+  let busy =
+    Spindle.get
+      Spindle.Path.(s "busy")
+      Spindle.Returns.response
+      (Spindle.Dep.return (Error (Spindle.Refusal.busy ())))
+  in
+  let a =
+    Spindle.Test.app
+      [
+        declared;
+        carried;
+        undeclared;
+        missing "missing";
+        missing ~refuses:[ Spindle.Refusal.Code.not_found ] "declared-missing";
+        busy;
+      ]
+  in
   check_status "declared by the route" 410
     (Spindle.Test.call a `GET "/declared").status;
+  check_status "a framework code the document lists" 503
+    (Spindle.Test.call a `GET "/busy").status;
+  check_status "a framework code the route declares" 404
+    (Spindle.Test.call a `GET "/declared-missing").status;
+  (match Spindle.Test.call a `GET "/missing" with
+  | _ -> Alcotest.fail "a not_found nobody declared passed a test"
+  | exception Invalid_argument m ->
+      Alcotest.(check bool) "naming it" true (contains ~sub:"not_found" m));
   check_status "carried by an input" 401
     (Spindle.Test.call a `GET "/carried").status;
   check_status "the framework's own need no declaring" 404

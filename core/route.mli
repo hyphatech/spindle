@@ -32,11 +32,12 @@ type ('r, 'a, 'k) maker =
   t
 (** What makes a route -- {!Spindle.get} and its siblings:
     [path returns inputs]. [refuses] is the codes the route may refuse with
-    beyond those its inputs carry ({!Dep.codes}) and the framework's own. A
-    refusal with a code none of them declares is the route's bug: {!Test.call}
-    raises on it, and the server logs it. [summary], [doc] and [tags] are what
-    it says of itself ({!Meta.summary}, {!Meta.doc}, {!Meta.tags}), and [meta]
-    anything else a package has a key for. *)
+    beyond those its inputs carry ({!Dep.codes}) and the framework's own its
+    document lists from what it reads ({!Refusal.Code}). A refusal with a code
+    none of them declares is the route's bug: {!Test.call} raises on it, and the
+    server logs it. [summary], [doc] and [tags] are what it says of itself
+    ({!Meta.summary}, {!Meta.doc}, {!Meta.tags}), and [meta] anything else a
+    package has a key for. *)
 
 (** {1 What a route is}
 
@@ -55,12 +56,15 @@ type info = Route_repr.info = {
   meth : Spindle_http.Meth.t;
   pattern : string;  (** [/orders/{order_id}] *)
   params : param list;  (** in the order the path has them *)
-  needs : Dep.need list;  (** what its inputs read *)
+  needs : Dep.need list;
+      (** what its inputs read, each input once: two dependencies reading one by
+          where and name -- a header's name without case -- are one need,
+          required where either is *)
   credentials : Dep.credential list;
   returns : Returns.shape;
   codes : Refusal.Code.t list;
-      (** its own and its inputs'; the framework's ({!Refusal.Code.framework})
-          are not listed *)
+      (** its own and its inputs'; the framework's its document lists from what
+          it reads ({!Refusal.Code}) are not listed *)
   opaque : bool;
       (** whether its inputs may read more than [needs] says -- a {!Dep.bind},
           an {!Dep.of_request} with no [~needs] *)
