@@ -169,17 +169,25 @@ the next where they expect it.
   installed.
 - **An error's printer is `error_to_string`**, beside the `error` type it
   prints.
-- **A duration's label names its unit**: `_s` for a float of seconds, as
-  Eio's clocks count (`?timeout_s`), and `_ms` for an int of milliseconds,
-  beside instants kept as epoch milliseconds or a setting that counts in
-  them (`?statement_timeout_ms`).
+- **A duration's label names its unit, and its type is what the value
+  is.** `_s` is seconds and `_ms` milliseconds, and no duration goes
+  without one. A wait the program counts on a clock is a float of seconds,
+  as Eio's clocks count (`?timeout_s`); a value an outside format defines
+  in whole units is an int of that unit, as the format has it. Two waits
+  in one signature never differ in type.
 - **Tests are Alcotest, and a property is QCheck** through
   `qcheck-alcotest`. A library's `test/test_style.ml` checks what a reader
   of its source can: it refuses at least `failwith`, `invalid_arg`,
   `Option.get`, `Result.get_ok`, `Result.get_error`, `List.hd`, `List.tl`,
   `List.nth`, `Obj.magic`, `compare`, `Stdlib.compare`, `Sys.getenv`,
-  `Sys.getenv_opt`, `Unix.getenv`, `Unix.environment`, `exit` and every
-  printing call, outside the places its rules name.
+  `Sys.getenv_opt`, `Unix.getenv`, `Unix.environment`, `exit`, and every
+  printing call: `print_string`, `print_endline`, `print_bytes`,
+  `print_char`, `print_int`, `print_float`, `print_newline` and their
+  `prerr_` twins, `stdout`, `stderr`, `Printf.printf`, `Printf.eprintf`,
+  `Format.printf`, `Format.eprintf`, `Format.print_string`,
+  `Format.std_formatter` and `Format.err_formatter`, outside the places its
+  rules name. A name is read with a leading `Stdlib.` taken off, so
+  `Stdlib.exit` is `exit`.
 
 ## OCaml tools
 
