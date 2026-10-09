@@ -13,20 +13,6 @@ jobs:
       fail-fast: false
       matrix:
         ocaml: ["5.5"]
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: spindle
-          POSTGRES_PASSWORD: spindle
-          POSTGRES_DB: spindle
-        ports:
-          - 5438:5432
-        options: >-
-          --health-cmd "pg_isready -U spindle -d spindle"
-          --health-interval 1s --health-timeout 3s --health-retries 30
-    env:
-      SPINDLE_TEST_PG: postgres://spindle:spindle@localhost:5438/spindle
     steps:
       - uses: actions/checkout@v5
       - uses: ocaml/setup-ocaml@v3
@@ -35,7 +21,9 @@ jobs:
       - run: opam install . --deps-only --with-test --with-dev-setup -y
       # Use setup-ocaml's switch instead of the Makefile's local one.
       - run: make lint OPAM="opam exec --"
-      - run: opam exec -- dune test --force
+      # The Postgres of compose.yaml, as on a laptop, so CI tests the
+      # database every contributor does.
+      - run: make test OPAM="opam exec --"
 
   # The oldest versions the opam file allows, as opam-repository checks.
   lower-bounds:
