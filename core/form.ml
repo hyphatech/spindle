@@ -131,15 +131,7 @@ let field name codec ~required ~many read =
   in
   from_body ~need (fun p -> values_named name p.fields) read
 
-(* A browser sends a form's text as UTF-8. *)
-let parse_value name codec v =
-  if not (String.is_valid_utf_8 v) then
-    Error
-      (Dep.problem ~at:(field_path name) ~code:"malformed" "This is not text.")
-  else
-    Option.to_result
-      ~none:(Input.malformed ~at:(field_path name) codec)
-      (Codec.parse codec v)
+let parse_value name codec v = Input.parse ~at:(field_path name) codec v
 
 let optional name codec =
   field name codec ~required:false ~many:false (function

@@ -711,6 +711,35 @@ let test_query_header_cookie_and_clock () =
   in
   check_string "all four" {|["1","2","3","42"]|} r.body
 
+(* Text that is not UTF-8 is refused at its place, as a form's field is,
+   before a codec reads it: a JSON answer holding it could not be written. *)
+let test_an_input_that_is_not_utf_8_is_refused () =
+  let route =
+    Spindle.get
+      Spindle.Path.(s "echo" / str "name")
+      (Spindle.Returns.json Wiretype.(list string))
+      (let+ name = Spindle.param (Spindle.Path.str "name")
+       and+ q = Spindle.Query.optional "q" Spindle.Codec.string
+       and+ h = Spindle.Header.optional "x-name" Spindle.Codec.string in
+       Ok [ name; Option.value q ~default:"-"; Option.value h ~default:"-" ])
+  in
+  let app = Spindle.Test.app [ route ] in
+  let refused what ~at target headers =
+    let r = Spindle.Test.call app `GET target ~headers in
+    check_status what 400 r.status;
+    Alcotest.(check bool)
+      (what ^ ", at its place") true
+      (contains
+         ~sub:(Printf.sprintf {|"at":"%s","code":"malformed"|} at)
+         r.body)
+  in
+  refused "a path segment" ~at:"path.name" "/echo/%FF" [];
+  refused "a query value" ~at:"query.q" "/echo/kim?q=%C3" [];
+  refused "a header value" ~at:"header.x-name" "/echo/kim"
+    [ ("x-name", "\xff") ];
+  check_string "and UTF-8 is read" {|["Zoë","ü","-"]|}
+    (Spindle.Test.call app `GET "/echo/Zo%C3%AB?q=%C3%BC").body
+
 (* A query is read as a form is: a comma is a value's own, and a name with
    no [=] is given the empty value. *)
 let test_a_query_is_read_as_a_form () =
@@ -7238,6 +7267,8 @@ let () =
             test_dependencies_stop_at_the_first_refusal;
           Alcotest.test_case "query, header, cookie and clock" `Quick
             test_query_header_cookie_and_clock;
+          Alcotest.test_case "an input that is not UTF-8 is refused" `Quick
+            test_an_input_that_is_not_utf_8_is_refused;
           Alcotest.test_case "a query is read as a form" `Quick
             test_a_query_is_read_as_a_form;
           Alcotest.test_case "a default stands in for an absent input" `Quick

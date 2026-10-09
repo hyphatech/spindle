@@ -14,9 +14,10 @@ val required : source -> string -> 'a Codec.t -> 'a Dep.t
 val list : source -> string -> 'a Codec.t -> 'a list Dep.t
 val param : 'a Path.param -> 'a Dep.t
 
-val malformed : at:string -> 'a Codec.t -> Refusal.t
-(** The problem of a value its codec does not read, at [at]: one sentence for
-    every input, a form's field among them. *)
+val parse : at:string -> 'a Codec.t -> string -> ('a, Refusal.t) result
+(** A value read by its codec, or the problem at [at]: text that is not UTF-8,
+    or a value the codec does not read, in one sentence for every input, a
+    form's field among them. *)
 
 val missing : at:string -> Refusal.t
 (** The problem of a required input not given. *)

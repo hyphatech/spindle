@@ -25,7 +25,9 @@ type shape =
   | Enum of string list  (** exactly these words *)
 
 val string : string t
-(** Any text, as it arrived (decoded). *)
+(** Any text, as it arrived (decoded). An input whose text is not UTF-8 -- a
+    path segment, a query parameter, a header, a cookie, a form's field -- is
+    refused at its place before any codec reads it. *)
 
 val int : int t
 (** A whole number in decimal digits, with an optional minus sign:

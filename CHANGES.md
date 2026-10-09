@@ -37,6 +37,12 @@
   name with no `=` (`?q`) is given the empty value, as in a form; it read
   as absent.
 
+- Breaking: a path segment, a query parameter, a header or a cookie whose
+  text is not UTF-8 is refused at its place (`path.<name>`,
+  `query.<name>`, ...), as a form's field already was. A codec was handed
+  the bytes, and a JSON route that answered with them a `500`, unable to
+  write them.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

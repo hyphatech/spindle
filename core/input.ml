@@ -46,10 +46,14 @@ let malformed ~at codec =
 
 let missing ~at = Dep.problem ~at ~code:"required" "This is required."
 
-let parse_value source name codec v =
-  Option.to_result
-    ~none:(malformed ~at:(input_path source name) codec)
-    (Codec.parse codec v)
+(* Text that is not UTF-8 is no text a codec reads, and could not be written
+   back into a JSON answer. *)
+let parse ~at codec v =
+  if not (String.is_valid_utf_8 v) then
+    Error (Dep.problem ~at ~code:"malformed" "This is not text.")
+  else Option.to_result ~none:(malformed ~at codec) (Codec.parse codec v)
+
+let parse_value source name codec v = parse ~at:(input_path source name) codec v
 
 let optional source name codec =
   input_dep source name codec ~required:false ~many:false (fun r ->
@@ -95,7 +99,4 @@ let param p =
                       "a dependency read the path parameter %s, which this \
                        route's path does not have"
                       name))
-        | Some raw ->
-            Option.to_result
-              ~none:(malformed ~at:("path." ^ name) codec)
-              (Codec.parse codec raw)))
+        | Some raw -> parse ~at:("path." ^ name) codec raw))
