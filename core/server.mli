@@ -144,10 +144,12 @@ val run :
     [stop] resolves: [on_stop ()] runs -- where the application ends its
     streams, since a stream never ends on its own -- the addresses stop
     accepting, the requests being answered get [drain_s] (10) seconds to finish
-    and each answer says [Connection: close], and then whatever is left, on
-    every domain, is cancelled and [run] returns. The drain counts requests, not
-    connections, so a proxy's idle connections do not hold it open. See
-    {!stop_on_signals}.
+    -- a stream of known length ({!Response.val-stream}'s [length]) until its
+    last byte, one of no length only until its head, since [on_stop] is what
+    ends it -- and each answer says [Connection: close], and then whatever is
+    left, on every domain, is cancelled and [run] returns. The drain counts
+    requests, not connections, so a proxy's idle connections do not hold it
+    open. See {!stop_on_signals}.
 
     Every request gets an id, answered in [x-request-id] and carried by every
     line logged while it is handled, and one [info] line when it is answered.

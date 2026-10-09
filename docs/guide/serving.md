@@ -75,7 +75,9 @@ On the first SIGTERM or SIGINT:
    never ends on its own.
 2. The server stops accepting connections.
 3. Requests in flight get `~drain_s` (10 seconds) to finish, each answered
-   with `Connection: close`.
+   with `Connection: close`. A stream of known length -- a file -- counts
+   as one until its last byte is sent; an event stream does not, since only
+   `~on_stop` ends it.
 4. Whatever is left is cancelled, and `serve` returns.
 
 A second signal ends the process at once. To stop on something other than

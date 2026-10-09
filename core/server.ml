@@ -130,8 +130,9 @@ type limits = {
   proxy_header : Request.proxy_header;
 }
 
-(* Shared by every domain the server runs on. A stream leaves [in_flight] once
-   its head has gone; [on_stop] is how its producer learns to end. *)
+(* Shared by every domain the server runs on. A stream of no length leaves
+   [in_flight] once its head has gone; [on_stop] is how its producer learns
+   to end. *)
 type state = {
   mutable in_flight : int; [@atomic]
   mutable stopping : bool; [@atomic]
@@ -630,7 +631,7 @@ let exchange ~clock ~now ~limits ~trace ~instruments ~state ~deadline app ic oc
   | Error (status, detail) ->
       refuse_head ~now ~limits ~deadline oc status detail;
       false
-  | Ok framing -> (
+  | Ok framing ->
       let reader =
         Framing.reader framing ic ~max_trailer:limits.max_header_bytes
       in
@@ -682,7 +683,38 @@ let exchange ~clock ~now ~limits ~trace ~instruments ~state ~deadline app ic oc
       in
       Log.with_request_id ?traceparent ?tracestate ?trace (Request.id req)
       @@ fun () ->
-      let wire_body, gzip, keep =
+      let send_body (body, gzip, keep) =
+        match body with
+        | Wire.Nothing | Wire.Bytes _ -> keep
+        | Wire.Chunks produce ->
+            write_stream ?gzip ~clock ~limits ~deadline ~framing:Chunked req oc
+              produce
+            && keep
+        | Wire.Counted (n, produce) ->
+            write_stream ~clock ~limits ~deadline ~framing:(Counted n) req oc
+              produce
+            && keep
+        | Wire.Until_close produce ->
+            ignore
+              (write_stream ?gzip ~clock ~limits ~deadline ~framing:Raw req oc
+                 produce
+                : bool);
+            false
+        | Wire.Connection handle ->
+            (* In flight while it lasts, so a drain gives it time to say
+               goodbye. *)
+            while_in_flight state (fun () ->
+                handle
+                  {
+                    Response.reader = ic;
+                    writer = oc;
+                    clock :> Eio.Time.Mono.ty Eio.Resource.t;
+                    send_timeout_s = limits.send_timeout_s;
+                    stopping = state.stop_begun;
+                  });
+            false
+      in
+      let sent =
         while_in_flight state @@ fun () ->
         Option.iter (fun i -> Metrics.add i.active [] 1) instruments;
         Fun.protect
@@ -728,37 +760,18 @@ let exchange ~clock ~now ~limits ~trace ~instruments ~state ~deadline app ic oc
             | Wire.Connection _ ->
                 ());
             flush ~limits ~deadline oc;
-            (wire.body, wire.gzip, keep))
+            let answer = (wire.body, wire.gzip, keep) in
+            (* A stream of known length ends by itself, within the send
+               limit, so a drain waits for it as for a buffered answer. One of
+               no length -- events -- ends only when [on_stop] tells its
+               producer to, and leaves [in_flight] with its head. *)
+            match wire.body with
+            | Wire.Counted _ -> Either.Left (send_body answer)
+            | Wire.Nothing | Wire.Bytes _ | Wire.Chunks _ | Wire.Until_close _
+            | Wire.Connection _ ->
+                Either.Right answer)
       in
-      match wire_body with
-      | Wire.Nothing | Wire.Bytes _ -> keep
-      | Wire.Chunks produce ->
-          write_stream ?gzip ~clock ~limits ~deadline ~framing:Chunked req oc
-            produce
-          && keep
-      | Wire.Counted (n, produce) ->
-          write_stream ~clock ~limits ~deadline ~framing:(Counted n) req oc
-            produce
-          && keep
-      | Wire.Until_close produce ->
-          ignore
-            (write_stream ?gzip ~clock ~limits ~deadline ~framing:Raw req oc
-               produce
-              : bool);
-          false
-      | Wire.Connection handle ->
-          (* In flight while it lasts, so a drain gives it time to say
-             goodbye. *)
-          while_in_flight state (fun () ->
-              handle
-                {
-                  Response.reader = ic;
-                  writer = oc;
-                  clock :> Eio.Time.Mono.ty Eio.Resource.t;
-                  send_timeout_s = limits.send_timeout_s;
-                  stopping = state.stop_begun;
-                });
-          false)
+      Either.fold ~left:Fun.id ~right:send_body sent
 
 (* The idle limit runs until the head's first byte, the head limit from
    there. A passed deadline reads as the end of input, so the deadline is
@@ -901,13 +914,22 @@ let raise_minor_heap () =
   if gc.minor_heap_size < minor_heap_words then
     Gc.set { gc with minor_heap_size = minor_heap_words }
 
-let serve_on ~mono_clock:clock ~now ~domain_mgr ?domains ?(max_body = 1_048_576)
-    ?(max_header_bytes = 16_384) ?(head_timeout_s = 10.) ?(idle_timeout_s = 60.)
-    ?(body_timeout_s = 20.) ?(min_body_rate = 500) ?(send_timeout_s = 30.)
-    ?(discard_limit = 65_536) ?(linger_s = 1.) ?(body_budget = 67_108_864)
-    ?(trusted_proxies = []) ?(proxy_header = Request.X_forwarded_for)
-    ?(max_connections = 512) ?stop ?(drain_s = 10.) ?(on_stop = ignore) ?trace
-    ?metrics sockets app =
+(* What [run] and [serve_on] are given, checked once for both: [run] checks
+   before it binds, so a limit out of range is said before a port is held
+   or [ready] says anything. *)
+type settings = {
+  limits : limits;
+  domains : int option;
+  max_connections : int;
+  drain_s : float;
+}
+
+let settings ?domains ?(max_body = 1_048_576) ?(max_header_bytes = 16_384)
+    ?(head_timeout_s = 10.) ?(idle_timeout_s = 60.) ?(body_timeout_s = 20.)
+    ?(min_body_rate = 500) ?(send_timeout_s = 30.) ?(discard_limit = 65_536)
+    ?(linger_s = 1.) ?(body_budget = 67_108_864) ?(trusted_proxies = [])
+    ?(proxy_header = Request.X_forwarded_for) ?(max_connections = 512)
+    ?(drain_s = 10.) () =
   Option.iter (check_count "domains" ~least:1) domains;
   check_count "max_body" ~least:0 max_body;
   check_count "max_header_bytes" ~least:1 max_header_bytes;
@@ -937,6 +959,11 @@ let serve_on ~mono_clock:clock ~now ~domain_mgr ?domains ?(max_body = 1_048_576)
       proxy_header;
     }
   in
+  { limits; domains; max_connections; drain_s }
+
+let serve settings ~mono_clock:clock ~now ~domain_mgr ?stop ?(on_stop = ignore)
+    ?trace ?metrics sockets app =
+  let { limits; domains; max_connections; drain_s } = settings in
   let state =
     let drained, resolve_drained = Eio.Promise.create () in
     let stop_begun, resolve_stop_begun = Eio.Promise.create () in
@@ -955,8 +982,8 @@ let serve_on ~mono_clock:clock ~now ~domain_mgr ?domains ?(max_body = 1_048_576)
      shortest limit: once a second at the defaults. *)
   let tick =
     Float.max 0.001
-      (List.fold_left Float.min head_timeout_s
-         [ idle_timeout_s; body_timeout_s; send_timeout_s ]
+      (List.fold_left Float.min limits.head_timeout_s
+         [ limits.idle_timeout_s; limits.body_timeout_s; limits.send_timeout_s ]
       /. 10.)
   in
   let domains =
@@ -1048,12 +1075,30 @@ let serve_on ~mono_clock:clock ~now ~domain_mgr ?domains ?(max_body = 1_048_576)
           Eio.Promise.resolve stop_accepting ();
           wait_for_drain ~clock state ~drain_s)
 
+let serve_on ~mono_clock ~now ~domain_mgr ?domains ?max_body ?max_header_bytes
+    ?head_timeout_s ?idle_timeout_s ?body_timeout_s ?min_body_rate
+    ?send_timeout_s ?discard_limit ?linger_s ?body_budget ?trusted_proxies
+    ?proxy_header ?max_connections ?stop ?drain_s ?on_stop ?trace ?metrics
+    sockets app =
+  serve
+    (settings ?domains ?max_body ?max_header_bytes ?head_timeout_s
+       ?idle_timeout_s ?body_timeout_s ?min_body_rate ?send_timeout_s
+       ?discard_limit ?linger_s ?body_budget ?trusted_proxies ?proxy_header
+       ?max_connections ?drain_s ())
+    ~mono_clock ~now ~domain_mgr ?stop ?on_stop ?trace ?metrics sockets app
+
 let run ~sw ~net ~mono_clock:clock ~now ~domain_mgr ?domains ~port
     ?(host = "localhost") ?max_body ?max_header_bytes ?head_timeout_s
     ?idle_timeout_s ?body_timeout_s ?min_body_rate ?send_timeout_s
     ?discard_limit ?linger_s ?body_budget ?trusted_proxies ?proxy_header
     ?(backlog = 128) ?max_connections ?stop ?drain_s ?on_stop ?(ready = ignore)
     ?trace ?metrics app =
+  let settings =
+    settings ?domains ?max_body ?max_header_bytes ?head_timeout_s
+      ?idle_timeout_s ?body_timeout_s ?min_body_rate ?send_timeout_s
+      ?discard_limit ?linger_s ?body_budget ?trusted_proxies ?proxy_header
+      ?max_connections ?drain_s ()
+  in
   let bind addr =
     Eio.Net.listen net ~sw ~backlog ~reuse_addr:true (`Tcp (addr, port))
   in
@@ -1126,11 +1171,8 @@ let run ~sw ~net ~mono_clock:clock ~now ~domain_mgr ?domains ~port
           String.concat " and " (List.map address_to_string addrs) )
   in
   ready bound_to;
-  serve_on ~mono_clock:clock ~now ~domain_mgr ?domains ?max_body
-    ?max_header_bytes ?head_timeout_s ?idle_timeout_s ?body_timeout_s
-    ?min_body_rate ?send_timeout_s ?discard_limit ?linger_s ?body_budget
-    ?trusted_proxies ?proxy_header ?max_connections ?stop ?drain_s ?on_stop
-    ?trace ?metrics sockets app
+  serve settings ~mono_clock:clock ~now ~domain_mgr ?stop ?on_stop ?trace
+    ?metrics sockets app
 
 let stop_on_signals ~sw () =
   let stopped, stop = Eio.Promise.create () in

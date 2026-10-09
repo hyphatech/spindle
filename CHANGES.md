@@ -107,6 +107,14 @@
   logged as undeclared, and `Test.call` raises on it. `Static` and `Files`
   declare their `404`.
 
+- `Server.run` checks its limits before it binds and calls `ready`, as
+  its `.mli` said: a limit out of range raised only after the port was
+  held and `ready` had announced it.
+- Breaking: a graceful stop waits for a stream of known length, a file
+  above all, to send its last byte, within `drain_s`, as it does for any
+  answer being made. It counted such a stream as finished once its head
+  was sent, and cancelled it mid-file if nothing else was in flight.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

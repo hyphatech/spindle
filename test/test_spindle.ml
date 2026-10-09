@@ -4360,6 +4360,56 @@ let test_a_stop_lets_answers_finish domains () =
     "and it returned as the answer finished" answering_s
     (seconds_between started (Eio.Promise.await returned))
 
+(* A stream of known length -- a file -- ends by itself, so a stop waits
+   for it as for an answer being made, within the drain; one of no length
+   ends only when [on_stop] tells it to, above. *)
+let test_a_stop_lets_a_stream_of_known_length_finish domains () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let clock = Eio.Stdenv.mono_clock env in
+  let sending_s = 0.3 and stop_after_s = 0.1 in
+  let file =
+    Spindle.get
+      Spindle.Path.(s "file")
+      Spindle.Returns.response
+      (Spindle.Dep.return
+         (Ok
+            (Spindle.Response.stream ~length:6 (fun send ->
+                 let ( let* ) = Result.bind in
+                 let* () = send "abc" in
+                 Eio.Time.Mono.sleep clock sending_s;
+                 send "def"))))
+  in
+  let stop, stopping = Eio.Promise.create () in
+  let returned, return = Eio.Promise.create () in
+  let listening, connect = In_memory.listen () in
+  let started = Eio.Time.Mono.now clock in
+  Eio.Fiber.fork ~sw (fun () ->
+      Spindle.Server.serve_on ~mono_clock:clock
+        ~now:(fun () -> 0)
+        ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+        ~domains ~stop ~drain_s:2.0 [ listening ]
+        (Spindle.Test.app [ file ]);
+      Eio.Promise.resolve return (Eio.Time.Mono.now clock));
+  let answer = ref "" in
+  Eio.Fiber.all
+    [
+      (fun () ->
+        Eio.Switch.run @@ fun inner ->
+        let flow = connect ~sw:inner in
+        Eio.Flow.copy_string "GET /file HTTP/1.1\r\nHost: t\r\n\r\n" flow;
+        answer := Eio.Buf_read.(parse_exn take_all) flow ~max_size:65536);
+      (fun () ->
+        Eio.Time.Mono.sleep clock stop_after_s;
+        Eio.Promise.resolve stopping ());
+    ];
+  Alcotest.(check bool)
+    "the stream was sent whole" true
+    (String.ends_with ~suffix:"\r\n\r\nabcdef" !answer);
+  Alcotest.(check (float 1e-6))
+    "and it returned as the stream ended" sending_s
+    (seconds_between started (Eio.Promise.await returned))
+
 (* Past its cap the server accepts nothing more, and serves the next
    connection once one closes: until then it waits to be accepted. *)
 let test_past_the_cap_a_connection_waits domains () =
@@ -4493,6 +4543,37 @@ let test_localhost_held_on_one_loopback_is_refused () =
           | Eio.Io (Eio.Exn.X (Eio_unix.Unix_error (Unix.EADDRINUSE, _, _)), _)
             ) ->
           ())
+
+(* A limit out of range is refused before anything is bound or announced:
+   with the port held by someone else, the limit is still what is said. *)
+let test_run_checks_its_limits_before_it_binds () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  let port = free_port ~net in
+  let _held =
+    Eio.Net.listen net ~sw ~backlog:1 ~reuse_addr:true
+      (`Tcp (Eio.Net.Ipaddr.V4.loopback, port))
+  in
+  match
+    Spindle.Server.run ~sw ~net
+      ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+      ~domains:1
+      ~mono_clock:(Eio.Stdenv.mono_clock env)
+      ~now:(fun () -> 0)
+      ~port ~host:"127.0.0.1" ~max_connections:0
+      ~ready:(fun where -> Alcotest.failf "ready on %s" where)
+      (Spindle.Test.app [ hello ])
+  with
+  | () -> Alcotest.fail "the server returned"
+  | exception Invalid_argument m ->
+      Alcotest.(check bool)
+        "naming the limit" true
+        (contains ~sub:"max_connections" m)
+  | exception
+      ( Unix.Unix_error (Unix.EADDRINUSE, _, _)
+      | Eio.Io (Eio.Exn.X (Eio_unix.Unix_error (Unix.EADDRINUSE, _, _)), _) ) ->
+      Alcotest.fail "bound before its limits were checked"
 
 (* An address is exactly what is listened on. *)
 let test_an_address_is_exactly_that_one domains () =
@@ -7692,6 +7773,8 @@ let () =
             test_every_serving_domain_raises_its_minor_heap;
           Alcotest.test_case "a limit out of range is refused" `Quick
             test_a_limit_out_of_range_is_refused;
+          Alcotest.test_case "run checks its limits before it binds" `Quick
+            test_run_checks_its_limits_before_it_binds;
           Alcotest.test_case "an IPv4 peer through the IPv6 wildcard" `Quick
             (test_an_ipv4_peer_through_the_ipv6_wildcard 1);
           Alcotest.test_case "the access log says what went out" `Quick
@@ -7702,6 +7785,9 @@ let () =
             (test_head_says_how_long_get_would_be 1);
           Alcotest.test_case "a stop lets answers finish" `Quick
             (test_a_stop_lets_answers_finish 1);
+          Alcotest.test_case "a stop lets a stream of known length finish"
+            `Quick
+            (test_a_stop_lets_a_stream_of_known_length_finish 1);
           Alcotest.test_case "a drain that runs out ends on time" `Quick
             (test_a_drain_that_runs_out_ends_on_time 1);
           Alcotest.test_case "a signal stops the server" `Quick
@@ -7763,6 +7849,9 @@ let () =
             (test_a_drain_that_runs_out_ends_on_time 4);
           Alcotest.test_case "a stop lets answers finish" `Quick
             (test_a_stop_lets_answers_finish 4);
+          Alcotest.test_case "a stop lets a stream of known length finish"
+            `Quick
+            (test_a_stop_lets_a_stream_of_known_length_finish 4);
           Alcotest.test_case "past the cap a connection waits" `Quick
             (test_past_the_cap_a_connection_waits 4);
           Alcotest.test_case "localhost is both loopbacks" `Quick
