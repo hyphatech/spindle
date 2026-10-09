@@ -601,8 +601,18 @@ let heads =
     row "9112 §3.2" "a Host with a port, and one in brackets, are hosts"
       (request [ "Host: [::1]:8443" ])
       (parsed ~host:(Some "[::1]:8443") [ ("Host", "[::1]:8443") ]);
-    row "9112 §3.2" "an empty Host names no host" (request [ "Host:" ])
-      (parsed ~host:None [ ("Host", "") ]);
+    row "9110 §4.2.1" "an empty Host beside a path is 400" (request [ "Host:" ])
+      (Refused 400);
+    row "9110 §4.2.1" "an HTTP/1.0 request's empty Host is 400"
+      (request ~line:"GET / HTTP/1.0" [ "Host:" ])
+      (Refused 400);
+    row "9110 §4.2.1" "an empty Host beside an asterisk is 400"
+      (request ~line:"OPTIONS * HTTP/1.1" [ "Host:" ])
+      (Refused 400);
+    row "9112 §3.2.2" "an absolute-form target's host stands for an empty Host"
+      (request ~line:"GET http://abs.example/x HTTP/1.1" [ "Host:" ])
+      (parsed ~target:"http://abs.example/x" ~host:(Some "abs.example")
+         [ ("Host", "") ]);
     row "9112 §3.2" "an HTTP/1.0 request with no Host is read"
       (request ~line:"GET / HTTP/1.0" [])
       (parsed ~version:Head.Http_1_0 ~host:None []);

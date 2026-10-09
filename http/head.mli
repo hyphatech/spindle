@@ -51,10 +51,11 @@ module Request : sig
 
       An HTTP/1.1 request needs exactly one [Host], and no request may carry two
       or one that is not a host ([400], RFC 9112 §3.2) -- an absolute-form
-      target included, whose authority is then the host all the same. A host is
-      RFC 3986's: a name, or in brackets an IPv6 address or an IPvFuture, and
-      never any other run of characters there; [CONNECT]'s target is a host and
-      a port, both there. *)
+      target included, whose authority is then the host all the same. A path or
+      an asterisk names no host of its own, so beside one an empty [Host] is
+      [400] too (RFC 9110 §4.2.1). A host is RFC 3986's: a name, or in brackets
+      an IPv6 address or an IPvFuture, and never any other run of characters
+      there; [CONNECT]'s target is a host and a port, both there. *)
 
   val keep_alive : t -> bool
   (** Whether the client asked to keep the connection: HTTP/1.1 unless

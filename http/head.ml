@@ -323,12 +323,18 @@ module Request = struct
 
   (* RFC 9112 §3.2: an HTTP/1.1 request carries exactly one valid Host,
      whatever its form; an absolute-form target's authority overrides it
-     (§3.2.2). *)
-  let request_host ~version ~authority headers =
+     (§3.2.2). A path or an asterisk takes its authority from Host (§3.3),
+     and an http URI with an empty host is invalid (RFC 9110 §4.2.1). *)
+  let request_host ~version ~form ~authority headers =
     match (Field.all headers "host", version) with
     | [], Http_1_1 -> refuse_bad_request "an HTTP/1.1 request with no Host"
     | _ :: _ :: _, _ -> refuse_bad_request "more than one Host"
     | [ h ], _ when not (valid_host h) -> refuse_bad_request "an invalid Host"
+    | [ "" ], _
+      when match form with
+           | Origin | Asterisk -> true
+           | Absolute | Authority -> false ->
+        refuse_bad_request "an empty Host for a target that names no host"
     | hosts, (Http_1_0 | Http_1_1) -> (
         match (authority, hosts) with
         | Some a, _ when not (String.equal a "") -> Some a
@@ -344,7 +350,7 @@ module Request = struct
     | No_head | Cut -> Error Closed
     | Bad (status, detail) -> Error (Refused (status, detail))
     | Head ((meth, target, form, version, authority), headers) -> (
-        match request_host ~version ~authority headers with
+        match request_host ~version ~form ~authority headers with
         | host -> Ok { meth; target; form; version; headers; host }
         | exception Refuse (status, detail) -> Error (Refused (status, detail)))
 

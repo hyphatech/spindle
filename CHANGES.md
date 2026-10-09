@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Breaking: a request whose target is a path or `*` and whose `Host` is
+  empty is refused `400`, as RFC 9110 §4.2.1 has an http URI with no host.
+  It was read as naming no host. An absolute-form target's authority still
+  stands for an empty `Host`.
+
 - Breaking: `Files` answers a file a browser would open as a page of the
   application's origin -- HTML, SVG, any XML -- as an attachment, with
   `Content-Security-Policy: sandbox`. It answered one inline, so an

@@ -89,8 +89,8 @@ Spindle reads and writes HTTP/1.1 itself, and every requirement of RFC 9112
 and RFC 9110 it meets is a test, as is every one of RFC 9111's
 `Cache-Control` and RFC 7239's `Forwarded`. Among them:
 
-- A malformed request -- a bad head, a missing or doubled `Host`, a body
-  framed two ways -- is `400` and its connection closed, so nothing can
+- A malformed request -- a bad head, a missing, empty or doubled `Host`, a
+  body framed two ways -- is `400` and its connection closed, so nothing can
   smuggle a second request inside the first.
 - A body the route did not read is discarded before the next request on the
   connection.
