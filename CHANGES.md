@@ -125,6 +125,11 @@
   was one step of one reader -- a chunked body's line, a response's
   folded field -- and is now inside it.
 
+- `spindle_postgres`: an exhausted pool's `503 busy`, from
+  `Spindle_postgres.refusal`, is logged as a warning on
+  `spindle_postgres`. It was the refusal's detail, which every `5xx` logs
+  as an error, so a server under load paged as though broken.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

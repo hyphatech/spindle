@@ -82,6 +82,32 @@ let test_a_lost_race_answers_busy () =
        (Spindle.Refusal.status
           (Spindle_postgres.refusal (`Not_serializable "could not serialize"))))
 
+(* A pool with no connection free is a server under load, not a broken one:
+   its 503 is a warning, saying why, and nothing is an error. *)
+let test_an_exhausted_pool_is_a_warning () =
+  let lines = ref [] in
+  Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
+    ~out:(fun l -> lines := l :: !lines)
+    ();
+  let busy =
+    Spindle.get
+      Spindle.Path.(s "busy")
+      Spindle.Returns.text
+      (Spindle.Dep.return (Error (Spindle_postgres.refusal `Busy)))
+  in
+  let r = Spindle.Test.call (Spindle.Test.app [ busy ]) `GET "/busy" in
+  Alcotest.(check int) "503" 503 r.status;
+  Alcotest.(check bool)
+    "why is a warning" true
+    (List.exists
+       (fun l ->
+         contains ~sub:{|"level":"warn"|} l
+         && contains ~sub:"no database connection" l)
+       !lines);
+  Alcotest.(check bool)
+    "and nothing is an error" false
+    (List.exists (contains ~sub:{|"level":"error"|}) !lines)
+
 (* An overloaded pool says so within its wait, and serves the request once
    a connection is free again. The connection is held until the request
    has been answered, whatever either took. *)
@@ -692,6 +718,8 @@ let () =
             test_a_lost_race_is_run_again;
           Alcotest.test_case "a lost race answers busy" `Quick
             test_a_lost_race_answers_busy;
+          Alcotest.test_case "an exhausted pool is a warning" `Quick
+            test_an_exhausted_pool_is_a_warning;
           Alcotest.test_case "a held pool is busy, then serves" `Quick
             test_a_held_pool_is_busy_then_serves;
           Alcotest.test_case "a pool takes the driver's options" `Quick

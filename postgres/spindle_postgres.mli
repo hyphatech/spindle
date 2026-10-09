@@ -26,9 +26,11 @@ val refusal : [< error ] -> Spindle.Refusal.t
 (** The default wording, for whatever a route does not answer itself: [`Busy],
     and a [`Not_serializable] its retries did not get past, are [503 busy] with
     [Retry-After: 1], "The server is busy. Please try again in a moment.", since
-    asking again is what may succeed; the rest is {!Spindle.Refusal.internal},
-    the detail in the log. A [`Conflict] included -- a route that expects one
-    matches it first, by its constraint, and answers a code it declares:
+    asking again is what may succeed -- [`Busy] logged as a warning, since a
+    pool with nothing free is a server under load, not a bug; the rest is
+    {!Spindle.Refusal.internal}, the detail in the log. A [`Conflict] included
+    -- a route that expects one matches it first, by its constraint, and answers
+    a code it declares:
 
     {[
     match Spindle_postgres.Pool.query pool add_user (name, email) with
