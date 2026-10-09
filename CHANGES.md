@@ -30,6 +30,13 @@
   as `Lost`, and every later send answers that. Each answered `Ok`, and
   what it wrote, a close included, went into the cut-off frame's payload.
 
+- Breaking: a query is read as a form is, by
+  `Spindle_http.Urlencoded.parse`: `?q=a,b` is the one value `a,b`, and
+  `?t=a,b&t=c` the two values `a,b` and `c`. A value was split at each
+  comma, so `Query.optional` read `a` and `Query.list` three values. A
+  name with no `=` (`?q`) is given the empty value, as in a form; it read
+  as absent.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

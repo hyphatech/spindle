@@ -75,6 +75,9 @@ let banned =
     ("Unix.getenv", "a library reads no environment: take it as an argument");
     ("Unix.environment", "a library reads no environment");
     ("exit", "a library never exits");
+    ("Uri.query", "splits a value at commas: use Spindle_http.Urlencoded.parse");
+    ( "Uri.get_query_param",
+      "splits a value at commas: use Spindle_http.Urlencoded.parse" );
   ]
   @ List.map
       (fun name -> (name, "a library never prints: log through Logs"))

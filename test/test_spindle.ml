@@ -711,6 +711,26 @@ let test_query_header_cookie_and_clock () =
   in
   check_string "all four" {|["1","2","3","42"]|} r.body
 
+(* A query is read as a form is: a comma is a value's own, and a name with
+   no [=] is given the empty value. *)
+let test_a_query_is_read_as_a_form () =
+  let route =
+    Spindle.get
+      Spindle.Path.(s "search")
+      (Spindle.Returns.json Wiretype.(list string))
+      (let+ q = Spindle.Query.optional "q" Spindle.Codec.string
+       and+ t = Spindle.Query.list "t" Spindle.Codec.string in
+       Ok (Option.fold q ~none:"-" ~some:(fun q -> "q=" ^ q) :: t))
+  in
+  let app = Spindle.Test.app [ route ] in
+  let body target = (Spindle.Test.call app `GET target).body in
+  check_string "a comma in a value" {|["q=a,b"]|} (body "/search?q=a,b");
+  check_string "a comma in a repeated name" {|["-","a,b","c"]|}
+    (body "/search?t=a,b&t=c");
+  check_string "a plus and an escape" {|["q=a b,+"]|}
+    (body "/search?q=a+b%2C%2B");
+  check_string "a name with no value" {|["q="]|} (body "/search?q")
+
 (* A default stands in for an input that is absent, and only then: a value
    given is read, and one that does not parse is refused. *)
 let test_a_default_stands_in_for_an_absent_input () =
@@ -7218,6 +7238,8 @@ let () =
             test_dependencies_stop_at_the_first_refusal;
           Alcotest.test_case "query, header, cookie and clock" `Quick
             test_query_header_cookie_and_clock;
+          Alcotest.test_case "a query is read as a form" `Quick
+            test_a_query_is_read_as_a_form;
           Alcotest.test_case "a default stands in for an absent input" `Quick
             test_a_default_stands_in_for_an_absent_input;
           Alcotest.test_case "a refusal before the body never reads it" `Quick

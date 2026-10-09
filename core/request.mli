@@ -5,10 +5,10 @@
     The body is not here: it is read only once the dependencies that do not need
     it have run, and reaches only those that say they do ({!Dep.of_body}).
 
-    A request is read on the domain that answers it. Its URI is parsed the first
-    time a query is asked for, and a lazy value forced from two domains at once
-    raises, so work handed to another domain is given the values it needs, never
-    the request. *)
+    A request is read on the domain that answers it. Its query is parsed the
+    first time a parameter is asked for, and a lazy value forced from two
+    domains at once raises, so work handed to another domain is given the values
+    it needs, never the request. *)
 
 type t = Request_repr.t
 
@@ -59,7 +59,9 @@ val path : t -> string
 (** The path as it arrived, percent-encoded as the client wrote it. *)
 
 val query : t -> string -> string option
-(** The first value given. *)
+(** The first value given. The query is read as a form is
+    ({!Spindle_http.Urlencoded.parse}): [?q=a,b] is the one value [a,b], and
+    [?q] the empty value. *)
 
 val queries : t -> string -> string list
 (** Every value given, in order: [?tag=a&tag=b]. *)

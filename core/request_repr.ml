@@ -17,8 +17,9 @@ type t = {
   meth : Meth.t;
   target : string;
   path : string;
-  uri : Uri.t Lazy.t;
-      (** parsed when a query is asked for, which most requests never do *)
+  query : (string * string) list Lazy.t;
+      (** parsed when a query parameter is asked for, which most requests never
+          do *)
   version : Spindle_http.Head.version;
   host : string option;  (** as the head named it *)
   headers : (string * string) list;  (** names lower-cased *)
@@ -32,12 +33,26 @@ type t = {
 
 (* As the client spelled it: [Uri.path] would turn a segment of "%2F" into a
    separator. Only an absolute-form target, a proxy's, goes through [Uri]. *)
-let path_of target uri =
+let path_of target =
   if String.length target > 0 && target.[0] = '/' then
     match String.index_opt target '?' with
     | Some i -> String.sub target 0 i
     | None -> target
-  else Uri.path (Lazy.force uri)
+  else Uri.path (Uri.of_string target)
+
+(* What follows the first [?], up to a fragment, read as a form is:
+   [Uri.query] would split a value at each comma. *)
+let query_of target =
+  match String.index_opt target '?' with
+  | None -> []
+  | Some i ->
+      let rest = String.sub target (i + 1) (String.length target - i - 1) in
+      let query =
+        match String.index_opt rest '#' with
+        | Some j -> String.sub rest 0 j
+        | None -> rest
+      in
+      Spindle_http.Urlencoded.parse query
 
 let make ?id ?(peer = "") ?client ?(proxied = false)
     ?(proxy_header = X_forwarded_for) ?(version = Spindle_http.Head.Http_1_1)
@@ -50,13 +65,12 @@ let make ?id ?(peer = "") ?client ?(proxied = false)
         | Some "" | None -> None
         | Some h -> Some h)
   in
-  let uri = lazy (Uri.of_string target) in
   {
     id = (match id with Some id -> id | None -> Log.fresh_id ());
     meth;
     target;
-    path = path_of target uri;
-    uri;
+    path = path_of target;
+    query = lazy (query_of target);
     version;
     host;
     headers = List.map (fun (k, v) -> (String.lowercase_ascii k, v)) headers;
@@ -74,13 +88,12 @@ let meth t = t.meth
 let version t = t.version
 let target t = t.target
 let path t = t.path
-let query t name = Uri.get_query_param (Lazy.force t.uri) name
+let query t name = List.assoc_opt name (Lazy.force t.query)
 
-(* [Uri] keeps each occurrence of a name as its own entry. *)
 let queries t name =
-  List.concat_map
-    (fun (k, vs) -> if String.equal k name then vs else [])
-    (Uri.query (Lazy.force t.uri))
+  List.filter_map
+    (fun (k, v) -> if String.equal k name then Some v else None)
+    (Lazy.force t.query)
 
 let headers t = t.headers
 
