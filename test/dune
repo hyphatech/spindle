@@ -85,4 +85,7 @@
   (glob_files ../postgres/*.ml)
   (glob_files ../postgres/*.mli)
   (glob_files ../cli/*.ml)
-  (glob_files ../cli/*.mli)))
+  (glob_files ../cli/*.mli)
+  ; Every example built, and every page that may include one.
+  ../examples/dune
+  (glob_files_rec ../docs/*.md)))

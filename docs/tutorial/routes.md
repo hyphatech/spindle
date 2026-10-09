@@ -120,6 +120,39 @@ Path.root                                        (* / *)
   is `["css"; "site.css"]`, and `/static` is `[]`. It must come last. It is
   left out of the OpenAPI document.
 
+One parameter, read by two routes, one answering text and one JSON:
+
+```ocaml
+--8<-- "path_params.ml:routes"
+```
+
+```sh
+curl localhost:8080/users/7
+```
+
+```text
+User 7
+```
+
+```sh
+curl localhost:8080/api/users/7/Kim%20Li
+```
+
+```text
+{"user_id":"7","name":"Kim Li"}
+```
+
+```sh
+curl localhost:8080/users/abc
+```
+
+```text
+{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"path.user_id","code":"malformed","message":"This is not a whole number."}]}
+```
+
+The parameter's name, `user_id`, is where a segment that does not parse is
+reported.
+
 ## How routes are matched
 
 - **A literal beats a parameter**, whatever the order of the list:

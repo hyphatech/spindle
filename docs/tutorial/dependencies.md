@@ -31,6 +31,44 @@ line runs before the body, which sees plain values: an `int64`, an
 - **A dependency can be made of other dependencies**, and a route lists it
   just like a built-in.
 
+## A query parameter
+
+A query parameter is read with the codec of its type, so the handler is
+handed a `float` and is arithmetic and nothing else:
+
+```ocaml
+--8<-- "fahrenheit.ml:app"
+```
+
+```sh
+curl 'localhost:8080/fahrenheit?celsius=21'
+```
+
+```text
+{"fahrenheit":69.8}
+```
+
+```sh
+curl 'localhost:8080/fahrenheit?celsius=warm'
+```
+
+```text
+{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.celsius","code":"malformed","message":"This is not a number."}]}
+```
+
+```sh
+curl localhost:8080/fahrenheit
+```
+
+```text
+{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.celsius","code":"required","message":"This is required."}]}
+```
+
+- `Query.required` refuses a missing parameter; `Query.optional` hands over
+  an `option`, and `Query.list` every value given.
+- `Openapi.docs routes` serves the API's own document beside it: the
+  [OpenAPI](openapi.md) page.
+
 ## Custom dependencies
 
 A page of a list is two query parameters, read as one value and checked:
