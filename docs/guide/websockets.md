@@ -70,7 +70,10 @@ How the handler's loop ended is the close code:
 
 To close with another code, call `Ws.close ~code ~reason ws` and return.
 Nothing raises into your handler: a socket whose peer has gone answers its
-next `receive` or `send` with an error.
+next `receive` or `send` with an error. A `send` you cut off -- under
+`Eio.Time.with_timeout`, or in an `Eio.Fiber.first` it lost -- may have
+written part of its frame, so it ends the socket: the cancellation goes on,
+and every later `send` answers `Lost`.
 
 The framework handles the rest of the protocol for you:
 

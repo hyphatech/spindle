@@ -26,6 +26,9 @@
 - `Websocket`: TLS failing beneath an open socket ends it as `Lost`, as a
   connection that ends does. A `wss` client raised the TLS exception from
   `Spindle_client.websocket`.
+- `Websocket`: a send cancelled partway through its frame ends the socket
+  as `Lost`, and every later send answers that. Each answered `Ok`, and
+  what it wrote, a close included, went into the cut-off frame's payload.
 
 ## 0.2.0 (2026-10-08)
 

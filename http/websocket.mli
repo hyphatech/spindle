@@ -102,7 +102,11 @@ val receive : ('i, _) t -> ('i, error) result
 
 val send : (_, 'o) t -> 'o -> (unit, error) result
 (** Answers once the message is written. A value its own description cannot
-    encode is our bug: logged as an error, and nothing is sent. *)
+    encode is our bug: logged as an error, and nothing is sent. A send cancelled
+    -- by a timeout, or an [Eio.Fiber.first] it lost -- may have written part of
+    its frame, which the peer would read the next frame into, so it ends the
+    socket as [Lost] and the cancellation goes on: every later send answers
+    [Lost], and nothing more is written. *)
 
 type 'o encoded
 (** A message encoded once, to be sent to many sockets: what a

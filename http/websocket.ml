@@ -138,6 +138,9 @@ let write t opcode payload =
     | Frame.Text | Frame.Binary | Frame.Continuation -> true
     | Frame.Close | Frame.Ping | Frame.Pong -> false
   in
+  (* Judged under the lock, so a frame that waited for it sees what the one
+     before it did. *)
+  Eio.Mutex.use_ro t.write_lock @@ fun () ->
   match (Eio.Promise.peek t.ended, Atomic.get t.close_frame) with
   | Some e, _ -> Error e
   | None, Some (code, reason) when is_data -> Error (Closed { code; reason })
@@ -154,14 +157,18 @@ let write t opcode payload =
           Error e
       | mask -> (
           match
-            Eio.Mutex.use_ro t.write_lock (fun () ->
-                Frame.write t.writer ?mask ~fin:true opcode payload
-                  ~flush:(flush_bounded t))
+            Frame.write t.writer ?mask ~fin:true opcode payload
+              ~flush:(flush_bounded t)
           with
           | Ok () -> Ok ()
           | Error e ->
               end_with t e;
-              Error e))
+              Error e
+          (* §5.2: the peer reads the rest of the declared length as this
+             frame's payload, so after a frame cut off nothing may follow. *)
+          | exception (Eio.Cancel.Cancelled _ as ex) ->
+              end_with t (Lost "a send was cancelled partway through its frame");
+              raise ex))
 
 let close_payload code reason =
   let b = Bytes.create 2 in

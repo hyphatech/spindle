@@ -479,6 +479,103 @@ let test_a_mask_of_another_length_writes_nothing () =
     [ "\x01\x02"; "\x01\x02\x03\x04\x05" ]
 
 (* ------------------------------------------------------------------ *)
+(* A send cut off *)
+
+(* A peer that takes [left] bytes and then stops reading until [go_on]. *)
+module Stalling = struct
+  type t = {
+    taken : Buffer.t;
+    mutable left : int;
+    stalled : unit Eio.Promise.u;
+    go_on : unit Eio.Promise.t;
+  }
+
+  let single_write t bufs =
+    if t.left = 0 then (
+      ignore (Eio.Promise.try_resolve t.stalled () : bool);
+      Eio.Promise.await t.go_on;
+      t.left <- max_int);
+    let s = Cstruct.to_string (Cstruct.concat bufs) in
+    let n = min t.left (String.length s) in
+    Buffer.add_string t.taken (String.sub s 0 n);
+    t.left <- t.left - n;
+    n
+
+  let copy t ~src = Eio.Flow.Pi.simple_copy ~single_write t ~src
+end
+
+(* And says nothing, until it hangs up. *)
+module Silent = struct
+  type t = unit Eio.Promise.t
+
+  let read_methods = []
+
+  let single_read hung_up _ =
+    Eio.Promise.await hung_up;
+    raise End_of_file
+end
+
+type side = As_server | As_client
+
+(* §5.2: a frame's length says how many bytes follow, and a peer reads them
+   all as its payload. A send cancelled partway through has written some, so
+   anything written after it -- another message, a close -- would be read
+   as the rest of that payload: the socket is ended instead. The send is cut
+   off when the peer stops reading, which no clock decides. *)
+let test_a_send_cut_off_mid_frame_ends_the_socket side () =
+  let big = String.make (1 lsl 20) 'x' in
+  let taken = Buffer.create 65_536 in
+  let got =
+    Eio_mock.Backend.run @@ fun () ->
+    let stalled, stall = Eio.Promise.create () in
+    let go_on, resume = Eio.Promise.create () in
+    let hung_up, hang_up = Eio.Promise.create () in
+    let peer =
+      Eio.Resource.T
+        ( { Stalling.taken; left = 20_000; stalled = stall; go_on },
+          Eio.Flow.Pi.sink (module Stalling) )
+    in
+    let handler ws =
+      Eio.Fiber.first
+        (fun () -> ignore (Ws.send ws big : (unit, Ws.error) result))
+        (fun () -> Eio.Promise.await stalled);
+      Eio.Promise.resolve resume ();
+      let after = Ws.send ws "hello" in
+      Eio.Promise.resolve hang_up ();
+      after
+    in
+    Eio.Buf_write.with_flow peer (fun writer ->
+        let c =
+          {
+            Spindle.Response.reader =
+              Eio.Buf_read.of_flow
+                (Eio.Resource.T (hung_up, Eio.Flow.Pi.source (module Silent)))
+                ~max_size:64;
+            writer;
+            clock =
+              (Eio_mock.Clock.Mono.make () :> Eio.Time.Mono.ty Eio.Resource.t);
+            send_timeout_s = 10.;
+            stopping = fst (Eio.Promise.create ());
+          }
+        in
+        match side with
+        | As_server -> Ws.run_server texts c handler
+        | As_client -> Ws.run_client ~mask:(fun () -> a_mask) texts c handler)
+  in
+  Alcotest.(check (result unit string))
+    "the next send answers that the socket is lost"
+    (Error "lost: a send was cancelled partway through its frame") (shown got);
+  let one_frame =
+    match side with As_server -> text ~mask:None big | As_client -> text big
+  in
+  Alcotest.(check bool)
+    (Printf.sprintf
+       "the peer was sent the start of one frame and nothing else, %d bytes"
+       (Buffer.length taken))
+    true
+    (String.starts_with ~prefix:(Buffer.contents taken) one_frame)
+
+(* ------------------------------------------------------------------ *)
 (* A server's handshake, through the whole application *)
 
 let named = Ws.protocol ~subprotocol:"chat" ~client:Ws.text ~server:Ws.text ()
@@ -874,6 +971,9 @@ let () =
         @ [
             Alcotest.test_case "5.2 a length is written in the fewest bytes"
               `Quick test_a_length_is_written_in_the_fewest_bytes;
+            Alcotest.test_case "5.2 a send cut off mid-frame ends the socket"
+              `Quick
+              (test_a_send_cut_off_mid_frame_ends_the_socket As_server);
           ] );
       ( "a client's frames",
         each check_client client_rows (fun r -> r.c_rfc ^ " " ^ r.c_says)
@@ -882,6 +982,9 @@ let () =
               `Quick test_a_close_sends_no_reason_it_cannot_carry;
             Alcotest.test_case "5.3 a mask of another length writes nothing"
               `Quick test_a_mask_of_another_length_writes_nothing;
+            Alcotest.test_case "5.2 a send cut off mid-frame ends the socket"
+              `Quick
+              (test_a_send_cut_off_mid_frame_ends_the_socket As_client);
           ] );
       ( "a server's handshake",
         List.map
