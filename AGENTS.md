@@ -226,6 +226,15 @@ with this file:
 
 @OCAML.md
 
+## Git
+
+How work becomes a commit -- its format, where it happens, what is pushed
+-- is [GIT.md](GIT.md), the same in every Hypha repository and changed in
+all of them together, never in one. It is imported here, so it is read
+with this file:
+
+@GIT.md
+
 ## Changes
 
 - A user-visible change adds a line under `## Unreleased` in
@@ -234,8 +243,6 @@ with this file:
   the same commit.
 - A user-visible change updates the `.mli` it touches and the page of the
   documentation site that describes it.
-- Commit subjects are imperative, under 72 characters, with no full stop.
-  The body says why, wrapped at 72. No trailers.
 
 ## Releases
 

@@ -1,5 +1,5 @@
 _build/
-_opam/
+_opam
 .DS_Store
 # The documentation site, and the reference copied into it.
 site/
