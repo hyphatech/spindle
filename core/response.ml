@@ -34,11 +34,18 @@ type t = {
   closing : bool;
 }
 
-let make ?(status = `OK) ?(headers = []) ?(cookies = [])
-    ?(content_type = "text/plain; charset=utf-8") body =
+(* RFC 9110 §15.3.5, §15.4.5: a 204 and a 304 have no content, so no type
+   is assumed for one; a 304 may still name its representation's. *)
+let make ?(status = `OK) ?(headers = []) ?(cookies = []) ?content_type body =
+  let content_type =
+    match (content_type, Status.to_int status) with
+    | Some _, _ -> content_type
+    | None, (204 | 304) -> None
+    | None, _ -> Some "text/plain; charset=utf-8"
+  in
   {
     status;
-    content_type = Some content_type;
+    content_type;
     headers;
     cookies;
     content = Buffered body;

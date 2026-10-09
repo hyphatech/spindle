@@ -61,7 +61,9 @@ val make :
   string ->
   t
 (** A body as it is. [status] defaults to [`OK] and [content_type] to
-    [text/plain; charset=utf-8]. *)
+    [text/plain; charset=utf-8] -- except at [204] and [304], which have no
+    content (RFC 9110 §15.3.5, §15.4.5) and are given no type unless one is
+    named, as a [304] may name its representation's. *)
 
 val json :
   ?status:Spindle_http.Status.t ->
@@ -174,8 +176,8 @@ val headers : t -> (string * string) list
 (** The answer's own; the content type and the cookies are not among them. *)
 
 val content_type : t -> string option
-(** None for an answer with no body to type: {!empty}, {!redirect}, {!takeover}.
-*)
+(** None for an answer with no body to type: {!empty}, {!redirect}, {!takeover},
+    and a {!make} at [204] or [304] that names none. *)
 
 val cookies : t -> Cookie.t list
 val content : t -> content

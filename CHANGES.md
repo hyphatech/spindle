@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Breaking: `Response.make` at `204` or `304` names no content type unless
+  given one, since neither has content (RFC 9110 §15.3.5, §15.4.5). Each was
+  sent `text/plain; charset=utf-8`, the default for a body, with none.
+
 - Breaking: a request whose target is a path or `*` and whose `Host` is
   empty is refused `400`, as RFC 9110 §4.2.1 has an http URI with no host.
   It was read as naming no host. An absolute-form target's authority still

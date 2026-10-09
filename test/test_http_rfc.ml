@@ -309,6 +309,13 @@ let routes =
       (let+ n = Spindle.param code in
        Ok (Spindle.Response.make ~status:(Status.of_int n) "hello"));
     Spindle.get
+      Spindle.Path.(s "unchanged-page")
+      Spindle.Returns.response
+      (Spindle.Dep.return
+         (Ok
+            (Spindle.Response.make ~status:`Not_modified
+               ~content_type:"text/html" "")));
+    Spindle.get
       Spindle.Path.(s "stream")
       Spindle.Returns.response
       (Spindle.Dep.return
@@ -938,6 +945,14 @@ let server =
                204;
            ],
            Open ));
+    row "9110 §15.3.5" "a 204 is given no content type" (get "/status/204")
+      (Answers ([ answer ~headers:[ ("content-type", Absent) ] 204 ], Open));
+    row "9110 §15.4.5" "a 304 is given no content type" (get "/status/304")
+      (Answers ([ answer ~headers:[ ("content-type", Absent) ] 304 ], Open));
+    row "9110 §15.4.5" "a 304 keeps the content type its route names"
+      (get "/unchanged-page")
+      (Answers
+         ([ answer ~headers:[ ("content-type", Is "text/html") ] 304 ], Open));
     row "9110 §15.2" "a 100 Continue carries no length"
       (post ~fields:[ "Expect: 100-continue" ] "/read/a" "hello")
       (Answers
