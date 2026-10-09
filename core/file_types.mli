@@ -17,3 +17,8 @@ val coding : Request.t -> available:string list -> string option
 (** The coding to answer in, of those [available] that have a sibling, as the
     request's [Accept-Encoding] weighs them, {!siblings}' order breaking a tie;
     [None] for the file as it is. *)
+
+val nosniff : string * string
+(** [X-Content-Type-Options: nosniff], which every file's answer carries: its
+    type is the one {!content_type} names, never one a browser guesses from the
+    bytes, which would run an upload that reads as HTML as the site's own. *)

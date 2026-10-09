@@ -25,19 +25,25 @@ let etag_of_body body =
     opaque = Digest.BLAKE128.to_hex (Digest.BLAKE128.string body);
   }
 
+(* What a build leaves beside a site -- [.env], [.git] -- is none of it;
+   [.well-known] is the site's by definition (RFC 8615). *)
+let is_dot_name entry =
+  String.starts_with ~prefix:"." entry && not (String.equal entry ".well-known")
+
 (* A symlink is followed here, at startup, never at request time. *)
-let rec walk_files dir ~at ~add =
+let rec walk_files dir ~dotfiles ~at ~add =
   List.iter
     (fun entry ->
       let path = Eio.Path.(dir / entry) and at = at ^ "/" ^ entry in
-      match Eio.Path.kind ~follow:true path with
-      | `Directory -> walk_files path ~at ~add
-      | `Regular_file -> add at (Eio.Path.load path)
-      | _ -> ())
+      if dotfiles || not (is_dot_name entry) then
+        match Eio.Path.kind ~follow:true path with
+        | `Directory -> walk_files path ~dotfiles ~at ~add
+        | `Regular_file -> add at (Eio.Path.load path)
+        | _ -> ())
     (Eio.Path.read_dir dir)
 
-let load ?(index = "index.html") ?not_found ?shell ?(immutable = [])
-    ?(types = []) dir =
+let load ?(index = "index.html") ?(dotfiles = false) ?not_found ?shell
+    ?(immutable = []) ?(types = []) dir =
   let types =
     List.map (fun (ext, t) -> (String.lowercase_ascii ext, t)) types
   in
@@ -70,7 +76,7 @@ let load ?(index = "index.html") ?not_found ?shell ?(immutable = [])
   match Eio.Path.is_directory dir with
   | false -> Error (Format.asprintf "%a is not a directory." Eio.Path.pp dir)
   | true -> (
-      match walk_files dir ~at:"" ~add:add_file with
+      match walk_files dir ~dotfiles ~at:"" ~add:add_file with
       | exception (Eio.Io _ as e) ->
           Error
             (Format.asprintf "%a could not be read: %s." Eio.Path.pp dir
@@ -145,7 +151,8 @@ let choose_representation t req f =
 let answer_file t req f =
   let f, coding_headers = choose_representation t req f in
   let v = { Conditional.tag = f.tag; modified_ms = None }
-  and headers = ("cache-control", f.cache) :: coding_headers
+  and headers =
+    ("cache-control", f.cache) :: File_types.nosniff :: coding_headers
   and length = String.length f.body in
   let decision = Conditional.decide req v ~length in
   match Conditional.bodiless_response v ~headers ~length decision with
@@ -172,7 +179,7 @@ let serve_segments t segments req =
       | Some f ->
           Ok
             (Response.make ~status:`Not_found ~content_type:f.content_type
-               ~headers:[ ("cache-control", f.cache) ]
+               ~headers:[ ("cache-control", f.cache); File_types.nosniff ]
                f.body)
       | None -> Error Refusal.not_found)
 
@@ -196,7 +203,7 @@ let site_route ?(at = Path.root) site =
 let route ?at t = site_route ?at (fun () -> Some t)
 
 (* Written once, as the server starts, before it accepts anything. *)
-let directory ?at ?index ?not_found ?shell ?immutable ?types path =
+let directory ?at ?index ?dotfiles ?not_found ?shell ?immutable ?types path =
   let site = Atomic.make None in
   let r = site_route ?at (fun () -> Atomic.get site) in
   {
@@ -206,6 +213,6 @@ let directory ?at ?index ?not_found ?shell ?immutable ?types path =
         (fun fs ->
           Result.map
             (fun t -> Atomic.set site (Some t))
-            (load ?index ?not_found ?shell ?immutable ?types
+            (load ?index ?dotfiles ?not_found ?shell ?immutable ?types
                Eio.Path.(fs / path)));
   }

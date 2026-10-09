@@ -194,7 +194,9 @@ let answer_file root o req segments =
     | Ok (Some original) -> (
         let f, coding_headers = choose_representation root req original in
         let v = validators f
-        and headers = ("cache-control", "no-cache") :: coding_headers in
+        and headers =
+          ("cache-control", "no-cache") :: File_types.nosniff :: coding_headers
+        in
         let decision = Conditional.decide req v ~length:f.size in
         match
           Conditional.bodiless_response v ~headers ~length:f.size decision

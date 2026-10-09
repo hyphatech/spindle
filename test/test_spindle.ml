@@ -5792,6 +5792,60 @@ let test_files_never_leave_their_directory () =
   check_status "and no listing without one" 404
     (status ~a:(files ~index:"index.html" root) "/")
 
+(* A built site holds what its build left beside the pages -- an [.env], a
+   [.git] -- and none of it is the site's. A dot-name is skipped as the
+   directory is read, at any depth, but [.well-known] (RFC 8615), which is
+   the site's by definition; [~dotfiles:true] reads them all. *)
+let test_a_site_skips_its_dotfiles () =
+  with_site
+    [
+      ("index.html", "FRONT DOOR");
+      (".env", "SECRET=1");
+      (".git/config", "[core]");
+      ("about/.htaccess", "Deny");
+      (".well-known/security.txt", "Contact: x");
+      (".well-known/.draft", "DRAFT");
+    ]
+  @@ fun root ->
+  let t = loaded root in
+  check_int "the site's files alone" 2 (Spindle.Static.files t);
+  let a = Spindle.Test.app [ Spindle.Static.route t ] in
+  let status target = (Spindle.Test.call a `GET target).status in
+  List.iter
+    (fun target -> check_status target 404 (status target))
+    [ "/.env"; "/.git/config"; "/about/.htaccess"; "/.well-known/.draft" ];
+  check_status ".well-known is the site's" 200
+    (status "/.well-known/security.txt");
+  match Spindle.Static.load ~dotfiles:true root with
+  | Ok t -> check_int "every file, where asked" 6 (Spindle.Static.files t)
+  | Error m -> Alcotest.fail m
+
+(* A file's type is the one its answer names, never one a browser sniffs
+   from its bytes: an upload that reads as HTML would run as the site's. *)
+let test_a_file_is_never_sniffed () =
+  with_site (site @ disk) @@ fun root ->
+  let nosniff what (r : Spindle.Test.response) =
+    check_header what (Some "nosniff")
+      (Spindle.Test.header r "x-content-type-options")
+  in
+  let static =
+    Spindle.Test.app
+      [ Spindle.Static.route (loaded ~not_found:"/404.html" root) ]
+  in
+  let r = Spindle.Test.call static `GET "/about" in
+  nosniff "a file of the site" r;
+  let tag = Option.value ~default:"" (Spindle.Test.header r "etag") in
+  nosniff "its 304"
+    (Spindle.Test.call static `GET "/about" ~headers:[ ("if-none-match", tag) ]);
+  nosniff "a part of it"
+    (Spindle.Test.call static `GET "/about" ~headers:[ ("range", "bytes=0-1") ]);
+  nosniff "the not-found document" (Spindle.Test.call static `GET "/nothing");
+  let r = Spindle.Test.call (files root) `GET "/a.txt" in
+  nosniff "a file from disk" r;
+  nosniff "a part of it"
+    (Spindle.Test.call (files root) `GET "/a.txt"
+       ~headers:[ ("range", "bytes=0-1") ])
+
 let test_a_file_answers_its_conditions_and_ranges () =
   with_site disk @@ fun root ->
   let a = files root in
@@ -7340,6 +7394,8 @@ let () =
             test_a_site_answers_by_its_three_rules;
           Alcotest.test_case "with nothing named, it serves its files" `Quick
             test_a_site_with_nothing_named_serves_its_files;
+          Alcotest.test_case "a site skips its dotfiles" `Quick
+            test_a_site_skips_its_dotfiles;
           Alcotest.test_case "a directory is read when the server starts" `Quick
             test_a_directory_is_read_when_the_server_starts;
           Alcotest.test_case "a site under a prefix" `Quick
@@ -7359,6 +7415,8 @@ let () =
             test_a_file_is_served_from_disk_as_it_is;
           Alcotest.test_case "files never leave their directory" `Quick
             test_files_never_leave_their_directory;
+          Alcotest.test_case "a file is never sniffed" `Quick
+            test_a_file_is_never_sniffed;
           Alcotest.test_case "a file answers its conditions and ranges" `Quick
             test_a_file_answers_its_conditions_and_ranges;
           Alcotest.test_case "a download is named" `Quick

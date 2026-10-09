@@ -18,16 +18,18 @@
 
     {b An answer} is streamed in 64 KiB reads, with its length
     ({!Response.val-stream}'s [length]), a strong entity tag made of the file's
-    size and its time to the nanosecond, and [Last-Modified]. [If-Match],
-    [If-Unmodified-Since], [If-None-Match] and [If-Modified-Since] are answered
-    as RFC 9110 §13.2.2 orders them -- [412] or [304] -- and one [Range] as
-    §14.2 has it: [206] with [Content-Range], [416] for a range past the end,
-    and several ranges, or an [If-Range] naming the file as it no longer is,
-    answered whole. A file replaced between the answer's head and its body has
-    its connection closed rather than send bytes of another file under this
-    one's length. Write a file here by writing it elsewhere and renaming it over
-    the old one: a file rewritten in place, at the same size within the clock's
-    tick, would keep its tag. *)
+    size and its time to the nanosecond, [Last-Modified], and
+    [X-Content-Type-Options: nosniff], so a browser never runs an upload that
+    reads as HTML as a page of the site. [If-Match], [If-Unmodified-Since],
+    [If-None-Match] and [If-Modified-Since] are answered as RFC 9110 §13.2.2
+    orders them -- [412] or [304] -- and one [Range] as §14.2 has it: [206] with
+    [Content-Range], [416] for a range past the end, and several ranges, or an
+    [If-Range] naming the file as it no longer is, answered whole. A file
+    replaced between the answer's head and its body has its connection closed
+    rather than send bytes of another file under this one's length. Write a file
+    here by writing it elsewhere and renaming it over the old one: a file
+    rewritten in place, at the same size within the clock's tick, would keep its
+    tag. *)
 
 val directory :
   ?at:Path.path ->

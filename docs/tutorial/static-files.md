@@ -22,6 +22,7 @@ content-type: text/css; charset=utf-8
 accept-ranges: bytes
 etag: "4e3597b273bb16778f1093c5780a9fe2"
 cache-control: no-cache
+x-content-type-options: nosniff
 content-length: 88
 ```
 
@@ -37,6 +38,11 @@ framework's `404`.
   the same list as your API and every other route is matched first.
 - **Every file carries an `etag`**, so a browser revalidates cheaply
   (`304`), and one `Range` is answered with `206`.
+- **Every file carries `X-Content-Type-Options: nosniff`**, so a browser
+  takes the type it is given and never guesses one from the bytes.
+- **A name that starts with a dot is skipped**, at any depth -- what a build
+  leaves beside a site, `.env` or `.git`, is never served -- but
+  `.well-known`, which is the site's. `~dotfiles:true` reads them all.
 
 ## Static files beside an API
 
@@ -89,8 +95,8 @@ Spindle.Files.directory ~at:Path.(s "uploads") ~download:true "var/uploads"
   one.
 - `~download:true` sends each file as an attachment with its name;
   `~dotfiles:true` serves names that start with a dot.
-- Answers carry an `etag` and `Last-Modified`, and answer conditional
-  requests and one `Range`, as `Static` does.
+- Answers carry an `etag`, `Last-Modified` and `nosniff`, and answer
+  conditional requests and one `Range`, as `Static` does.
 - **Replace a file by writing it elsewhere and renaming it over the old
   one.** A file rewritten in place, at the same size within the clock's tick,
   keeps its `etag`.

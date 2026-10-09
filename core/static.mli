@@ -32,6 +32,7 @@ type t
 
 val load :
   ?index:string ->
+  ?dotfiles:bool ->
   ?not_found:string ->
   ?shell:string * string list ->
   ?immutable:string list ->
@@ -43,6 +44,10 @@ val load :
     indexes and nothing else.
 
     - [index] is the file a directory answers with, ["index.html"] unless told.
+    - [dotfiles] reads a name that begins with a dot, at any depth: [false]
+      unless told, so what a build leaves beside a site -- [.env], [.git] -- is
+      never served. [.well-known] is read either way, being the site's by
+      definition (RFC 8615); a dot-name under it is not.
     - [not_found] is the file served, with a [404], for a path with no file:
       ["/404.html"].
     - [shell] is a file and the prefixes it answers with a [200]:
@@ -70,7 +75,9 @@ val route : ?at:Path.path -> t -> Route.t
     at a path under it is [405], at the root as anywhere -- [POST /nothing] is
     [405 Allow: GET, HEAD].
 
-    Every file carries a strong entity tag, its digest, and is answered as
+    Every file carries a strong entity tag, its digest, and
+    [X-Content-Type-Options: nosniff], so a browser takes the type it is
+    answered with rather than one it guesses from the bytes; it is answered as
     {!Files} answers one: its preconditions -- [If-Match], [If-None-Match] -- as
     RFC 9110 §13.2.2 orders them, [412] or a [304] with no body, and one [Range]
     as §14.2 has it, [206] with [Content-Range] or [416] past the end, several
@@ -80,6 +87,7 @@ val route : ?at:Path.path -> t -> Route.t
 val directory :
   ?at:Path.path ->
   ?index:string ->
+  ?dotfiles:bool ->
   ?not_found:string ->
   ?shell:string * string list ->
   ?immutable:string list ->

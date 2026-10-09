@@ -65,6 +65,13 @@
   `?max_age`, and a cookie declared without one was accepted for ever,
   however long ago it was made or copied.
 
+- Breaking: `Static` skips a name that begins with a dot as it reads a
+  directory, at any depth, unless given `~dotfiles:true`, as `Files`
+  refuses one: an `.env` or a `.git` a build left beside a site was served.
+  `.well-known` is read either way (RFC 8615). `Static` and `Files` answer
+  every file with `X-Content-Type-Options: nosniff`, so a browser never
+  runs one whose bytes look like HTML as a page of the site.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

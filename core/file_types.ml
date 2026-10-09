@@ -69,3 +69,4 @@ let coding req ~available =
           | Some _ | None -> None))
 
 let extension coding = Option.value (List.assoc_opt coding siblings) ~default:""
+let nosniff = ("x-content-type-options", "nosniff")
