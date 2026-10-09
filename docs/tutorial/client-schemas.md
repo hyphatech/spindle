@@ -32,7 +32,9 @@ bin/
 
 ```ocaml title="bin/notes.ml"
 let app _env ~sw:_ = Spindle.App.make Routes.routes
-let () = Spindle_cli.run ~name:"notes" ~title:"Notes" ~app ()
+let () =
+  Eio_main.run @@ fun env ->
+  Spindle_cli.run ~name:"notes" ~title:"Notes" ~app env
 ```
 
 The app is only described, never served, so make it from nothing a request

@@ -76,6 +76,8 @@ let banned =
     ("Unix.getenv", "a library reads no environment: take it as an argument");
     ("Unix.environment", "a library reads no environment");
     ("exit", "a library never exits");
+    ( "Eio_main.run",
+      "a library runs no event loop of its own: take env from its caller" );
     ("Uri.query", "splits a value at commas: use Spindle_http.Urlencoded.parse");
     ( "Uri.get_query_param",
       "splits a value at commas: use Spindle_http.Urlencoded.parse" );

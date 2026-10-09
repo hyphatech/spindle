@@ -61,7 +61,7 @@
 (executable
  (name cli_app)
  (modules cli_app)
- (libraries spindle spindle_cli))
+ (libraries spindle spindle_cli eio_main))
 
 ; The house rules, read off the source.
 

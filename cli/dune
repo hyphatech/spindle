@@ -4,4 +4,4 @@
 (library
  (name spindle_cli)
  (public_name spindle_cli)
- (libraries spindle cmdliner eio eio.unix eio_main))
+ (libraries spindle cmdliner eio eio.unix))

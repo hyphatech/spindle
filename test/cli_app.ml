@@ -17,4 +17,5 @@ let routes =
   ]
 
 let () =
-  Spindle_cli.run ~name:"shop" ~app:(fun _ ~sw:_ -> Spindle.App.make routes) ()
+  Eio_main.run @@ fun env ->
+  Spindle_cli.run ~name:"shop" ~app:(fun _ ~sw:_ -> Spindle.App.make routes) env

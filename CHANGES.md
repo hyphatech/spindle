@@ -115,6 +115,12 @@
   answer being made. It counted such a stream as finished once its head
   was sent, and cancelled it mid-file if nothing else was in flight.
 
+- Breaking: `Spindle_cli.run` takes the program's `env` in place of its
+  final `()`, and runs in the program's event loop: it called
+  `Eio_main.run` itself, which a library leaves to its program, and
+  `spindle_cli` no longer links `eio_main`. Write
+  `Eio_main.run @@ fun env -> Spindle_cli.run ~name ~app env`.
+
 ## 0.2.0 (2026-10-08)
 
 - Breaking: Spindle needs wiretype 0.2.0, whose changes reach an

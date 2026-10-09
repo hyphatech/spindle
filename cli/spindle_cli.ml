@@ -3,12 +3,11 @@ let ( let* ) = Result.bind
 type app =
   Eio_unix.Stdenv.base -> sw:Eio.Switch.t -> (Spindle.App.t, string) result
 
-(* Made in an Eio loop of its own and only described; no request reaches
+(* Made on a switch of its own and only described; no request reaches
    it. *)
-let with_app (app : app) f =
-  Eio_main.run @@ fun env ->
+let with_app env (app : app) f =
   Eio.Switch.run @@ fun sw ->
-  let* a = app (env :> Eio_unix.Stdenv.base) ~sw in
+  let* a = app env ~sw in
   f a
 
 let generated ~title = function
@@ -38,16 +37,16 @@ let write_or_print output text =
           Ok ()
       | exception Sys_error m -> Error m)
 
-let generate app ~title ~output what =
-  with_app app (fun a ->
+let generate env app ~title ~output what =
+  with_app env app (fun a ->
       let* text =
         Result.map_error (String.concat "\n") (generated ~title what a)
       in
       write_or_print output text)
 
 (* Loose descriptions are always reported, and fail only with [strict]. *)
-let check app ~title ~openapi ~zod ~strict =
-  with_app app (fun a ->
+let check env app ~title ~openapi ~zod ~strict =
+  with_app env app (fun a ->
       let matches_committed what path =
         let* text =
           Result.map_error (String.concat "\n") (generated ~title what a)
@@ -84,7 +83,7 @@ let exit_code = function
       prerr_endline m;
       1
 
-let run ~name ?(title = name) ~app:make () =
+let run ~name ?(title = name) ~app:make env =
   let output =
     Arg.value
     @@ Arg.opt (Arg.some Arg.string) None
@@ -103,13 +102,13 @@ let run ~name ?(title = name) ~app:make () =
   in
   let write what =
     let+ output = output in
-    exit_code (generate make ~title ~output what)
+    exit_code (generate env make ~title ~output what)
   in
   let check =
     let+ openapi = file "openapi" ~doc:"The committed document."
     and+ zod = file "zod" ~doc:"The committed module."
     and+ strict = strict in
-    exit_code (check make ~title ~openapi ~zod ~strict)
+    exit_code (check env make ~title ~openapi ~zod ~strict)
   in
   let api =
     Cmd.group
