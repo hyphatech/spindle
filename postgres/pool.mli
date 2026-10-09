@@ -28,20 +28,21 @@ val create :
 val use :
   ?wait_s:float ->
   t ->
-  (Rowtype_postgres.conn -> ('a, ([> `Busy | `Pool_closed ] as 'e)) result) ->
+  (Rowtype_postgres.conn ->
+  ('a, ([> `Pool of [ `Busy | `Closed ] ] as 'e)) result) ->
   ('a, 'e) result
 (** Borrow a connection for [work], as [Rowtype_postgres.Pool.use] lends one,
-    and give it back when [work] returns. [`Busy] -- no connection within the
-    wait -- joins the work's own failures, so that an overloaded server says so
-    instead of answering late, and so does [`Pool_closed], the pool closed or
-    closing; {!Spindle_postgres.refusal} words both. *)
+    and give it back when [work] returns. [`Pool `Busy] -- no connection within
+    the wait -- joins the work's own failures, so that an overloaded server says
+    so instead of answering late, and so does [`Pool `Closed], the pool closed
+    or closing; {!Spindle_postgres.refusal} words both. *)
 
 val query :
   ?wait_s:float ->
   t ->
   ('p, 'r) Rowtype.statement ->
   'p ->
-  ('r, [> `Busy | `Pool_closed | Rowtype.error ]) result
+  ('r, [> `Pool of [ `Busy | `Closed ] | Rowtype.error ]) result
 (** One statement on a borrowed connection: {!use} around
     [Rowtype_postgres.run], for the read that is the whole of its work.
 
@@ -58,7 +59,9 @@ val transaction :
   t ->
   (Rowtype_postgres.conn ->
   ( 'a,
-    ([> Rowtype_postgres.Transaction.failure | `Busy | `Pool_closed ] as 'e) )
+    ([> Rowtype_postgres.Transaction.failure | `Pool of [ `Busy | `Closed ] ]
+     as
+     'e) )
   result) ->
   ('a, 'e) result
 (** {!use} and [Rowtype_postgres.Transaction.within] together: borrow a

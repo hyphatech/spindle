@@ -12,8 +12,10 @@ module Session = Session
 type error =
   [ Rowtype.error
   | Rowtype_postgres.Transaction.failure
-  | `Busy  (** no connection within the wait *)
-  | `Pool_closed  (** the pool is closed *) ]
+  | `Pool of
+    [ `Busy  (** no connection within the wait *)
+    | `Closed  (** the pool is closed *) ]
+    (** what a borrow met in the pool, a state of the pool's own *) ]
 (** Every failure this library answers: a statement's, and a pool's or a
     transaction's own. *)
 
@@ -29,13 +31,13 @@ val instant : int Rowtype.ty
     of 9999; one earlier is refused by the column. *)
 
 val refusal : [< error ] -> Spindle.Refusal.t
-(** The default wording, for whatever a route does not answer itself: [`Busy],
-    and a [`Not_serializable] its retries did not get past, are [503 busy] with
-    [Retry-After: 1], "The server is busy. Please try again in a moment.", since
-    asking again is what may succeed -- [`Busy] logged as a warning, since a
-    pool with nothing free is a server under load, not a bug. [`Pool_closed] is
-    the same [503 busy], logged as a warning with no detail, since a pool closed
-    under a request is a server shutting down; the rest is
+(** The default wording, for whatever a route does not answer itself:
+    [`Pool `Busy], and a [`Not_serializable] its retries did not get past, are
+    [503 busy] with [Retry-After: 1], "The server is busy. Please try again in a
+    moment.", since asking again is what may succeed -- [`Pool `Busy] logged as
+    a warning, since a pool with nothing free is a server under load, not a bug.
+    [`Pool `Closed] is the same [503 busy], logged as a warning with no detail,
+    since a pool closed under a request is a server shutting down; the rest is
     {!Spindle.Refusal.internal}, the detail in the log. A [`Conflict] included
     -- a route that expects one matches it first, by its constraint, and answers
     a code it declares:

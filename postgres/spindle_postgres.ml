@@ -2,15 +2,17 @@ module Pool = Pool
 module Session = Session
 
 type error =
-  [ Rowtype.error | Rowtype_postgres.Transaction.failure | `Busy | `Pool_closed ]
+  [ Rowtype.error
+  | Rowtype_postgres.Transaction.failure
+  | `Pool of [ `Busy | `Closed ] ]
 
-(* [`Not_committed] and [`Busy] are worded as rowtype's own printers word
+(* [`Not_committed] and [`Pool] are worded as rowtype's own printers word
    them, sentence for sentence, so one failure reads the same whichever
    library logs it; the rowtype this builds against prints a statement's
    failure and no transaction's. *)
 let error_to_string : [< error ] -> string = function
-  | `Busy -> "no connection came free within the pool's wait"
-  | `Pool_closed -> "the pool is closed"
+  | `Pool `Busy -> "no connection came free within the pool's wait"
+  | `Pool `Closed -> "the pool is closed"
   | `Not_committed m -> "the transaction was not committed: " ^ m
   | #Rowtype.error as e -> Rowtype.error_to_string e
 
@@ -23,10 +25,10 @@ module L = (val Logs.src_log Source.src : Logs.LOG)
    refusal's detail, which a 5xx logs as an error: a server under load is
    degraded, not broken. *)
 let refusal : [< error ] -> Spindle.Refusal.t = function
-  | `Busy ->
+  | `Pool `Busy ->
       L.warn (fun m -> m "busy: no database connection free within the wait");
       Spindle.Refusal.busy ()
-  | `Pool_closed ->
+  | `Pool `Closed ->
       L.warn (fun m -> m "the database pool is closed");
       Spindle.Refusal.busy ()
   | `Not_committed detail -> Spindle.Refusal.internal ~detail

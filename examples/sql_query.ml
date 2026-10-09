@@ -14,7 +14,7 @@ let databases =
   S.list ~params:S.unit ~row:S.text
     "select datname from pg_database order by datname"
 
-(* A borrow that waits past the pool's limit is [`Busy], which [refusal]
+(* A borrow that waits past the pool's limit is [`Pool `Busy], which [refusal]
    answers 503: an overloaded server says so rather than answering late. *)
 let list_databases pool =
   Spindle_postgres.Pool.query pool databases ()

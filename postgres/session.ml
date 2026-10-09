@@ -80,8 +80,8 @@ let statements ~table =
   S.[ Any s.find; Any s.save; Any s.delete; Any s.sweep ]
 
 let error_to_string = function
-  | `Busy -> "no connection within the wait"
-  | `Pool_closed -> "the pool is closed"
+  | `Pool `Busy -> "no connection within the wait"
+  | `Pool `Closed -> "the pool is closed"
   | #S.error as e -> S.error_to_string e
 
 let store pool ~table =

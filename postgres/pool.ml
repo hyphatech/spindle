@@ -18,11 +18,12 @@ let use ?wait_s t work =
   match Pg.Pool.use ?wait_s t work with
   | Ok answer -> answer
   | Error e -> (
-      (* Coerced, so it builds against a rowtype whose pool answers only
-         [`Busy] and one that also answers [`Pool_closed]. *)
-      match (e :> [ `Busy | `Pool_closed ]) with
-      | `Busy -> Error `Busy
-      | `Pool_closed -> Error `Pool_closed)
+      (* rowtype 0.2.0 answers a flat [`Busy], and a later one the pool's
+         states under [`Pool]. Its answer is an open variant, so an arm for
+         each builds against both. *)
+      match e with
+      | `Busy -> Error (`Pool `Busy)
+      | `Pool p -> Error (`Pool p))
 
 let query ?wait_s t statement args =
   use ?wait_s t (fun db -> Pg.run db statement args)
@@ -59,8 +60,8 @@ let check ?(name = "postgres") t =
       else
         match use t (fun db -> Pg.exec_raw db "select 1") with
         | Ok () -> Ok ()
-        | Error `Busy -> Ok ()
-        | Error `Pool_closed -> Error "the pool is closed"
+        | Error (`Pool `Busy) -> Ok ()
+        | Error (`Pool `Closed) -> Error "the pool is closed"
         | Error (#Rowtype.error as e) -> Error (Rowtype.error_to_string e))
 
 let transaction ?wait_s ?keep ?isolation ?retries t work =

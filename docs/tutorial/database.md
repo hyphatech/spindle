@@ -112,7 +112,7 @@ its locks for ever:
 | `~idle_in_transaction_timeout_ms` | 30 000 | so is a transaction left open and idle |
 | `~connect_timeout_s` | 10 | unless the connection string says `connect_timeout` |
 | `~size` | 8 | connections, all opened at start-up |
-| `~wait_s` | 5 | a borrow waiting longer is `` `Busy ``, a `503` |
+| `~wait_s` | 5 | a borrow waiting longer is `` `Pool `Busy ``, a `503` |
 
 `~statement_cache:0` is for a pooler in front of Postgres that cannot carry
 named statements.
@@ -128,14 +128,14 @@ server starts.
 A failure is a variant, and `Spindle_postgres.refusal` turns any you do not
 handle into a status, with the detail in the log:
 
-- `` `Busy `` (no connection within the wait), `` `Pool_closed `` (the pool
-  is closed) and `` `Not_serializable ``
+- `` `Pool `Busy `` (no connection within the wait), `` `Pool `Closed ``
+  (the pool is closed) and `` `Not_serializable ``
   (a concurrent transaction won, past its retries): `503 busy` with
-  `Retry-After: 1`, since asking again may succeed. `` `Busy `` and
-  `` `Pool_closed `` are logged as warnings, not errors: a server under load
-  or shutting down is not a broken one.
+  `Retry-After: 1`, since asking again may succeed. The two `` `Pool ``
+  states are logged as warnings, not errors: a server under load or
+  shutting down is not a broken one.
 - Everything else -- `` `Conflict ``, `` `Lost ``, `` `Not_committed ``,
-  `` `Db ``, ... -- `500 internal`.
+  `` `Db ``, a closed connection, ... -- `500 internal`.
 
 Where a failure is logged rather than answered,
 `Spindle_postgres.error_to_string` tells any of them in words, and puts no
@@ -173,7 +173,7 @@ let transaction pool ~failed work =
   with
   | Ok v -> Ok v
   | Error (`Work e) -> Error e
-  | Error ((`Busy | #Rowtype_postgres.Transaction.failure) as f) ->
+  | Error ((`Pool _ | #Rowtype_postgres.Transaction.failure) as f) ->
       Error (failed f)
 ```
 

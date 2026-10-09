@@ -2,12 +2,15 @@
 
 ## Unreleased
 
-- `spindle_postgres`: `Spindle_postgres.error` gains `` `Pool_closed ``,
-  what a pool answers once it is closed, or closes under a borrow waiting.
-  `refusal` answers it `503 busy`, logged as a warning with no detail, as
-  it does `` `Busy ``, and `error_to_string` words it "the pool is closed".
-  It is not `` `Closed ``, which stays a closed connection. Breaking: a
-  match on `Spindle_postgres.error` handles `` `Pool_closed ``.
+- `spindle_postgres`: a pool's failures are its states under `` `Pool ``:
+  `` `Pool `Busy `` where `Spindle_postgres.error`, `Pool.use`, `query` and
+  `transaction` answered `` `Busy ``, and `` `Pool `Closed `` for a pool
+  closed, or closing under a borrow waiting, where rowtype tells it apart;
+  its 0.2.0 answers it `` `Pool `Busy ``. `refusal` answers both
+  `503 busy`, logged as a warning with no detail, and `error_to_string`
+  words the closed one "the pool is closed". A closed connection stays
+  rowtype's, a `500`. Breaking: a match on what a pool answers names
+  `` `Pool ``.
 
 - `Spindle.client_gone`, a dependency, is a promise the server resolves
   once a request's client has gone: an events stream's write failing, its

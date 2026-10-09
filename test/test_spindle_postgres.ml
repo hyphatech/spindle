@@ -93,8 +93,8 @@ let test_every_failure_has_its_words () =
   told "not committed"
     "the transaction was not committed: commit: the server refused it"
     (`Not_committed "commit: the server refused it");
-  told "busy" "no connection came free within the pool's wait" `Busy;
-  told "pool closed" "the pool is closed" `Pool_closed
+  told "busy" "no connection came free within the pool's wait" (`Pool `Busy);
+  told "pool closed" "the pool is closed" (`Pool `Closed)
 
 (* A pool closed under a request is a server shutting down: 503, as a busy
    pool is, not a 500 that says the server is broken. *)
@@ -102,7 +102,25 @@ let test_a_closed_pool_answers_busy () =
   Alcotest.(check int)
     "503" 503
     (Spindle_http.Status.to_int
-       (Spindle.Refusal.status (Spindle_postgres.refusal `Pool_closed)))
+       (Spindle.Refusal.status (Spindle_postgres.refusal (`Pool `Closed))))
+
+(* A statement on a connection its owner closed sent nothing, and is the
+   server's own fault: a 500 with why in the log, not a 503 that asks the
+   client to come back. *)
+let test_a_closed_connection_answers_internal () =
+  Db_target.with_postgres (fun target ->
+      let db = connect target in
+      Pg.close db;
+      match Pg.exec_raw db "select 1" with
+      | Ok () -> Alcotest.fail "ran on a closed connection"
+      | Error e ->
+          Alcotest.(check string)
+            "its words" "the connection is closed"
+            (Spindle_postgres.error_to_string e);
+          Alcotest.(check int)
+            "500" 500
+            (Spindle_http.Status.to_int
+               (Spindle.Refusal.status (Spindle_postgres.refusal e))))
 
 (* A failure its retries did not get past is the client's to ask again, as a
    busy pool is: 503, not a 500 that says the server is broken. *)
@@ -124,7 +142,7 @@ let test_an_exhausted_pool_is_a_warning () =
     Spindle.get
       Spindle.Path.(s "busy")
       Spindle.Returns.text
-      (Spindle.Dep.return (Error (Spindle_postgres.refusal `Busy)))
+      (Spindle.Dep.return (Error (Spindle_postgres.refusal (`Pool `Busy))))
   in
   let r = Spindle.Test.call (Spindle.Test.app [ busy ]) `GET "/busy" in
   Alcotest.(check int) "503" 503 r.status;
@@ -163,7 +181,7 @@ let test_a_held_pool_is_busy_then_serves () =
                    Pg.exec_raw db "select 1"));
           Eio.Promise.resolve answer_given ());
       (match !answer with
-      | Some (Error `Busy) -> ()
+      | Some (Error (`Pool `Busy)) -> ()
       | Some (Ok ()) -> Alcotest.fail "served while the pool was held"
       | Some (Error _) | None -> Alcotest.fail "not busy");
       (match
@@ -420,8 +438,7 @@ let test_a_pool_is_measured () =
       Spindle_postgres.Pool.close main;
       Spindle_postgres.Pool.close replica;
       match seen with
-      | Error (`Busy | `Pool_closed) ->
-          Alcotest.fail "busy with nothing borrowed"
+      | Error (`Pool _) -> Alcotest.fail "busy with nothing borrowed"
       | Ok text ->
           List.iter
             (fun line ->
@@ -443,8 +460,7 @@ let test_a_pool_says_how_it_stands () =
       let at_rest = Spindle_postgres.Pool.stats pool in
       Spindle_postgres.Pool.close pool;
       match held with
-      | Error (`Busy | `Pool_closed) ->
-          Alcotest.fail "busy with nothing borrowed"
+      | Error (`Pool _) -> Alcotest.fail "busy with nothing borrowed"
       | Ok (held : Spindle_postgres.Pool.stats) ->
           Alcotest.(check (list int))
             "size, idle and waiting while one is borrowed" [ 2; 1; 0 ]
@@ -521,8 +537,7 @@ let test_an_abandoned_query_is_stopped_at_the_server () =
          Spindle_postgres.Pool.use pool (fun db -> Pg.exec_raw db "select 1")
        with
       | Ok () -> ()
-      | Error (`Busy | `Pool_closed) ->
-          Alcotest.fail "the connection never came back"
+      | Error (`Pool _) -> Alcotest.fail "the connection never came back"
       | Error (#S.error as e) ->
           Alcotest.failf "the connection came back broken: %s"
             (S.error_to_string e));
@@ -587,7 +602,7 @@ let with_counter_pool f =
                 values (0)")
        with
       | Ok () -> ()
-      | Error (`Busy | `Pool_closed) -> Alcotest.fail "no connection"
+      | Error (`Pool _) -> Alcotest.fail "no connection"
       | Error (#S.error as e) -> Alcotest.fail (S.error_to_string e));
       Fun.protect
         ~finally:(fun () -> Spindle_postgres.Pool.close pool)
@@ -785,6 +800,8 @@ let () =
             test_a_lost_race_is_run_again;
           Alcotest.test_case "a lost race answers busy" `Quick
             test_a_lost_race_answers_busy;
+          Alcotest.test_case "a closed connection answers internal" `Quick
+            test_a_closed_connection_answers_internal;
           Alcotest.test_case "a closed pool answers busy" `Quick
             test_a_closed_pool_answers_busy;
           Alcotest.test_case "an exhausted pool is a warning" `Quick
