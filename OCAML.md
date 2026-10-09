@@ -169,6 +169,14 @@ the next where they expect it.
   installed.
 - **An error's printer is `error_to_string`**, beside the `error` type it
   prints.
+- **An error's tags say what failed, and group what is handled alike.**
+  A resource's states sit under the resource (`` `Pool `Busy ``,
+  `` `Connection `Closed ``), so a caller handles the whole resource in one
+  arm and no two resources share a word; what happened to the work is a
+  flat tag with one handling each, never grouped with a case handled
+  otherwise; a function's own error that its caller maps at once keeps the
+  function's words. Polymorphic tags are one namespace across every
+  library, so a tag means one failure wherever it is merged.
 - **A duration's label names its unit, and its type is what the value
   is.** `_s` is seconds and `_ms` milliseconds, and no duration goes
   without one. A wait the program counts on a clock is a float of seconds,
