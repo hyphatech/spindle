@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Breaking: a plain `OPTIONS` of a path a route names, where no route
+  declares `OPTIONS`, is `204` with `Allow` listing the path's methods,
+  `OPTIONS` among them (RFC 9110 §9.3.7), and `OPTIONS *` is `204`. Each
+  was `405`, or `404`, and a `405`'s `Allow` now names `OPTIONS` too. A
+  CORS preflight is answered as before.
+
 - Breaking: `Response.make` at `204` or `304` names no content type unless
   given one, since neither has content (RFC 9110 §15.3.5, §15.4.5). Each was
   sent `text/plain; charset=utf-8`, the default for a body, with none.

@@ -88,7 +88,7 @@ let test_the_same_path_under_two_methods_is_fine () =
 let test_wrong_method_is_405_with_allow () =
   let r = Spindle.Test.call (Spindle.Test.app [ hello ]) `POST "/hello/kim" in
   check_status "405" 405 r.status;
-  check_header "allow, HEAD with GET" (Some "GET, HEAD")
+  check_header "allow, HEAD with GET, and OPTIONS" (Some "GET, HEAD, OPTIONS")
     (Spindle.Test.header r "allow")
 
 let test_unknown_path_is_404_or_the_not_found_answer () =
@@ -1833,8 +1833,11 @@ let test_a_preflight_is_the_framework's () =
     (Spindle.Test.call a `OPTIONS "/api/item"
        ~headers:[ ("origin", app_origin) ])
       .body;
-  check_status "a route the policy does not cover has no preflight" 405
-    (preflight "/page").status
+  let uncovered = preflight "/page" in
+  check_status "a route the policy does not cover is a plain OPTIONS" 204
+    uncovered.status;
+  check_header "and grants nothing" None
+    (Spindle.Test.header uncovered "access-control-allow-origin")
 
 let test_an_answer_says_who_may_read_it () =
   let a =
@@ -5581,13 +5584,13 @@ let test_a_rest_takes_only_what_no_route_names () =
   in
   let r = Spindle.Test.call a `GET "/orders" in
   check_status "a path an endpoint names is the endpoint's" 405 r.status;
-  check_header "and allows what it answers" (Some "POST")
+  check_header "and allows what it answers" (Some "POST, OPTIONS")
     (Spindle.Test.header r "allow");
   check_string "a path nobody names is the rest's" "site"
     (Spindle.Test.call a `GET "/orders/7").body;
   let r = Spindle.Test.call a `POST "/about" in
   check_status "another method where only the rest is" 405 r.status;
-  check_header "allows the rest's" (Some "GET, HEAD")
+  check_header "allows the rest's" (Some "GET, HEAD, OPTIONS")
     (Spindle.Test.header r "allow")
 
 (* ---------------------------------------------------------------- *)

@@ -129,7 +129,10 @@ Path.root                                        (* / *)
   route" instead, when two routes differ only by a parameter's type.
 - **A path no route names** is `404`, or your own answer with
   `Spindle.serve env ~not_found:page routes`. A path another method's route
-  names is `405`.
+  names is `405`, with `Allow` listing the methods it has.
+- **`OPTIONS`** of a path a route names is answered for you, `204` with that
+  `Allow`, unless you declare an `OPTIONS` route there; `OPTIONS *`, which
+  asks of the server, is `204` as well.
 - **A trailing slash is a different path** (`404`), unless you pass
   `~trailing_slash:Spindle.App.Redirect`, which answers a `308` to the path
   without it.

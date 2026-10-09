@@ -588,6 +588,9 @@ type resolution =
   | Route of Route_repr.t * (string * string) list
   | Slash  (** a trailing slash, redirected *)
   | Allowed of Meth.t list  (** the path is a route's under other methods *)
+  | Options of Meth.t list
+      (** a plain OPTIONS of a path routes answer under these methods *)
+  | Server_options  (** [OPTIONS *], which asks of the server itself *)
   | Unimplemented  (** a method nothing here knows *)
   | Nothing  (** no route's: the not-found answer *)
 
@@ -608,9 +611,17 @@ let resolve t req =
         | `None -> false)
       t.methods
   in
-  let allowed_with_head allow =
-    Allowed
-      (if List.exists (Meth.equal `GET) allow then allow @ [ `HEAD ] else allow)
+  (* RFC 9110 §9.3.2, §9.3.7: HEAD wherever GET is, and OPTIONS on every
+     path a route names, which the framework answers when no route does. *)
+  let allowed allow =
+    let also m allow =
+      if List.exists (Meth.equal m) allow then allow else allow @ [ m ]
+    in
+    let allow =
+      (if List.exists (Meth.equal `GET) allow then also `HEAD allow else allow)
+      |> also `OPTIONS
+    in
+    match meth with `OPTIONS -> Options allow | _ -> Allowed allow
   in
   let takes_rest (r : Route_repr.t) =
     List.exists
@@ -620,6 +631,8 @@ let resolve t req =
       r.segments
   in
   if not (is_implemented t meth) then Unimplemented
+  else if Meth.equal meth `OPTIONS && String.equal (Request.target req) "*" then
+    Server_options
   else
     (* A path a route names under any method is that route's, 405 for other
        methods; a rest takes only what nobody names. *)
@@ -627,7 +640,7 @@ let resolve t req =
     | `Found (r, params) when takes_rest r -> (
         match methods_allowed ~rest:false with
         | [] -> Route (r, params)
-        | allow -> allowed_with_head allow)
+        | allow -> allowed allow)
     | `Found (r, params) -> Route (r, params)
     | `Slash -> Slash
     | `None -> (
@@ -635,12 +648,13 @@ let resolve t req =
         | [] -> (
             match methods_allowed ~rest:true with
             | [] -> Nothing
-            | allow -> allowed_with_head allow)
-        | allow -> allowed_with_head allow)
+            | allow -> allowed allow)
+        | allow -> allowed allow)
 
 let matched_route = function
   | Route ((r : Route_repr.t), _) -> Some r.info
-  | Slash | Allowed _ | Unimplemented | Nothing -> None
+  | Slash | Allowed _ | Options _ | Server_options | Unimplemented | Nothing ->
+      None
 
 (* A preflight asks about the path, not the method. *)
 let routes_at_path t path =
@@ -703,7 +717,9 @@ let answer_resolution t ~body ~answered_route resolution req =
         | Returns_repr.Json _ | Json_response _ | Html | Text | Empty _
         | Empty_response _ | Response | Events _ ->
             false)
-    | Slash | Allowed _ | Unimplemented | Nothing -> false
+    | Slash | Allowed _ | Options _ | Server_options | Unimplemented | Nothing
+      ->
+        false
   in
   (* A site the policy lets read a covered route may write to it; under Any,
      only without a cookie. *)
@@ -731,6 +747,12 @@ let answer_resolution t ~body ~answered_route resolution req =
             Response.redirect ~status:`Permanent_redirect location
         | None -> Response.refusal Refusal.not_found)
     | Allowed allow -> Response.refusal (Refusal.method_not_allowed ~allow)
+    | Options allow ->
+        Response.empty
+          ~headers:
+            [ ("allow", String.concat ", " (List.map Meth.to_string allow)) ]
+          ()
+    | Server_options -> Response.empty ()
     | Unimplemented -> Response.refusal Refusal.not_implemented
     | Nothing -> (
         match t.not_found with

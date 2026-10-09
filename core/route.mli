@@ -76,9 +76,9 @@ val info : t -> info
 val matched : Request.t -> info option
 (** The route this request matched -- what it reads, returns and refuses, and
     every {!Meta} key it carries -- or [None] when no route answers it: a [404],
-    a [405], a trailing-slash redirect, or the not-found answer. The route table
-    chooses before any middleware runs, so a middleware that is a policy for
-    some routes reads it here:
+    a [405], the framework's [OPTIONS], a trailing-slash redirect, or the
+    not-found answer. The route table chooses before any middleware runs, so a
+    middleware that is a policy for some routes reads it here:
 
     {[
     let limited handler request =

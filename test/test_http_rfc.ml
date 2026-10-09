@@ -968,6 +968,29 @@ let server =
            Open ));
     row "9110 §15.5.6" "a 405 says what is allowed" (get "/read/a")
       (Answers ([ answer ~headers:[ ("allow", Present) ] 405 ], Open));
+    row "9110 §10.2.1" "a 405's Allow names OPTIONS, which every path answers"
+      (get "/read/a")
+      (Answers ([ answer ~headers:[ ("allow", Is "POST, OPTIONS") ] 405 ], Open));
+    row "9110 §9.3.7" "an OPTIONS is answered with what the path allows"
+      (request ~line:"OPTIONS /read/a HTTP/1.1" [ "Host: t" ])
+      (Answers
+         ( [
+             answer
+               ~headers:
+                 [ ("allow", Is "POST, OPTIONS"); ("content-type", Absent) ]
+               204;
+           ],
+           Open ));
+    row "9110 §9.3.7" "and HEAD where GET is"
+      (request ~line:"OPTIONS /id/a HTTP/1.1" [ "Host: t" ])
+      (Answers
+         ([ answer ~headers:[ ("allow", Is "GET, HEAD, OPTIONS") ] 204 ], Open));
+    row "9110 §9.3.7" "an OPTIONS of a path no route names is 404"
+      (request ~line:"OPTIONS /nowhere HTTP/1.1" [ "Host: t" ])
+      (Answers ([ answer 404 ], Open));
+    row "9110 §9.3.7" "an OPTIONS of the server, an asterisk, is answered"
+      (request ~line:"OPTIONS * HTTP/1.1" [ "Host: t" ])
+      (Answers ([ answer ~headers:[ ("allow", Absent) ] 204 ], Open));
     row "9112 §7.1.2" "a trailer is never merged into the head"
       (chunked "/x-id" "5\r\nhello\r\n0\r\nX-Id: merged\r\n\r\n")
       (Answers ([ answer ~body:"none" 200 ], Open));

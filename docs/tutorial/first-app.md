@@ -115,7 +115,7 @@ curl -i -X DELETE localhost:8080
 ```text
 HTTP/1.1 405 Method Not Allowed
 content-type: application/json
-allow: GET, HEAD
+allow: GET, HEAD, OPTIONS
 ...
 
 {"error":"method_not_allowed","message":"That is not something you can do here."}

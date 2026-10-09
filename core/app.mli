@@ -2,13 +2,16 @@
     applies to all of it.
 
     A request is matched by method and path. A path some route claims under
-    another method is [405] with [Allow]; a path no route claims is the
-    application's not-found answer, or [404]. A method no route declares and the
-    framework does not know -- [PROPFIND], say, in an application that answers
-    none -- is [501], before the not-found answer, since nothing here implements
-    it. [HEAD] is answered by the [GET] route. A handler or a middleware that
-    raises is [500], with the exception in the log -- except cancellation, which
-    is how Eio stops work nobody is waiting for, and so is never caught here. *)
+    another method is [405] with [Allow], which names [OPTIONS] too: a plain
+    [OPTIONS] of such a path, where no route declares one, is [204] with that
+    [Allow] (RFC 9110 §9.3.7), and [OPTIONS *], which asks of the server, is
+    [204] with nothing more. A path no route claims is the application's
+    not-found answer, or [404]. A method no route declares and the framework
+    does not know -- [PROPFIND], say, in an application that answers none -- is
+    [501], before the not-found answer, since nothing here implements it. [HEAD]
+    is answered by the [GET] route. A handler or a middleware that raises is
+    [500], with the exception in the log -- except cancellation, which is how
+    Eio stops work nobody is waiting for, and so is never caught here. *)
 
 type t
 
@@ -91,8 +94,9 @@ type undeclared =
 type answered = {
   route : string option;
       (** the pattern of the route that answered, [/orders/{order_id}]; [None]
-          when no route did -- the not-found answer, a [404], a [405], a
-          redirect, or a middleware that answered alone *)
+          when no route did -- the not-found answer, a [404], a [405], the
+          framework's [OPTIONS], a redirect, or a middleware that answered alone
+      *)
   undeclared : undeclared option;
       (** what in the answer nobody declared: a bug, which {!Test.call} raises
           on and the server logs *)

@@ -74,7 +74,7 @@ val route : ?at:Path.path -> t -> Route.t
     It is a route over {!Path.rest}, so it takes only the paths no other route
     names, under any method: every endpoint is asked first, and another method
     at a path under it is [405], at the root as anywhere -- [POST /nothing] is
-    [405 Allow: GET, HEAD].
+    [405 Allow: GET, HEAD, OPTIONS].
 
     Every file carries a strong entity tag, its digest, and
     [X-Content-Type-Options: nosniff], so a browser takes the type it is
