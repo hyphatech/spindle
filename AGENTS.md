@@ -18,8 +18,8 @@ make docs    # the documentation site into site/, as Pages publishes it; docs-se
 `make test` needs `docker compose`. Without `SPINDLE_TEST_PG` the suites
 that need a server are skipped, and the test output says so. CI runs `make
 lint` and `make test`, against the same compose Postgres, on OCaml 5.5, and
-the suites without a server on the oldest versions the opam files allow. `docs.yml` publishes the site to GitHub Pages on every push to
-`main`.
+`make test` again on the oldest versions the opam files allow. `docs.yml`
+publishes the site to GitHub Pages on every push to `main`.
 
 ## Layout
 
