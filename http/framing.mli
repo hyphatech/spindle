@@ -52,19 +52,19 @@ val read :
   reader ->
   max:int ->
   reserve:(int -> bool) ->
-  (string, [ `Too_large | `Busy | `Broken of string ]) result
+  (string, [ `Too_large | `Over_budget | `Unreadable of string ]) result
 (** The whole body. [`Too_large] past [max] bytes -- at once for a declared
     length, without reading any of it -- and a chunked body's extensions, which
     carry nothing of it, count toward them. [reserve n] is asked before [n] more
     bytes are held, as they arrive -- a declared length's too, since a length is
-    only a claim until its bytes come -- and [`Busy] is its [false]. *)
+    only a claim until its bytes come -- and [`Over_budget] is its [false]. *)
 
 val read_some :
   reader ->
   max:int ->
   reserve:(int -> bool) ->
   ( [ `Data of string | `End ],
-    [ `Too_large | `Busy | `Broken of string ] )
+    [ `Too_large | `Over_budget | `Unreadable of string ] )
   result
 (** The next piece of the body as it arrived, at most 64 KiB, or its end: a body
     read as it comes. [max] and [reserve] are {!read}'s, over the whole body --

@@ -545,12 +545,12 @@ let request_body ~limits ~state ~deadline ~framing ~reader ic oc progress =
   in
   let failed = function
     | `Too_large -> Error Body.Too_large
-    | `Busy ->
+    | `Over_budget ->
         progress.over_budget <- true;
-        Error Body.Busy
-    | `Broken _ when Deadline.passed deadline ->
+        Error Body.Over_budget
+    | `Unreadable _ when Deadline.passed deadline ->
         Error (Body.Unreadable "the body stopped arriving")
-    | `Broken detail -> Error (Body.Unreadable detail)
+    | `Unreadable detail -> Error (Body.Unreadable detail)
   in
   (* A client waiting for 100 Continue is refused while it still holds a
      body the budget has no room for. Room is checked, not taken: a length is
@@ -564,7 +564,7 @@ let request_body ~limits ~state ~deadline ~framing ~reader ic oc progress =
           && state.body_bytes_reserved + n > limits.body_budget
       | Framing.No_body | Framing.Chunked | Framing.Until_close -> false
     in
-    if no_room then failed `Busy
+    if no_room then failed `Over_budget
     else if not (continue_if_asked ~max:limits.max_body) then
       Error (Body.Unreadable "the client stopped reading")
     else

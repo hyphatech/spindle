@@ -3,7 +3,7 @@
 
 module Meth = Spindle_http.Meth
 
-type body_error = Too_large | Unreadable of string | Busy
+type body_error = Too_large | Unreadable of string | Over_budget
 
 (* Extended by [Route], which is built on this module and so cannot be
    named here. *)

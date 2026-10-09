@@ -273,7 +273,7 @@ let read r ~max ~reserve =
         | _ -> Ok (String.concat "" (List.rev pieces)))
     | Some s ->
         if bytes_spent r > max then Error `Too_large
-        else if not (reserve (String.length s)) then Error `Busy
+        else if not (reserve (String.length s)) then Error `Over_budget
         else collect (s :: pieces)
   in
   (* Reserved as bytes arrive, not as a length declares them. *)
@@ -281,7 +281,7 @@ let read r ~max ~reserve =
   | No_body -> Ok ""
   | Fixed n when n > max -> Error `Too_large
   | Fixed _ | Chunked | Until_close -> (
-      try collect [] with Broken m -> Error (`Broken m))
+      try collect [] with Broken m -> Error (`Unreadable m))
 
 let read_some r ~max ~reserve =
   match r.framing with
@@ -291,9 +291,9 @@ let read_some r ~max ~reserve =
       | None -> Ok `End
       | Some s ->
           if bytes_spent r > max then Error `Too_large
-          else if not (reserve (String.length s)) then Error `Busy
+          else if not (reserve (String.length s)) then Error `Over_budget
           else Ok (`Data s)
-      | exception Broken m -> Error (`Broken m))
+      | exception Broken m -> Error (`Unreadable m))
 
 let discard r ~limit =
   let rec discard_up_to left =

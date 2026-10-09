@@ -31,7 +31,8 @@ type error = Request_repr.body_error =
   | Unreadable of string
       (** it stopped arriving, the connection failed, or it was not framed as it
           said *)
-  | Busy  (** no room left in the server's budget for bodies being held *)
+  | Over_budget
+      (** no room left in the server's budget for bodies being held *)
 
 val read : t -> ([ `Data of string | `End ], error) result
 (** The next part of the body as it arrived, at most 64 KiB, or its end. An

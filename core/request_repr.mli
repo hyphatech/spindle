@@ -3,7 +3,7 @@
     value {!Request} exports is documented there. *)
 
 (** How reading a body failed: what {!Body.error} is. *)
-type body_error = Too_large | Unreadable of string | Busy
+type body_error = Too_large | Unreadable of string | Over_budget
 
 type matched = ..
 (** The route a request matched, extended by {!Route}, which is built on this

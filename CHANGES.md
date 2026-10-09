@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- A body's failures have one word each, in `Spindle.Body.error` and in
+  `Spindle_http.Framing.read` and `read_some` alike: a body that could not
+  be read is `Unreadable` in both, where `Framing` answered
+  `` `Broken ``, and one the server's `body_budget` had no room for is
+  `Over_budget`, where both answered `Busy`, which said nothing of the
+  budget. The answer is unchanged: `503 busy`. Breaking: a match on a
+  body's error names the new constructors.
+
 - In `spindle_postgres`, a pool's failures are its states under `` `Pool ``:
   `` `Pool `Busy `` where `Spindle_postgres.error`, `Pool.use`, `query` and
   `transaction` answered `` `Busy ``, and `` `Pool `Closed `` for a pool

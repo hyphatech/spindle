@@ -1,7 +1,11 @@
 module L = (val Logs.src_log Log.http : Logs.LOG)
 
 type t = Body_repr.t
-type error = Request_repr.body_error = Too_large | Unreadable of string | Busy
+
+type error = Request_repr.body_error =
+  | Too_large
+  | Unreadable of string
+  | Over_budget
 
 type source = Body_repr.source = {
   whole : unit -> (string, error) result;

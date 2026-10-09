@@ -502,8 +502,8 @@ let receive_response t c meth ~caller_closes =
             },
             kept )
       | Error `Too_large -> fail "a response longer than %d bytes" t.max_body
-      | Error (`Broken m) -> fail "a response cut short: %s" m
-      | Error `Busy -> fail "a response that could not be held")
+      | Error (`Unreadable m) -> fail "a response cut short: %s" m
+      | Error `Over_budget -> fail "a response that could not be held")
 
 (* ------------------------------------------------------------------ *)
 (* A call *)
@@ -671,9 +671,9 @@ module Body = struct
           | Ok (Ok `End) ->
               b.state <- Ended;
               Ok `End
-          | Ok (Error (`Broken m)) ->
+          | Ok (Error (`Unreadable m)) ->
               failed (Unreachable ("an answer cut short: " ^ m))
-          | Ok (Error (`Too_large | `Busy)) ->
+          | Ok (Error (`Too_large | `Over_budget)) ->
               failed (Unreachable "an answer that could not be held")
           | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
           | exception ex -> (

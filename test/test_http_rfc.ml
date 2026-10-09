@@ -135,9 +135,9 @@ let read_with ~body ~max ~max_body delivery bytes =
           let r = Framing.reader framing ic ~max_trailer:max in
           match body r ~max:max_body ~reserve:(fun _ -> true) with
           | Ok body -> Read (head, body)
-          | Error (`Broken _) -> Broken head
+          | Error (`Unreadable _) -> Broken head
           | Error `Too_large -> Too_large head
-          | Error `Busy -> Alcotest.fail "nothing is reserved here"))
+          | Error `Over_budget -> Alcotest.fail "nothing is reserved here"))
 
 let version_name = function Head.Http_1_0 -> "1.0" | Head.Http_1_1 -> "1.1"
 
@@ -195,9 +195,9 @@ let read_response ?(max = max_head) ?(max_body = max_body) ~meth delivery bytes
           let r = Framing.reader framing ic ~max_trailer:max in
           match Framing.read r ~max:max_body ~reserve:(fun _ -> true) with
           | Ok body -> Response_read (head, body)
-          | Error (`Broken _) -> Response_broken head
+          | Error (`Unreadable _) -> Response_broken head
           | Error `Too_large -> Response_too_large head
-          | Error `Busy -> Alcotest.fail "nothing is reserved here"))
+          | Error `Over_budget -> Alcotest.fail "nothing is reserved here"))
 
 let show_response_head (h : Head.Response.t) =
   Printf.sprintf "HTTP/%s %d %S [%s]%s" (version_name h.version)
@@ -2976,7 +2976,7 @@ let body_within_limits ic framing ~max ~max_body =
       match framing with
       | Framing.Fixed _ -> Eio.Buf_read.consumed_bytes ic = before
       | Framing.No_body | Framing.Chunked | Framing.Until_close -> true)
-  | Error (`Broken _ | `Busy) -> true
+  | Error (`Unreadable _ | `Over_budget) -> true
 
 let head_within ic ~max =
   Eio.Buf_read.consumed_bytes ic <= max

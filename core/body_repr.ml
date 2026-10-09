@@ -28,7 +28,7 @@ let hold source ~pattern =
 
 let refusal : error -> Refusal.t = function
   | Request_repr.Too_large -> Refusal.too_large
-  | Request_repr.Busy -> Refusal.busy ()
+  | Request_repr.Over_budget -> Refusal.busy ()
   | Request_repr.Unreadable detail -> Refusal.unreadable ~detail
 
 (* Once, however many dependencies ask. A stream already begun leaves nothing
