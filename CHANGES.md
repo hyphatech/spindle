@@ -1,5 +1,11 @@
 # Changes
 
+## Unreleased
+
+- The log's writer writes a line as soon as it is logged, where it slept
+  a millisecond after each flush; the lines logged while it writes are
+  still written together, in its next flush.
+
 ## 0.3.0 (2026-10-11)
 
 - Breaking: every instant is a `Ptime.t`, where it was an `int` of

@@ -133,10 +133,6 @@ let wake_writer () =
    writer's. *)
 let pass_lock = Mutex.create ()
 
-(* Each pass carries a millisecond of lines: woken for each line, the writer
-   cost a third of a core under load. *)
-let pass_interval = Mtime.Span.ms
-
 (* A domain's buffer leaves [registered] once the domain has ended and its
    lines are written, so a program that starts domains as it goes keeps none
    of theirs; one that logs after that, from an [at_exit] of its own, is put
@@ -190,6 +186,10 @@ let write_pass () =
     (Atomic.get registered);
   flush Stdlib.stderr
 
+(* A domain wakes the writer only with the first line of a pass, so the
+   lines logged while one pass writes are the next pass, written together:
+   under load the passes run back to back, each as long as the one before
+   took to write, and no timer is needed to gather them. *)
 let writer () =
   while true do
     Mutex.protect wake_lock (fun () ->
@@ -197,9 +197,7 @@ let writer () =
           Condition.wait wake wake_lock
         done;
         woken := false);
-    Mutex.protect pass_lock write_pass;
-    (* A domain of its own, with no Eio clock: [Unix.sleepf] takes seconds. *)
-    Unix.sleepf (Mtime.Span.to_float_ns pass_interval /. 1e9)
+    Mutex.protect pass_lock write_pass
   done
 
 let writer_started = Atomic.make false

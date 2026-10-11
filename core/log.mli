@@ -35,14 +35,15 @@ val setup :
     newline, under a lock, and is a test's way of keeping them; without it a
     line goes to stderr. Each domain gathers its lines in a buffer of its own,
     and a domain of the log's own, started by the first [setup] that needs it,
-    writes every domain's at most once a millisecond, in one flush, so no domain
-    waits on stderr and what is left is written before the process exits. A
-    domain's lines keep their order, and lines from two domains are ordered by
-    their timestamps. It turns on [Printexc.record_backtrace], which the domains
-    started after it inherit, so {!raised} has a stack to give: call it before
-    the server starts its domains. [format] defaults to [Pretty] when stderr is
-    a terminal and [Json] when it is not. Safe from several threads and domains:
-    a line is formatted on the one that logged it. *)
+    writes every domain's as they come -- those logged while it writes in its
+    next flush, together -- so no domain waits on stderr, and what is left is
+    written before the process exits. A domain's lines keep their order, and
+    lines from two domains are ordered by their timestamps. It turns on
+    [Printexc.record_backtrace], which the domains started after it inherit, so
+    {!raised} has a stack to give: call it before the server starts its domains.
+    [format] defaults to [Pretty] when stderr is a terminal and [Json] when it
+    is not. Safe from several threads and domains: a line is formatted on the
+    one that logged it. *)
 
 val configure :
   levels:string option -> format:string option -> (unit, string) result

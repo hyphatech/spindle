@@ -2424,9 +2424,21 @@ let log_child () =
              log_lines d;
              Thread.join thread)))
 
+(* A child that logs one line and then waits, its stdin held open, until the
+   suite has read it: the line must be written while the program runs, not
+   only by the exit's flush. *)
+let waiting_child () =
+  Spindle.Log.setup ~format:Spindle.Log.Json ();
+  Logs.info (fun m -> m "written while waiting");
+  ignore (In_channel.input_all stdin : string)
+
 let () =
   if Option.is_some (Sys.getenv_opt "SPINDLE_LOG_CHILD") then begin
     log_child ();
+    exit 0
+  end;
+  if Option.is_some (Sys.getenv_opt "SPINDLE_LOG_WAITING_CHILD") then begin
+    waiting_child ();
     exit 0
   end
 
@@ -2474,6 +2486,33 @@ let test_every_line_reaches_stderr_whole () =
       in
       check_int (Printf.sprintf "writer %d's lines" d) expected n)
     next
+
+let test_a_line_is_written_while_the_program_runs () =
+  let stdin_read, stdin_write = Unix.pipe ~cloexec:true () in
+  let read, write = Unix.pipe ~cloexec:true () in
+  let child =
+    Unix.create_process_env Sys.executable_name [| Sys.executable_name |]
+      (Array.append [| "SPINDLE_LOG_WAITING_CHILD=1" |] (Unix.environment ()))
+      stdin_read Unix.stdout write
+  in
+  Unix.close stdin_read;
+  Unix.close write;
+  let lines = Unix.in_channel_of_descr read in
+  let first = In_channel.input_line lines in
+  Unix.close stdin_write;
+  ignore (In_channel.input_all lines : string);
+  Unix.close read;
+  let rec wait () =
+    match Unix.waitpid [] child with
+    | status -> status
+    | exception Unix.Unix_error (Unix.EINTR, _, _) -> wait ()
+  in
+  (match wait () with
+  | _, Unix.WEXITED 0 -> ()
+  | _ -> Alcotest.fail "the child did not exit cleanly");
+  match Option.map (Wiretype.decode message) first with
+  | Some (Ok m) -> Alcotest.(check string) "its line" "written while waiting" m
+  | Some (Error _) | None -> Alcotest.fail "no line while the child waited"
 
 (* A printer that logs while its own line is being formatted writes a line
    of its own, and neither is written into the other. *)
@@ -8220,6 +8259,8 @@ let () =
             test_a_domain_that_logs_can_end;
           Alcotest.test_case "every line reaches stderr whole" `Quick
             test_every_line_reaches_stderr_whole;
+          Alcotest.test_case "a line is written while the program runs" `Quick
+            test_a_line_is_written_while_the_program_runs;
           Alcotest.test_case "a printer that logs writes its own line" `Quick
             test_a_printer_that_logs_writes_its_own_line;
           Alcotest.test_case "levels are read from a spec" `Quick
