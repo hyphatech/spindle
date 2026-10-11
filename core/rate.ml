@@ -80,6 +80,5 @@ let limit t ~key =
          | `Wait ns ->
              Error
                (Refusal.rate_limited
-                  ~retry_after_s:((ns + 999_999_999) / 1_000_000_000)
-                  ()))
+                  ~retry_after_s:((ns + 999_999_999) / 1_000_000_000)))
        key)

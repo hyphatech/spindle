@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Breaking: `Refusal.rate_limited` is `retry_after_s:int -> t`, without
+  the `()` it took after its one argument, which is labelled and not
+  optional: `Refusal.rate_limited ~retry_after_s:30`.
+
 - `spindle_postgres` asks for rowtype 0.3.0 and postgres-eio 0.2.0, and
   pins both at those tags, so what changed there reaches a program through
   it. Breaking: a statement on a closed connection is

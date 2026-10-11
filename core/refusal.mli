@@ -126,7 +126,7 @@ val invalid : problem list -> t
 
 val too_large : t
 
-val rate_limited : retry_after_s:int -> unit -> t
+val rate_limited : retry_after_s:int -> t
 (** [429 rate_limited] with [Retry-After] of [retry_after_s] seconds, at least
     one: what {!Rate.limit} refuses with. *)
 

@@ -136,7 +136,7 @@ let internal ~detail =
 let raised ex bt =
   { (internal ~detail:(Printexc.to_string ex)) with raised = Some (ex, bt) }
 
-let rate_limited ~retry_after_s () =
+let rate_limited ~retry_after_s =
   make Code.rate_limited
     ~headers:[ ("retry-after", string_of_int (max 1 retry_after_s)) ]
     "That was asked too often. Please try again in a moment."
