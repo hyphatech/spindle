@@ -74,30 +74,11 @@
  (modules test_style)
  (libraries alcotest)
  (deps
-  ; The names it refuses, read from the shared rules.
+  ; The shared refusals, read from the blocks OCAML.md fences, and every
+  ; directory the build reads, each held to them by what its dune builds.
   ../OCAML.md
-  (glob_files ../http/dune)
-  (glob_files ../core/dune)
-  (glob_files ../client/dune)
-  (glob_files ../postgres/dune)
-  (glob_files ../cli/dune)
-  (glob_files ../http/*.ml)
-  (glob_files ../http/*.mli)
-  (glob_files ../core/*.ml)
-  (glob_files ../core/*.mli)
-  (glob_files ../client/*.ml)
-  (glob_files ../client/*.mli)
-  (glob_files ../postgres/*.ml)
-  (glob_files ../postgres/*.mli)
-  (glob_files ../cli/*.ml)
-  (glob_files ../cli/*.mli)
-  ; The tests and the examples, held to the rules every file keeps.
-  (glob_files *.ml)
-  dune
-  ../examples/pages/dune
-  (glob_files ../examples/*.ml)
-  (glob_files ../examples/pages/*.ml)
-  (glob_files ../examples/pages/*.mlx)
+  (glob_files_rec ../dune)
+  (glob_files_rec ../*.{ml,mli,mlx})
   ; Every example built, and every page that may include one.
   ../examples/dune
   (glob_files_rec ../docs/*.md)))
