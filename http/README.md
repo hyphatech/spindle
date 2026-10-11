@@ -24,7 +24,7 @@ Each module's `.mli` is the reference.
 | `Auth` | credentials and challenges (§11): a scheme compared without case, then a token68 or parameters |
 | `Cache_control` | `Cache-Control`'s directives (RFC 9111 §5.2), and delta-seconds read as §1.2.2 has them |
 | `Date` | an HTTP-date read (§5.6.7) into a `Ptime.t`: the IMF-fixdate and the two obsolete forms a recipient accepts; `Write.date` writes one |
-| `Instant` | an instant read from a clock as a `Ptime.t`, an instant a span on, and the wait until one, zero once it has passed; `Spindle.until` is its `until` |
+| `Instant` | an instant read from a clock as a `Ptime.t`, an instant a span on, and the wait until one, zero once it has passed; `Spindle.until` is its `until`; and a sleep for a span where no Eio loop runs |
 | `Etag` | entity tags (§8.8.3), compared strongly and weakly, and the `*` or list `If-Match` and `If-None-Match` hold |
 | `Range` | byte ranges (§14): a request's `Range`, what one asks of a length, and a `Content-Range` |
 | `Event_stream` | Server-Sent Events as the HTML standard writes and reads a `text/event-stream`: an event spelled, and a stream read a piece at a time into events |

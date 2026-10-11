@@ -3,12 +3,13 @@
 let ns_per_day = 86_400_000_000_000L
 let ps_per_ns = 1_000L
 
-(* The clock is read once, as an instant, so a time out of range has no
-   float left to say which end it passed. *)
+(* The library's clock module: the two calls with no typed form, a clock's
+   float of seconds and [Unix.sleepf]'s, are made here and nowhere else. *)
 let of_clock clock =
-  match Ptime.of_float_s (Eio.Time.now clock) with
+  let s = Eio.Time.now clock in
+  match Ptime.of_float_s s with
   | Some t -> t
-  | None -> Ptime.max
+  | None -> if Float.compare s 0. < 0 then Ptime.min else Ptime.max
 
 (* Rounded up to the nanosecond, so a wait never ends before its deadline. *)
 let until ~now deadline =
@@ -32,3 +33,5 @@ let add t span =
   match Option.bind (Ptime.Span.of_d_ps (d, ps)) (Ptime.add_span t) with
   | Some later -> later
   | None -> Ptime.max
+
+let sleep span = Unix.sleepf (Mtime.Span.to_float_ns span /. 1e9)

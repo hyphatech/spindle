@@ -2,14 +2,9 @@
 
 ## Unreleased
 
-- Breaking: `Spindle.clock_now` reads a clock outside the years 0000 to
-  9999, which only a mock clock can be, as the latest instant of 9999,
-  where one before 0000 was the earliest. The clock is now read once, as
-  an instant.
-
-- The log's writer writes a line as soon as it is logged, where it slept
-  a millisecond after each flush; the lines logged while it writes are
-  still written together, in its next flush.
+- `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop
+  runs for an `Mtime.Span.t`, where `Unix.sleepf` takes a float of
+  seconds.
 
 ## 0.3.0 (2026-10-11)
 

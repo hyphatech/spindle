@@ -20,4 +20,5 @@
   base64
   angstrom
   ipaddr
+  unix
   threads.posix))

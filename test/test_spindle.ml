@@ -7718,6 +7718,30 @@ let test_a_wait_until_an_instant_is_never_negative () =
     Mtime.Span.max_span
     (Spindle.until ~now:Ptime.min Ptime.max)
 
+(* A clock is read as the instant it says, and one outside the years 0000 to
+   9999 -- a mock clock set there -- as the nearest instant in them. *)
+let test_a_clock_is_read_as_the_nearest_instant () =
+  let clock = Eio_mock.Clock.make () in
+  let read seconds =
+    Eio_mock.Clock.set_time clock seconds;
+    Spindle_http.Instant.of_clock clock
+  in
+  Alcotest.check Instants.testable "1970" Ptime.epoch (read 0.);
+  Alcotest.check Instants.testable "a second on" (Instants.of_ms 1_000)
+    (read 1.);
+  Alcotest.check Instants.testable "before 0000, its first instant" Ptime.min
+    (read (-1e12));
+  Alcotest.check Instants.testable "past 9999, its last instant" Ptime.max
+    (read 1e12)
+
+(* A sleep on a domain no Eio loop runs lasts at least its span. *)
+let test_a_sleep_lasts_its_span () =
+  let counter = Mtime_clock.counter () in
+  Spindle_http.Instant.sleep Mtime.Span.(20 * ms);
+  Alcotest.(check bool)
+    "at least its span" true
+    (Mtime.Span.compare (Mtime_clock.count counter) Mtime.Span.(20 * ms) >= 0)
+
 (* An instant a span on is that instant, or the last of 9999. *)
 let test_an_instant_a_span_on_stops_at_9999 () =
   Alcotest.check Instants.testable "a day on"
@@ -8519,6 +8543,10 @@ let () =
             test_a_wait_until_an_instant_is_never_negative;
           Alcotest.test_case "an instant a span on stops at 9999" `Quick
             test_an_instant_a_span_on_stops_at_9999;
+          Alcotest.test_case "a clock is read as the nearest instant" `Quick
+            test_a_clock_is_read_as_the_nearest_instant;
+          Alcotest.test_case "a sleep lasts its span" `Quick
+            test_a_sleep_lasts_its_span;
           Alcotest.test_case "an alarm set again supersedes" `Quick
             test_an_alarm_set_again_supersedes;
           Alcotest.test_case "an alarm set from several domains fires once"

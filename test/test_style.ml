@@ -60,7 +60,8 @@ let allowed_opens =
 let operator_modules = [ "Mtime.Span" ]
 
 (* The names OCAML.md refuses, one per line of the fenced block [name] opens:
-   [refused] in every file, [refused-in-a-library] in a library's too. *)
+   [refused] in every file, [refused-in-a-library] in a library's too, and
+   [only-in-the-clock-module] in every file but a library's [instant.ml]. *)
 let refusals name =
   let rec skip_to_block = function
     | line :: rest ->
@@ -278,11 +279,19 @@ let built_sources () =
 let in_a_library file =
   List.exists (fun dir -> String.equal (Filename.dirname file) dir) dirs
 
+(* A library's [instant.ml] is its clock module, where time crosses to the
+   two calls that have no typed form. *)
+let is_clock_module file =
+  in_a_library file && String.equal (Filename.basename file) "instant.ml"
+
 let no_refused_name () =
   let everywhere = refused "refused"
-  and in_libraries = refused "refused-in-a-library" in
+  and in_libraries = refused "refused-in-a-library"
+  and clock_module = refused "only-in-the-clock-module" in
   let why file word =
     if List.mem word everywhere then Some "refused in every file (OCAML.md)"
+    else if List.mem word clock_module && not (is_clock_module file) then
+      Some "only in a library's clock module, instant.ml (OCAML.md)"
     else if not (in_a_library file) then None
     else if List.mem word in_libraries then
       Some "refused in a library (OCAML.md)"
@@ -309,11 +318,30 @@ let no_refused_name () =
 
 let the_refusals_are_read_from_ocaml_md () =
   let everywhere = refused "refused"
-  and in_libraries = refused "refused-in-a-library" in
+  and in_libraries = refused "refused-in-a-library"
+  and clock_module = refused "only-in-the-clock-module" in
   List.iter
     (fun name ->
       Alcotest.(check bool) ("refused: " ^ name) true (List.mem name everywhere))
-    [ "failwith"; "Unix.sleepf"; "Eio.Time.sleep_until"; "Sys.time" ];
+    [ "failwith"; "Unix.sleep"; "Eio.Time.sleep_until"; "Sys.time" ];
+  List.iter
+    (fun name ->
+      Alcotest.(check bool)
+        ("only in the clock module: " ^ name)
+        true
+        (List.mem name clock_module))
+    [ "Eio.Time.now"; "Unix.sleepf" ];
+  List.iter
+    (fun (file, expected) ->
+      Alcotest.(check bool)
+        ("a clock module: " ^ file)
+        expected (is_clock_module file))
+    [
+      ("http/instant.ml", true);
+      ("http/instant.mli", false);
+      ("core/log.ml", false);
+      ("test/instant.ml", false);
+    ];
   List.iter
     (fun name ->
       Alcotest.(check bool)
@@ -324,72 +352,6 @@ let the_refusals_are_read_from_ocaml_md () =
   Alcotest.(check bool)
     "a block that is not there is an error" true
     (Result.is_error (refusals "no-such-block"))
-
-(* [Eio.Time.now] is read only as [Ptime.of_float_s (Eio.Time.now clock)],
-   the one place a clock becomes an instant. *)
-let clock_reads code =
-  let n = String.length code in
-  let name = "Eio.Time.now" in
-  let rec back_over_space i =
-    if i >= 0 && (Char.equal code.[i] ' ' || Char.equal code.[i] '\n') then
-      back_over_space (i - 1)
-    else i
-  in
-  let made_an_instant i =
-    let paren = back_over_space (i - 1) in
-    paren >= 0
-    && Char.equal code.[paren] '('
-    &&
-    let last = back_over_space (paren - 1) in
-    let from = last - String.length "Ptime.of_float_s" + 1 in
-    from >= 0
-    && String.equal (String.sub code from (last - from + 1)) "Ptime.of_float_s"
-    && (from = 0 || not (is_ident_char code.[from - 1]))
-  in
-  let rec go i line acc =
-    if i >= n then List.rev acc
-    else if Char.equal code.[i] '\n' then go (i + 1) (line + 1) acc
-    else if
-      i + String.length name <= n
-      && String.equal (String.sub code i (String.length name)) name
-      && (i = 0 || not (is_ident_char code.[i - 1]))
-      && (i + String.length name = n
-         || not (is_ident_char code.[i + String.length name]))
-    then
-      go
-        (i + String.length name)
-        line
-        (if made_an_instant i then acc else line :: acc)
-    else go (i + 1) line acc
-  in
-  go 0 1 []
-
-let a_clock_is_read_as_an_instant () =
-  let found =
-    List.concat_map
-      (fun file ->
-        List.map
-          (fun line ->
-            Printf.sprintf
-              "%s:%d: Eio.Time.now -- write Ptime.of_float_s (Eio.Time.now \
-               clock)"
-              file line)
-          (clock_reads (code_of (read_source file))))
-      (built_sources ())
-  in
-  Alcotest.(check (list string)) "clock reads" [] found
-
-let a_clock_read_is_found () =
-  List.iter
-    (fun (source, expected) ->
-      Alcotest.(check int) source expected (List.length (clock_reads source)))
-    [
-      ("let t = Ptime.of_float_s (Eio.Time.now clock)", 0);
-      ("let t = Ptime.of_float_s\n  (Eio.Time.now env#clock)", 0);
-      ("let s = Eio.Time.now clock in Ptime.of_float_s s", 1);
-      ("let ms = Eio.Time.now clock *. 1000.", 1);
-      ("let t = Eio.Time.now_ptime clock", 0);
-    ]
 
 (* A [float] labelled with a unit, [timeout_s : float] or [?wait_ms:float]:
    a duration is an Mtime.Span.t named for what it bounds. Read off the
@@ -724,10 +686,6 @@ let () =
           Alcotest.test_case "no refused name" `Quick no_refused_name;
           Alcotest.test_case "the refusals are read from OCAML.md" `Quick
             the_refusals_are_read_from_ocaml_md;
-          Alcotest.test_case "a clock is read as an instant" `Quick
-            a_clock_is_read_as_an_instant;
-          Alcotest.test_case "a clock read is found" `Quick
-            a_clock_read_is_found;
           Alcotest.test_case "no float labelled with a unit" `Quick
             no_float_with_a_unit;
           Alcotest.test_case "a float labelled with a unit is found" `Quick

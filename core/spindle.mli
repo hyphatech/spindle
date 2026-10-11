@@ -161,8 +161,8 @@ val serve :
 val clock_now : _ Eio.Time.clock -> unit -> Ptime.t
 (** The clock's time, which is what [now] is:
     [Spindle.clock_now (Eio.Stdenv.clock env)]. A clock reads a time within the
-    years 0000 to 9999, and one that does not -- a mock clock set outside them
-    -- is read as the latest instant of 9999. *)
+    years 0000 to 9999, and one that does not is read as the nearest instant in
+    them. *)
 
 val until : now:Ptime.t -> Ptime.t -> Mtime.Span.t
 (** [until ~now deadline]: how long from [now] until [deadline], rounded up to
