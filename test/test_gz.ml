@@ -35,7 +35,7 @@ let gunzip_pieces pieces =
     String.iteri (fun i c -> Bigarray.Array1.set bs i c) piece;
     match go (Gz.Inf.src d bs 0 (String.length piece)) with
     | Ok d -> (d, Buffer.contents out :: seen)
-    | Error m -> failwith ("not gzip: " ^ m)
+    | Error m -> Alcotest.failf "not gzip: %s" m
   in
   List.rev (snd (List.fold_left feed (Gz.Inf.decoder `Manual ~o, []) pieces))
 

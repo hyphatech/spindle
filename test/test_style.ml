@@ -1,11 +1,30 @@
 (* The house rules a reader of the source can check: run by [dune test], so
    CI and an agent find a broken rule as a failing test naming the line. *)
 
-(* The libraries' directories; the tests and the examples are held to the
-   rules on time alone. *)
-let dirs = [ "http"; "core"; "client"; "postgres"; "cli" ]
-let command_dirs = []
-let test_dirs = [ "test"; "examples"; "examples/pages" ]
+(* Every directory the repository builds. A library's is the one whose dune
+   declares a [library]; the rest are executables: tests and examples. *)
+let built_dirs =
+  [
+    "http";
+    "core";
+    "client";
+    "postgres";
+    "cli";
+    "test";
+    "examples";
+    "examples/pages";
+  ]
+
+let read path = In_channel.with_open_bin path In_channel.input_all
+
+let is_library dir =
+  let dune = read (Filename.concat ".." (Filename.concat dir "dune")) in
+  List.exists
+    (fun line -> String.starts_with ~prefix:"(library" (String.trim line))
+    (String.split_on_char '\n' dune)
+
+let dirs = List.filter is_library built_dirs
+let executable_dirs = List.filter (fun d -> not (is_library d)) built_dirs
 
 (* An [open] is refused but where it is a module made to be opened: a
    library of combinators or operators, around the expression that uses it --
@@ -40,30 +59,43 @@ let allowed_opens =
 
 let operator_modules = [ "Mtime.Span" ]
 
-let a_time =
-  "a time is a Ptime.t or an Mtime.Span.t: Ptime.of_float_s (Eio.Time.now \
-   clock), Eio.Time.Timeout.v, Eio.Time.Mono.sleep_span"
+(* The names OCAML.md refuses, one per line of the fenced block [name] opens:
+   [refused] in every file, [refused-in-a-library] in a library's too. *)
+let refusals name =
+  let rec skip_to_block = function
+    | line :: rest ->
+        if String.equal (String.trim line) ("```" ^ name) then names [] rest
+        else skip_to_block rest
+    | [] -> Error (Printf.sprintf "OCAML.md has no ```%s block" name)
+  and names acc = function
+    | line :: rest ->
+        let line = String.trim line in
+        if String.equal line "```" then
+          if List.is_empty acc then
+            Error (Printf.sprintf "OCAML.md's ```%s block is empty" name)
+          else Ok (List.rev acc)
+        else if String.equal line "" then names acc rest
+        else names (line :: acc) rest
+    | [] -> Error (Printf.sprintf "OCAML.md's ```%s block never closes" name)
+  in
+  skip_to_block (String.split_on_char '\n' (read "../OCAML.md"))
 
-(* What counts time in a bare float: OCAML.md's names, and the two Eio
-   twins they leave out, the [_exn] timeout and the monotonic clock's float
-   sleep, so Eio is reached through its span forms alone. *)
-let time_as_a_float =
-  [
-    "Unix.gettimeofday";
-    "Unix.time";
-    "Eio.Time.sleep";
-    "Eio.Time.with_timeout";
-    "Eio.Time.with_timeout_exn";
-    "Eio.Time.Timeout.seconds";
-    "Eio.Time.Mono.sleep";
-  ]
+let refused name =
+  match refusals name with Ok names -> names | Error m -> Alcotest.fail m
 
-(* A banned identifier allowed where the [.mli] documents it. Each
-   [invalid_arg] refuses a constant written in source, as AGENTS.md lists
-   them; a server that cannot start exits, and says where it listens; the
-   log's default sink writes its lines to stderr; and a command line prints
-   its answer and exits with its status. *)
-let allowed_banned =
+(* A name is read with a leading [Stdlib.] taken off, so [Stdlib.exit] is
+   [exit]. *)
+let unqualified word =
+  if String.starts_with ~prefix:"Stdlib." word then
+    String.sub word 7 (String.length word - 7)
+  else word
+
+(* The places AGENTS.md allows a refused name, each its file and the name:
+   each [invalid_arg] refuses a constant written in source; a server that
+   cannot start exits, and says where it listens; the log's default sink
+   writes its lines to stderr; and a command line prints its answer and exits
+   with its status. *)
+let allowed_refused =
   [
     ("core/broadcast.ml", "invalid_arg");
     ("core/compress.ml", "invalid_arg");
@@ -86,67 +118,16 @@ let allowed_banned =
     ("cli/spindle_cli.ml", "exit");
   ]
 
-(* An identifier, dotted path included, and the reason it is refused. *)
-let banned =
+(* What this repository refuses in a library besides OCAML.md's names, and
+   why. *)
+let refused_here =
   [
-    ("failwith", "errors are values: return a result");
-    ("invalid_arg", "errors are values: only where the .mli documents a raise");
-    ("Option.get", "partial: match on the option");
-    ("Result.get_ok", "partial: match on the result");
-    ("Result.get_error", "partial: match on the result");
-    ("List.hd", "partial: match on the list");
-    ("List.tl", "partial: match on the list");
-    ("List.nth", "partial: use List.nth_opt");
-    ("Obj.magic", "unsafe");
-    ("compare", "polymorphic: use Int.compare, String.compare, ...");
-    ("Sys.getenv", "a library reads no environment: take it as an argument");
-    ("Sys.getenv_opt", "a library reads no environment: take it as an argument");
-    ("Unix.getenv", "a library reads no environment: take it as an argument");
-    ("Unix.environment", "a library reads no environment");
-    ("exit", "a library never exits");
     ( "Eio_main.run",
       "a library runs no event loop of its own: take env from its caller" );
     ("Uri.query", "splits a value at commas: use Spindle_http.Urlencoded.parse");
     ( "Uri.get_query_param",
       "splits a value at commas: use Spindle_http.Urlencoded.parse" );
   ]
-  @ List.map (fun name -> (name, a_time)) time_as_a_float
-  @ List.map
-      (fun name -> (name, "a library never prints: log through Logs"))
-      [
-        "print_string";
-        "print_endline";
-        "print_bytes";
-        "print_char";
-        "print_int";
-        "print_float";
-        "print_newline";
-        "prerr_string";
-        "prerr_endline";
-        "prerr_bytes";
-        "prerr_char";
-        "prerr_int";
-        "prerr_float";
-        "prerr_newline";
-        "stdout";
-        "stderr";
-        "Printf.printf";
-        "Printf.eprintf";
-        "Format.printf";
-        "Format.eprintf";
-        "Format.print_string";
-        "Format.std_formatter";
-        "Format.err_formatter";
-      ]
-
-(* A name is read with a leading [Stdlib.] taken off, so [Stdlib.exit] is
-   [exit]. *)
-let unqualified word =
-  if String.starts_with ~prefix:"Stdlib." word then
-    String.sub word 7 (String.length word - 7)
-  else word
-
-let read path = In_channel.with_open_bin path In_channel.input_all
 
 (* The source with comments, string literals and character literals blanked
    to spaces, newlines kept, so what is left is code and lines still count. *)
@@ -244,7 +225,7 @@ let is_ident_char = function
   | _ -> false
 
 (* Every identifier, dotted path included, with its line. A field access
-   ([t.open]) begins with a lowercase name and so never matches a banned
+   ([t.open]) begins with a lowercase name and so never matches a refused
    path, and a path never ends in a dot. *)
 let identifiers code =
   let n = String.length code in
@@ -288,40 +269,127 @@ let sources ?(dirs = dirs) suffix =
 
 let read_source file = read (Filename.concat ".." file)
 
-let no_banned_identifier () =
-  let found =
-    List.concat_map
-      (fun file ->
-        let code = code_of (read_source file) in
-        identifiers code
-        |> List.map (fun (line, word) -> (line, unqualified word))
-        |> List.filter (fun (_, word) ->
-            not
-              (List.exists
-                 (fun (f, w) -> String.equal f file && String.equal w word)
-                 allowed_banned))
-        |> List.filter_map (fun (line, word) ->
-            List.assoc_opt word banned
-            |> Option.map (fun why ->
-                Printf.sprintf "%s:%d: %s -- %s" file line word why)))
-      (sources ".ml" @ sources ".mli")
-  in
-  Alcotest.(check (list string)) "banned identifiers" [] found
+(* Every file the repository builds, as a path from the root. *)
+let built_sources () =
+  sources ~dirs:built_dirs ".ml"
+  @ sources ~dirs:built_dirs ".mli"
+  @ sources ~dirs:executable_dirs ".mlx"
 
-(* A time is one of the four shapes in the tests and the examples too, which
-   are held to no other name the libraries are. *)
-let no_time_as_a_float_outside_the_libraries () =
+let in_a_library file =
+  List.exists (fun dir -> String.equal (Filename.dirname file) dir) dirs
+
+let no_refused_name () =
+  let everywhere = refused "refused"
+  and in_libraries = refused "refused-in-a-library" in
+  let why file word =
+    if List.mem word everywhere then Some "refused in every file (OCAML.md)"
+    else if not (in_a_library file) then None
+    else if List.mem word in_libraries then
+      Some "refused in a library (OCAML.md)"
+    else List.assoc_opt word refused_here
+  in
   let found =
     List.concat_map
       (fun file ->
         identifiers (code_of (read_source file))
         |> List.filter_map (fun (line, word) ->
-            if List.mem (unqualified word) time_as_a_float then
-              Some (Printf.sprintf "%s:%d: %s -- %s" file line word a_time)
-            else None))
-      (sources ~dirs:test_dirs ".ml" @ sources ~dirs:test_dirs ".mlx")
+            let word = unqualified word in
+            if
+              List.exists
+                (fun (f, w) -> String.equal f file && String.equal w word)
+                allowed_refused
+            then None
+            else
+              why file word
+              |> Option.map (fun why ->
+                  Printf.sprintf "%s:%d: %s -- %s" file line word why)))
+      (built_sources ())
   in
-  Alcotest.(check (list string)) "time as a float" [] found
+  Alcotest.(check (list string)) "refused names" [] found
+
+let the_refusals_are_read_from_ocaml_md () =
+  let everywhere = refused "refused"
+  and in_libraries = refused "refused-in-a-library" in
+  List.iter
+    (fun name ->
+      Alcotest.(check bool) ("refused: " ^ name) true (List.mem name everywhere))
+    [ "failwith"; "Unix.sleepf"; "Eio.Time.sleep_until"; "Sys.time" ];
+  List.iter
+    (fun name ->
+      Alcotest.(check bool)
+        ("refused in a library: " ^ name)
+        true
+        (List.mem name in_libraries))
+    [ "exit"; "Sys.getenv"; "print_endline"; "stderr" ];
+  Alcotest.(check bool)
+    "a block that is not there is an error" true
+    (Result.is_error (refusals "no-such-block"))
+
+(* [Eio.Time.now] is read only as [Ptime.of_float_s (Eio.Time.now clock)],
+   the one place a clock becomes an instant. *)
+let clock_reads code =
+  let n = String.length code in
+  let name = "Eio.Time.now" in
+  let rec back_over_space i =
+    if i >= 0 && (Char.equal code.[i] ' ' || Char.equal code.[i] '\n') then
+      back_over_space (i - 1)
+    else i
+  in
+  let made_an_instant i =
+    let paren = back_over_space (i - 1) in
+    paren >= 0
+    && Char.equal code.[paren] '('
+    &&
+    let last = back_over_space (paren - 1) in
+    let from = last - String.length "Ptime.of_float_s" + 1 in
+    from >= 0
+    && String.equal (String.sub code from (last - from + 1)) "Ptime.of_float_s"
+    && (from = 0 || not (is_ident_char code.[from - 1]))
+  in
+  let rec go i line acc =
+    if i >= n then List.rev acc
+    else if Char.equal code.[i] '\n' then go (i + 1) (line + 1) acc
+    else if
+      i + String.length name <= n
+      && String.equal (String.sub code i (String.length name)) name
+      && (i = 0 || not (is_ident_char code.[i - 1]))
+      && (i + String.length name = n
+         || not (is_ident_char code.[i + String.length name]))
+    then
+      go
+        (i + String.length name)
+        line
+        (if made_an_instant i then acc else line :: acc)
+    else go (i + 1) line acc
+  in
+  go 0 1 []
+
+let a_clock_is_read_as_an_instant () =
+  let found =
+    List.concat_map
+      (fun file ->
+        List.map
+          (fun line ->
+            Printf.sprintf
+              "%s:%d: Eio.Time.now -- write Ptime.of_float_s (Eio.Time.now \
+               clock)"
+              file line)
+          (clock_reads (code_of (read_source file))))
+      (built_sources ())
+  in
+  Alcotest.(check (list string)) "clock reads" [] found
+
+let a_clock_read_is_found () =
+  List.iter
+    (fun (source, expected) ->
+      Alcotest.(check int) source expected (List.length (clock_reads source)))
+    [
+      ("let t = Ptime.of_float_s (Eio.Time.now clock)", 0);
+      ("let t = Ptime.of_float_s\n  (Eio.Time.now env#clock)", 0);
+      ("let s = Eio.Time.now clock in Ptime.of_float_s s", 1);
+      ("let ms = Eio.Time.now clock *. 1000.", 1);
+      ("let t = Eio.Time.now_ptime clock", 0);
+    ]
 
 (* A [float] labelled with a unit, [timeout_s : float] or [?wait_ms:float]:
    a duration is an Mtime.Span.t named for what it bounds. Read off the
@@ -381,12 +449,10 @@ let floats_with_a_unit file source =
   go 0 []
 
 let no_float_with_a_unit () =
-  let all = dirs @ command_dirs @ test_dirs in
   let found =
     List.concat_map
       (fun file -> floats_with_a_unit file (read_source file))
-      (sources ~dirs:all ".ml" @ sources ~dirs:all ".mli"
-      @ sources ~dirs:test_dirs ".mlx")
+      (built_sources ())
   in
   Alcotest.(check (list string)) "floats labelled with a unit" [] found
 
@@ -477,7 +543,7 @@ let no_open_but_the_named () =
           | [] -> []
         in
         local @ opens (identifiers code))
-      (sources ~dirs:(dirs @ command_dirs) ".ml" @ sources ".mli")
+      (sources ".ml" @ sources ".mli")
   in
   Alcotest.(check (list string)) "opens" [] found
 
@@ -498,7 +564,7 @@ let no_silenced_warning () =
                 (Printf.sprintf
                    "%s:%d: a silenced warning is a code shape to fix" file line)
             else None))
-      (sources ~dirs:(dirs @ command_dirs) ".ml" @ sources ".mli")
+      (sources ".ml" @ sources ".mli")
   in
   Alcotest.(check (list string)) "silenced warnings" [] found
 
@@ -655,9 +721,13 @@ let () =
     [
       ( "libraries",
         [
-          Alcotest.test_case "no banned identifier" `Quick no_banned_identifier;
-          Alcotest.test_case "no time as a float outside the libraries" `Quick
-            no_time_as_a_float_outside_the_libraries;
+          Alcotest.test_case "no refused name" `Quick no_refused_name;
+          Alcotest.test_case "the refusals are read from OCAML.md" `Quick
+            the_refusals_are_read_from_ocaml_md;
+          Alcotest.test_case "a clock is read as an instant" `Quick
+            a_clock_is_read_as_an_instant;
+          Alcotest.test_case "a clock read is found" `Quick
+            a_clock_read_is_found;
           Alcotest.test_case "no float labelled with a unit" `Quick
             no_float_with_a_unit;
           Alcotest.test_case "a float labelled with a unit is found" `Quick

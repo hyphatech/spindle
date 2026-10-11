@@ -4,7 +4,8 @@
 
 val of_clock : _ Eio.Time.clock -> Ptime.t
 (** The clock's time now. A clock reads a time within the years 0000 to 9999,
-    and one that does not is read as the nearest instant in them. *)
+    and one that does not -- a mock clock set outside them -- is read as the
+    latest instant of 9999. *)
 
 val until : now:Ptime.t -> Ptime.t -> Mtime.Span.t
 (** [until ~now deadline] is how long from [now] until [deadline], rounded up to

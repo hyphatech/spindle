@@ -45,7 +45,7 @@ let routes =
       Spindle.Path.(s "raises")
       (Spindle.Returns.websocket chat)
       (let+ () = Spindle.Dep.return () in
-       Ok (fun _ -> failwith "a bug"));
+       Ok (fun _ -> raise (Failure "a bug")));
   ]
 
 let app = Spindle.Test.app routes

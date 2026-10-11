@@ -3086,7 +3086,7 @@ let test_a_request_and_its_call_are_one_trace () =
     Spindle.get
       Spindle.Path.(s "broken")
       Spindle.Returns.text
-      (Spindle.Dep.of_request (fun _ -> failwith "a bug"))
+      (Spindle.Dep.of_request (fun _ -> raise (Failure "a bug")))
   in
   let socket =
     Eio.Net.listen net ~sw ~backlog:8 ~reuse_addr:true
@@ -3229,18 +3229,22 @@ let test_spans_reach_a_collector () =
         "with the collector's credential" (Some "k")
         (Stub_server.header r "x-collector-key"))
     posts;
+  let first = function
+    | x :: _ -> x
+    | [] -> Alcotest.fail "an empty list in a post"
+  in
   let spans =
     List.concat_map
       (fun (r : Stub_server.request) ->
         let resource =
           Yojson.Safe.from_string r.body
-          |> member "resourceSpans" |> to_list |> List.hd
+          |> member "resourceSpans" |> to_list |> first
         in
         Alcotest.(check string)
           "under the service's name" "shop"
           (resource |> member "resource" |> member "attributes" |> to_list
-         |> List.hd |> member "value" |> member "stringValue" |> to_string);
-        resource |> member "scopeSpans" |> to_list |> List.hd |> member "spans"
+         |> first |> member "value" |> member "stringValue" |> to_string);
+        resource |> member "scopeSpans" |> to_list |> first |> member "spans"
         |> to_list)
       posts
   in
@@ -3251,9 +3255,8 @@ let test_spans_reach_a_collector () =
        (fun (r : Stub_server.request) ->
          List.length
            (Yojson.Safe.from_string r.body
-           |> member "resourceSpans" |> to_list |> List.hd
-           |> member "scopeSpans" |> to_list |> List.hd |> member "spans"
-           |> to_list)
+           |> member "resourceSpans" |> to_list |> first |> member "scopeSpans"
+           |> to_list |> first |> member "spans" |> to_list)
          <= 512)
        posts);
   let price =
@@ -3777,17 +3780,18 @@ let test_an_event_stream_reads_as_the_standard_says () =
         owed
         (read_events (bytes_of stream)))
     event_rows;
+  let rows = Array.of_list event_rows in
   QCheck.Test.check_exn
     (QCheck.Test.make ~count:500 ~name:"a row, at any cut"
        (QCheck.make
           QCheck.Gen.(
-            int_bound (List.length event_rows - 1) >>= fun i ->
-            let _, stream, _ = List.nth event_rows i in
+            int_bound (Array.length rows - 1) >>= fun i ->
+            let _, stream, _ = rows.(i) in
             map
               (fun cuts -> (i, cuts))
               (list_size (0 -- 6) (0 -- String.length stream))))
        (fun (i, cuts) ->
-         let _, stream, owed = List.nth event_rows i in
+         let _, stream, owed = rows.(i) in
          let cuts = List.sort_uniq Int.compare cuts in
          let rec pieces from = function
            | [] -> [ String.sub stream from (String.length stream - from) ]

@@ -3,11 +3,12 @@
 let ns_per_day = 86_400_000_000_000L
 let ps_per_ns = 1_000L
 
+(* The clock is read once, as an instant, so a time out of range has no
+   float left to say which end it passed. *)
 let of_clock clock =
-  let s = Eio.Time.now clock in
-  match Ptime.of_float_s s with
+  match Ptime.of_float_s (Eio.Time.now clock) with
   | Some t -> t
-  | None -> if Float.compare s 0. < 0 then Ptime.min else Ptime.max
+  | None -> Ptime.max
 
 (* Rounded up to the nanosecond, so a wait never ends before its deadline. *)
 let until ~now deadline =

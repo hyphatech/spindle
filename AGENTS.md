@@ -86,6 +86,16 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   limit -- in a test and nowhere else. Nothing else raises
   across a library boundary. Test: `test_style` names the line, and
   its list of exceptions is this one.
+- **A library prints and exits only where its `.mli` says, and these are
+  the places.** `Spindle.serve` prints the address it listens on unless
+  given `?ready`, and exits with status 1 when its application cannot
+  start, as `Spindle_postgres.Pool.run` does when its pool cannot open,
+  since a server missing what it needs is stopped where an orchestrator
+  sees it; `Spindle.Log`'s default sink writes its lines to stderr; and
+  `spindle_cli`, a command line, prints its answer and its errors and
+  exits with its status. A library printing anywhere else writes into
+  output its program owns. Test: `test_style` names the line, and its
+  list of places is this one.
 - **Spindle reads and writes HTTP itself, names no driver, and its client
   links no framework.** No library links another HTTP implementation or
   names one; `spindle_postgres` reaches Postgres through rowtype's backend
@@ -160,9 +170,10 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   a header whose value has a structure `spindle_http` reads -- a list, a
   media type, credentials, `Accept`, `Cache-Control`, `Forwarded`, a
   Structured Field -- is read by that module and never split or searched
-  with string functions, because two readings of one value is how a proxy
-  and a server come to disagree. Symptom: a `String.index_opt v ';'` on a
-  header.
+  with string functions, and a query string is read by `Urlencoded`, never
+  by `Uri.query`, which splits a value at its commas, because two readings
+  of one value is how a proxy and a server come to disagree. Symptom: a
+  `String.index_opt v ';'` on a header; `test_style` refuses `Uri.query`.
 - **A WebSocket rule is a row.** A requirement of RFC 6455 that Spindle
   meets, as a server or as a client, has a row in `test_websocket_rfc`,
   named by its section and read whole, a byte at a time and at splits a
