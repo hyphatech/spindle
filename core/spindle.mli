@@ -18,7 +18,8 @@
            analyze engine query);
       ]
 
-    let () = Eio_main.run @@ fun env -> Spindle.serve env ~port:8112 routes
+    let () =
+      Eio_main.run @@ fun env -> Spindle.serve env ~port:8112 (routes ~engine)
     ]} *)
 
 module Status = Spindle_http.Status

@@ -73,8 +73,12 @@ the code lacks is invisible -- nothing in its shape says "a head that is
 complete but wrong" is a case somebody must write. The compensating control
 is the conformance table.
 
-**Every function answers a `result`.** A reader raises inside its own module
-to leave a line it cannot read, and never across the interface.
+**No reader raises across the interface; a failure is a value.** Most
+answer a `result`, and the rest say a failure in their own type: `Date.parse`
+and `Multipart.boundary` answer an option, `Framing.discard` whether the
+body was read to its end, and `Urlencoded.parse` a list, since the URL
+standard reads every piece of a form as something and refuses none. A reader raises inside its own module to leave a line it cannot
+read, and never across the interface.
 
 ## Field values
 
@@ -82,7 +86,9 @@ A header's value is read as far as its own structure only by the module
 for that structure, each written with Angstrom as its standard's ABNF is --
 `sep_by (ows *> char ',' <* ows) member` beside RFC 9651's list rule -- so
 a parser is checked against its section by reading it, and a failure is a
-value. The pieces every structure shares, RFC 9110 §5.6's tokens, quoted
+value. Two are written by hand: `Date`, whose three forms each have a fixed
+shape and are read by position, and `Field.elements`, the split at commas
+outside quoted strings that a list of plain elements is read by. The pieces every structure shares, RFC 9110 §5.6's tokens, quoted
 strings, parameters and lists, are one private grammar. `Buf_read` stays
 what reads a message off a socket, which is a stream with limits and
 deadlines; a field value is a string already in hand.

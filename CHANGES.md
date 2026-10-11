@@ -49,6 +49,10 @@
   as a stream's or a background job's raise is; it was an `info` line that
   said only that the handler raised.
 
+- The examples atop `Spindle` and `Spindle.Returns` type-check: the first
+  serves `routes ~engine`, the second answers `find_user id`.
+  `spindle.http`'s README says what its readers answer as they do.
+
 - `Spindle_client.error`'s deadline that passed is `Timeout`, where it was
   `Timed_out`: the word postgres-eio and Eio's own `Timeout.run` give the
   same failure. Breaking: a match on a call's error names `Timeout`.

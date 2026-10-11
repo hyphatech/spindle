@@ -6,7 +6,7 @@
 
     {[
     Spindle.get Path.(s "users" / user_id) (Returns.json user_json)
-      (let+ id = Spindle.param user_id in user_json id)
+      (let+ id = Spindle.param user_id in find_user id)
 
     Spindle.get Path.root Returns.text
       (Dep.return (Ok "Good morning."))

@@ -1,8 +1,9 @@
-(* Another server, for a test that stands one in for OGS or the engine: it
-   answers each request as the test's function says, read and written by
-   spindle_http, the same reader and writer the real server and client use.
-   The function may take its time, or never answer -- a hung engine is one
-   of the things a test stands in. *)
+(* Another server, for a test of the client or of what calls one -- a
+   collector a trace is exported to, say: it answers each request as the
+   test's function says, read and written by spindle_http, the same reader
+   and writer the real server and client use. The function may take its
+   time, or never answer -- a server that hangs is one of the things a test
+   stands in. *)
 
 module Head = Spindle_http.Head
 module Framing = Spindle_http.Framing
