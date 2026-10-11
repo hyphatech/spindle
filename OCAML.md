@@ -181,8 +181,8 @@ the next where they expect it.
   library, so a tag means one failure wherever it is merged.
 - **An instant is a `Ptime.t`.** A point in time is a `Ptime.t` in every
   signature, field and value, never a count of seconds or milliseconds
-  since 1970 (`now : Ptime.t`, `expires : Ptime.t`). It is made from a
-  clock once, `Ptime.of_float_s (Eio.Time.now clock)`, and turned into its
+  since 1970 (`now : Ptime.t`, `expires : Ptime.t`). It is read from a
+  clock in the library's clock module alone (below), and turned into its
   written form -- an HTTP date, a `timestamptz`, a JSON string or number --
   only where it crosses a wire. Why: one type for when, the ecosystem's,
   with its arithmetic (`Ptime.add_span`, `Ptime.diff`); an `int` does not
@@ -208,12 +208,28 @@ the next where they expect it.
   its way to the field would hide the rounding.
 
   A time is one of these four in every library and every application,
-  with no exception. **Time in a bare number is refused**: every function
-  that reads a clock, sleeps or bounds work in a bare number is in the
-  list below, and `Eio.Time.now` is written only as
-  `Ptime.of_float_s (Eio.Time.now clock)`, the one place a clock becomes
-  an instant. A `float` labelled with a unit (`_s`, `_ms`, `_us`, `_ns`)
-  is refused as well.
+  with no exception: typed inside, and a bare number only where it
+  crosses to an interface that takes nothing else, as a wire's format is
+  reached only where it is written.
+- **A typed interface is used wherever one exists.** A clock, a sleep or
+  a bound on work is reached through the form that takes or gives a
+  `Ptime.t` or an `Mtime.Span.t` (`Eio.Time.Timeout.v`,
+  `Eio.Time.Mono.sleep_span`, `Ptime_clock.now`, `Mtime_clock.counter`).
+  Its bare-number twin is in the `refused` list below, refused in every
+  file. Why: a typed form exists, so a bare number there is a unit left
+  for the reader to remember.
+- **Where none exists, time crosses in the library's clock module.** Two
+  calls have no typed form: `Eio.Time.now`, the wall clock as a float, and
+  `Unix.sleepf`, the one sleep for code no Eio loop runs (a domain or a
+  thread of its own). A library that needs either keeps them in one
+  module, `Instant` (`instant.ml`), which takes and gives only `Ptime.t`
+  and `Mtime.Span.t` and converts on the spot (`Instant.of_clock`,
+  `Instant.sleep`); they are in the `only-in-the-clock-module` list
+  below, refused in every other file. Why: the boundary is one place a
+  reader can find, typed on both sides, like a wire's codec; a library
+  that never needs them has no such module.
+- **A `float` labelled with a unit is refused** (`_s`, `_ms`, `_us`,
+  `_ns`), in every file: a time is typed.
 - **Tests are Alcotest, and a property is QCheck** through
   `qcheck-alcotest`. A library's `test/test_style.ml` checks what a reader
   of its source can, in every `.ml` and `.mli` the repository builds. It
@@ -224,7 +240,9 @@ the next where they expect it.
   each directory whose `dune` declares a `library` -- also refuse the names
   in `refused-in-a-library`: reading the environment, printing and exiting,
   which an executable (a command, a test, an example) does where it starts
-  and a library never. A name a repository's own rules allow in a place
+  and a library never. The names in `only-in-the-clock-module` are
+  refused in every file but a library's `instant.ml`. A name a
+  repository's own rules allow in a place
   they name -- `invalid_arg` where a description is built and can mean
   nothing -- is allowed there alone, and its test names that place. A name
   is read with a leading `Stdlib.` taken off, so `Stdlib.exit` is `exit`.
@@ -244,7 +262,6 @@ the next where they expect it.
   Unix.time
   Unix.gettimeofday
   Unix.sleep
-  Unix.sleepf
   Unix.alarm
   Unix.setitimer
   Unix.getitimer
@@ -256,6 +273,11 @@ the next where they expect it.
   Eio.Time.with_timeout_exn
   Eio.Time.Timeout.seconds
   Eio.Time.Mono.sleep
+  ```
+
+  ```only-in-the-clock-module
+  Eio.Time.now
+  Unix.sleepf
   ```
 
   ```refused-in-a-library
