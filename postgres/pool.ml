@@ -1,6 +1,9 @@
 module Pg = Rowtype_postgres
 
-type t = Pg.Pool.t
+(* Whether it was closed is kept here: rowtype's pool answers a borrow
+   from a closed pool as it does a busy one, and has nothing idle in
+   either. *)
+type t = { pool : Pg.Pool.t; closed : bool Atomic.t }
 
 let create ~sw ~net ~mono_clock:clock ?size ?wait_s ?statement_timeout_ms
     ?idle_in_transaction_timeout_ms ?connect_timeout_s ?parameters ?timeout_s
@@ -8,14 +11,16 @@ let create ~sw ~net ~mono_clock:clock ?size ?wait_s ?statement_timeout_ms
   Result.bind
     (Bounds.apply ?statement_timeout_ms ?idle_in_transaction_timeout_ms
        ?connect_timeout_s ?parameters target) (fun (c, parameters) ->
-      Pg.Pool.create ~sw ~net ~mono_clock:clock ~parameters
-        ~observe:Traced.observer ?timeout_s ?statement_cache ?size ?wait_s
-        ?reset ?max_lifetime_s ?idle_check_s c)
+      Result.map
+        (fun pool -> { pool; closed = Atomic.make false })
+        (Pg.Pool.create ~sw ~net ~mono_clock:clock ~parameters
+           ~observe:Traced.observer ?timeout_s ?statement_cache ?size ?wait_s
+           ?reset ?max_lifetime_s ?idle_check_s c))
 
 module L = (val Logs.src_log Source.src : Logs.LOG)
 
 let use ?wait_s t work =
-  match Pg.Pool.use ?wait_s t work with
+  match Pg.Pool.use ?wait_s t.pool work with
   | Ok answer -> answer
   | Error e -> (
       (* rowtype 0.2.0 answers a flat [`Busy], and a later one the pool's
@@ -35,7 +40,7 @@ type stats = Pg.Pool.stats = {
   replaced : int;
 }
 
-let stats = Pg.Pool.stats
+let stats t = Pg.Pool.stats t.pool
 
 (* Sampled when the metrics are read: [stats] already holds what is known. *)
 let measure ?(name = "postgres") t metrics =
@@ -53,10 +58,12 @@ let measure ?(name = "postgres") t metrics =
       [ ([ name ], float_of_int (stats t).waiting) ])
 
 (* A busy pool is not borrowed from: the wait could end empty, a warning
-   that a probe every few seconds would fill the log with. *)
+   that a probe every few seconds would fill the log with. A closed one has
+   nothing idle either, and is told apart first. *)
 let check ?(name = "postgres") t =
   Spindle.Health.check name (fun () ->
-      if (stats t).idle = 0 then Ok ()
+      if Atomic.get t.closed then Error "the pool is closed"
+      else if (stats t).idle = 0 then Ok ()
       else
         match use t (fun db -> Pg.exec_raw db "select 1") with
         | Ok () -> Ok ()
@@ -68,7 +75,9 @@ let transaction ?wait_s ?keep ?isolation ?retries t work =
   use ?wait_s t (fun db ->
       Rowtype_postgres.Transaction.within ?keep ?isolation ?retries db work)
 
-let close = Pg.Pool.close
+let close t =
+  Atomic.set t.closed true;
+  Pg.Pool.close t.pool
 
 (* Closed when [f] returns or raises, so idle connections end properly. A
    cancelled [f] is not closed after: closing waits to tell the server, which

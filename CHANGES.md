@@ -22,6 +22,10 @@
   server wrote `Content-Length: -1` and raised `Invalid_argument` into the
   producer at its first send.
 
+- In `spindle_postgres`, `Pool.check` fails once the pool is closed, or
+  closing, where `/readyz` answered `200`: a closed pool has no connection
+  idle, which the check read as every connection lent.
+
 - `Spindle_client.error`'s deadline that passed is `Timeout`, where it was
   `Timed_out`: the word postgres-eio and Eio's own `Timeout.run` give the
   same failure. Breaking: a match on a call's error names `Timeout`.

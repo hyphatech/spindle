@@ -106,7 +106,7 @@ val check : ?name:string -> t -> Spindle.Health.check
     timeout. A pool with no connection idle passes without a borrow, since every
     one of them is lent to a request the database is answering -- failing it
     would take a server out of service for being busy, which is when it is
-    needed most. *)
+    needed most. A pool {!close}d, or closing, fails it. *)
 
 val close : t -> unit
 (** As [Rowtype_postgres.Pool.close]. *)

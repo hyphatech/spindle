@@ -15,7 +15,7 @@ Spindle.serve env
 ```
 
 `Pool.check` borrows a connection and runs `select 1`. A pool whose
-connections are all busy passes without waiting.
+connections are all busy passes without waiting; a closed one fails.
 
 ## Custom checks
 

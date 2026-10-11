@@ -358,6 +358,20 @@ let test_a_busy_pool_is_ready () =
       Alcotest.(check int) "while every connection is lent" 200 !held;
       Spindle_postgres.Pool.close pool)
 
+(* A closed pool has nothing idle either, but nothing it holds is lent:
+   it can serve nobody, so /readyz says so rather than reading it as
+   busy. *)
+let test_a_closed_pool_is_not_ready () =
+  Db_target.with_postgres (fun target ->
+      let pool = pool target in
+      let app =
+        Spindle.Test.app
+          (Spindle.Health.routes [ Spindle_postgres.Pool.check pool ])
+      in
+      Spindle_postgres.Pool.close pool;
+      Alcotest.(check int)
+        "once closed" 503 (Spindle.Test.call app `GET "/readyz").status)
+
 (* A user filters a library's log by the name they installed. *)
 let test_the_log_source_is_the_librarys_name () =
   let names = List.map Logs.Src.name (Logs.Src.list ()) in
@@ -825,6 +839,8 @@ let () =
             test_a_pool_says_how_it_stands;
           Alcotest.test_case "a busy pool is ready" `Quick
             test_a_busy_pool_is_ready;
+          Alcotest.test_case "a closed pool is not ready" `Quick
+            test_a_closed_pool_is_not_ready;
           Alcotest.test_case "a revived connection keeps its bounds" `Quick
             test_a_revived_connection_keeps_its_bounds;
           Alcotest.test_case "a connection is bounded by default" `Quick
