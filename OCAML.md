@@ -114,8 +114,9 @@ A change is done when every box holds:
   boolean or a pair of booleans one combination of which is impossible; a
   unit or an identifier that travels unnamed -- a column, an element, a
   returned value -- is a type of its own, never a bare `int` or `string`
-  whose meaning the caller has to remember. A labelled argument that names
-  its unit at every call (`~timeout_s`) is enough.
+  whose meaning the caller has to remember. A time is `Ptime.t` or
+  `Mtime.Span.t` (*Shared shapes*); a whole number a protocol fixes is
+  labelled with its unit at every call (`~retry_after_s`).
 - [ ] **Advanced types only where they delete real duplication.** A GADT
   earns its place by describing a thing once that would otherwise be
   described twice; otherwise, records and variants. A polymorphic variant
@@ -142,7 +143,8 @@ A change is done when every box holds:
   (`renewals_per_idle`) is worse than none.
 - [ ] **A number with a reason is named where nothing beside it already
   says it**, the reason beside it: a field, a label or a comment that
-  names its unit and purpose (`send_timeout_s = 10.`) needs nothing more.
+  says its purpose and its unit (`send_timeout = Mtime.Span.(10 * s)`)
+  needs nothing more.
 - [ ] **No needless cost.** No quadratic walk where a linear one is as
   clear, and no whole result held where streaming is as simple. Recursion
   over input whose size nobody bounds is a tail call, or
@@ -177,14 +179,40 @@ the next where they expect it.
   otherwise; a function's own error that its caller maps at once keeps the
   function's words. Polymorphic tags are one namespace across every
   library, so a tag means one failure wherever it is merged.
-- **A duration's label names its unit, and its type is what the value
-  is.** `_s` is seconds and `_ms` milliseconds, and no duration goes
-  without one. A wait the program counts on a clock is a float of seconds,
-  as Eio's clocks count (`?timeout_s`); a value an outside format defines
-  in whole units is an int of that unit, as the format has it; and a wait
-  worked out from two instants is in the instants' unit, an int of
-  milliseconds where they are (`~in_ms`), so its caller converts nothing.
-  Two waits in one signature never differ in type.
+- **An instant is a `Ptime.t`.** A point in time is a `Ptime.t` in every
+  signature, field and value, never a count of seconds or milliseconds
+  since 1970 (`now : Ptime.t`, `expires : Ptime.t`). It is made from a
+  clock once, `Ptime.of_float_s (Eio.Time.now clock)`, and turned into its
+  written form -- an HTTP date, a `timestamptz`, a JSON string or number --
+  only where it crosses a wire. Why: one type for when, the ecosystem's,
+  with its arithmetic (`Ptime.add_span`, `Ptime.diff`); an `int` does not
+  say whether it counts seconds or milliseconds.
+- **A duration is an `Mtime.Span.t`, named for what it bounds.** How long
+  the program, or a server it configures, may take or wait is an
+  `Mtime.Span.t`, labelled for what it bounds and never for a unit
+  (`?timeout`, `?wait`, `~after`), and written `Mtime.Span.(30 * s)`. It
+  reaches Eio as it is (`Eio.Time.Timeout.v`, `Eio.Time.Mono.sleep_span`),
+  and a format's unit only where it is written, rounded up (Postgres's
+  `statement_timeout` in whole milliseconds). Why: a unit that is wrong
+  does not compile, and the label is left to say what the wait is for.
+- **A wait until an instant is the span from now to it, and zero once it
+  has passed.** It is worked out by one function (`until ~now deadline`),
+  never by subtracting instants by hand. Why: `Ptime.diff` can be
+  negative and a wait cannot, so one place decides what a deadline already
+  passed means.
+- **A number written into a message for another to read is an `int` in
+  the message's unit**, labelled with that unit as the protocol fixes it:
+  `~retry_after_s:int` for `Retry-After`, `?max_age_s:int` for
+  `Access-Control-Max-Age`. Why: it is a field's value, whole by the
+  protocol's definition, not a wait the program counts; a span rounded on
+  its way to the field would hide the rounding.
+
+  A time is one of these four in every library and every application,
+  with no exception. A library's `test/test_style.ml` refuses
+  `Unix.gettimeofday`, `Unix.time`, `Eio.Time.sleep`,
+  `Eio.Time.with_timeout` and `Eio.Time.Timeout.seconds`, which count time
+  in a bare float, and a `float` labelled with a unit (`_s : float`,
+  `_ms : float`).
 - **Tests are Alcotest, and a property is QCheck** through
   `qcheck-alcotest`. A library's `test/test_style.ml` checks what a reader
   of its source can: it refuses at least `failwith`, `invalid_arg`,
