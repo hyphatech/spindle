@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.3.0 (2026-10-11)
 
 - Breaking: every instant is a `Ptime.t`, where it was an `int` of
   milliseconds since 1970 that said neither its unit nor that it was a
