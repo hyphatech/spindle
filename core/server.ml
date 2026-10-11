@@ -452,7 +452,7 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
                 flush ~limits ~deadline oc;
                 false
               with
-              | Eio.Cancel.Cancelled _ as ex -> raise ex
+              | (Eio.Cancel.Cancelled _ | Stalled) as ex -> raise ex
               | _ -> false)
           | Chunked -> (
               try
@@ -461,7 +461,7 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
                 flush ~limits ~deadline oc;
                 true
               with
-              | Eio.Cancel.Cancelled _ as ex -> raise ex
+              | (Eio.Cancel.Cancelled _ | Stalled) as ex -> raise ex
               | _ -> false)))
   | exception (Eio.Cancel.Cancelled _ as ex) ->
       log_end "connection closed";
@@ -805,15 +805,17 @@ let io_buffer_bytes = 4096
 
 (* The connection's own writer rather than [Buf_write.with_flow], which
    flushes before letting an exception out: to a client that stopped
-   reading, a wait with no end. Here a raise cancels the copying fiber. A
-   write the socket refuses aborts the buffer rather than raising, so a
-   handler whose client left learns it at its next send instead of being
-   cancelled mid-transaction; a cancellation is raised as itself, never as
-   the write error before it. *)
-let with_writer ~deadline flow f =
+   reading, a wait with no end. Here a raise cancels the copying fiber, and
+   what is left once [f] returns has [send_timeout_s] from the last byte
+   the client took, as any answer has. A write the socket refuses aborts the
+   buffer rather than raising, so a handler whose client left learns it at
+   its next send instead of being cancelled mid-transaction; a cancellation
+   is raised as itself, never as the write error before it. *)
+let with_writer ~limits ~deadline flow f =
   Eio.Switch.run @@ fun sw ->
   let oc = Eio.Buf_write.create ~sw io_buffer_bytes in
   let write_error = ref None in
+  let copied, all_copied = Eio.Promise.create () in
   Eio.Fiber.fork ~sw (fun () ->
       let rec copy () =
         match Eio.Buf_write.await_batch oc with
@@ -828,11 +830,15 @@ let with_writer ~deadline flow f =
                 Eio.Buf_write.abort oc)
         | exception End_of_file -> ()
       in
-      copy ());
+      copy ();
+      Eio.Promise.resolve all_copied ());
   match f oc with
-  | v ->
+  | v -> (
       Eio.Buf_write.close oc;
-      v
+      Deadline.arm_since_last deadline limits.send_timeout_s;
+      match Deadline.wait deadline (fun () -> Eio.Promise.await copied) with
+      | Some () -> v
+      | None -> raise Stalled)
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
   | exception ex -> raise (Option.value !write_error ~default:ex)
 
@@ -883,7 +889,7 @@ let serve_connection ~clock ~now ~limits ~trace ~instruments ~state ~sweep app
         else `Server_ended
   in
   try
-    match with_writer ~deadline flow loop with
+    match with_writer ~limits ~deadline flow loop with
     | `Server_ended -> close_lingering ~clock ~limits flow
     | `Client_ended -> ()
   with

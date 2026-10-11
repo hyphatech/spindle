@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A connection's last bytes -- what a WebSocket handler wrote before it
+  returned, a stream's last chunk -- have `send_timeout_s` from the last
+  byte the client took, as every answer has, and the connection is closed
+  once it passes. A client that stopped reading held its connection slot
+  for ever.
+
 - `Spindle_client.error`'s deadline that passed is `Timeout`, where it was
   `Timed_out`: the word postgres-eio and Eio's own `Timeout.run` give the
   same failure. Breaking: a match on a call's error names `Timeout`.

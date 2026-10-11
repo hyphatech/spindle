@@ -424,6 +424,58 @@ let test_a_silent_peer_is_pinged_then_dropped () =
   in
   Alcotest.(check bool) "thirty, and the connection is ended" true gone
 
+(* A handler whose send to a peer that stopped reading is lost returns,
+   and what it had written is given [send_timeout_s] to go, as any answer
+   is: the connection then closes and its slot is the next client's. *)
+let test_a_socket_whose_peer_stopped_reading_gives_back_its_slot () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let lost, lose = Eio.Promise.create () in
+  let flood =
+    Spindle.get
+      Spindle.Path.(s "flood")
+      (Spindle.Returns.websocket chat)
+      (let+ () = Spindle.Dep.return () in
+       Ok
+         (fun ws ->
+           let sent = Ws.send ws { text = String.make 200_000 'x' } in
+           Eio.Promise.resolve lose ();
+           sent))
+  in
+  let hello =
+    Spindle.get
+      Spindle.Path.(s "hello")
+      Spindle.Returns.response
+      (Spindle.Dep.return (Ok (Spindle.Response.json Wiretype.string "hello")))
+  in
+  let listening, connect = In_memory.listen () in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      Spindle.Server.serve_on
+        ~mono_clock:(Eio.Stdenv.mono_clock env)
+        ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+        ~domains:1 ~max_connections:1 ~send_timeout_s:1.
+        ~now:(fun () -> 0)
+        [ listening ]
+        (Spindle.Test.app [ flood; hello ]);
+      `Stop_daemon);
+  let never_reads = connect ~sw in
+  Eio.Flow.copy_string
+    "GET /flood HTTP/1.1\r\n\
+     Host: t\r\n\
+     Upgrade: websocket\r\n\
+     Connection: Upgrade\r\n\
+     Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+     Sec-WebSocket-Version: 13\r\n\
+     \r\n"
+    never_reads;
+  Eio.Promise.await lost;
+  let next = connect ~sw in
+  Eio.Flow.copy_string
+    "GET /hello HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n" next;
+  Alcotest.(check string)
+    "the next client is served" "HTTP/1.1 200 OK"
+    (Eio.Buf_read.line (Eio.Buf_read.of_flow next ~max_size:4096))
+
 let test_a_stopping_server_says_going_away env () =
   Eio.Switch.run @@ fun sw ->
   let stop, stopping = Eio.Promise.create () in
@@ -520,6 +572,9 @@ let () =
             (test_a_room_is_a_broadcast_of_frames env);
           Alcotest.test_case "a silent peer is pinged, then dropped" `Quick
             test_a_silent_peer_is_pinged_then_dropped;
+          Alcotest.test_case
+            "a socket whose peer stopped reading gives back its slot" `Quick
+            test_a_socket_whose_peer_stopped_reading_gives_back_its_slot;
           Alcotest.test_case "a stopping server says going away" `Quick
             (test_a_stopping_server_says_going_away env);
         ] );
