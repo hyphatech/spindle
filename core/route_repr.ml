@@ -26,6 +26,11 @@ type info = {
   meta : Meta.t;
 }
 
+type start = {
+  read : Eio.Fs.dir_ty Eio.Path.t -> (unit, string) result;
+  in_a_test : string;
+}
+
 type t = {
   info : info;
   segments : Path_repr.segment list;
@@ -34,9 +39,7 @@ type t = {
     params:(string * string) list ->
     body:Body_repr.source ->
     Response.t;
-  start : (Eio.Fs.dir_ty Eio.Path.t -> (unit, string) result) option;
-      (** run as the server starts, reading the filesystem: the directory
-          [Static.directory] names *)
+  start : start option;
 }
 
 type Request_repr.matched += Matched of info

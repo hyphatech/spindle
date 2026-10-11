@@ -18,17 +18,18 @@ let app ?middleware ?codes ?not_found ?cors ?compress ?check_origin
   with
   | Ok app -> (
       match
-        List.find_opt (fun (r : Route_repr.t) -> Option.is_some r.start) routes
+        List.find_map
+          (fun (r : Route_repr.t) -> Option.map (fun s -> (r, s)) r.start)
+          routes
       with
       | None -> app
-      | Some r ->
+      | Some (r, start) ->
           invalid_arg
             (Printf.sprintf
                "Spindle.Test.app: %s %s reads a directory when the server \
-                starts; a test loads it with Static.load and serves it with \
-                Static.route"
+                starts; a test %s"
                (Spindle_http.Meth.to_string r.info.meth)
-               r.info.pattern))
+               r.info.pattern start.in_a_test))
   | Error m -> invalid_arg ("Spindle.Test.app: " ^ m)
 
 (* The route's answer, refusing what it does not declare. *)

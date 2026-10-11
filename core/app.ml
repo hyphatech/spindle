@@ -918,5 +918,5 @@ let start t ~fs =
           | Some start ->
               Result.map_error
                 (fun m -> Printf.sprintf "%s: %s" (route_name r) m)
-                (start fs)))
+                (start.read fs)))
     (Ok ()) t.routes

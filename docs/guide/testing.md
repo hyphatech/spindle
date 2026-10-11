@@ -22,8 +22,10 @@ let test_echo () =
 ```
 
 - `Test.app` takes `App.make`'s arguments. It raises `Invalid_argument` for a
-  route table `App.make` refuses, and for a `Static.directory` route: load
-  the files with `Static.load` and serve them with `Static.route` instead.
+  route table `App.make` refuses, and for a `Static.directory` or
+  `Files.directory` route: load the files with `Static.load` and serve them
+  with `Static.route`, or serve a directory the test opened with
+  `Files.route`, instead.
 - `Test.call app meth target` takes `?now` (epoch milliseconds, default 0),
   `?peer` (default `127.0.0.1`), `?headers` and `?body`.
 - The answer's status and headers are exactly what the server would write,

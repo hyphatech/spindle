@@ -118,8 +118,8 @@ val handle : t -> Request.t -> body:Body.source -> Response.t * answered
 
 val start : t -> fs:_ Eio.Path.t -> (unit, string) result
 (** Reads what the routes read when the server starts -- the directory of a
-    {!Static.directory} -- from [fs], in the order they were listed, and says in
-    a sentence, naming the route, why the first that could not did not.
-    {!Spindle.serve} calls it before it serves; a program that runs
-    {!Server.run} itself calls it first, since a route that was never started
-    answers [500] and says so in the log. *)
+    {!Static.directory} or a {!Files.directory} -- from [fs], in the order they
+    were listed, and says in a sentence, naming the route, why the first that
+    could not did not. {!Spindle.serve} calls it before it serves; a program
+    that runs {!Server.run} itself calls it first, since a route that was never
+    started answers [500] and says so in the log. *)

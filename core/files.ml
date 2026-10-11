@@ -294,10 +294,15 @@ let directory ?at ?index ?dotfiles ?download ?inline_active ?types path =
     r with
     Route_repr.start =
       Some
-        (fun fs ->
-          let dir = Eio.Path.(fs / path) in
-          if Eio.Path.is_directory dir then (
-            Atomic.set root (Some dir);
-            Ok ())
-          else Error (Format.asprintf "%a is not a directory." Eio.Path.pp dir));
+        {
+          read =
+            (fun fs ->
+              let dir = Eio.Path.(fs / path) in
+              if Eio.Path.is_directory dir then (
+                Atomic.set root (Some dir);
+                Ok ())
+              else
+                Error (Format.asprintf "%a is not a directory." Eio.Path.pp dir));
+          in_a_test = "serves one it opened itself with Files.route";
+        };
   }

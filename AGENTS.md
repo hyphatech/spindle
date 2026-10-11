@@ -77,7 +77,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   `Spindle.Server.run`, `serve_on` and `Spindle.serve` (for a limit out of
   its range, or a trusted proxy that is no address), `Spindle.serve` and
   `Spindle.Test.app`, for a route table `App.make` refuses -- and `Test.app`
-  for a `Static.directory`, which a test has no filesystem to read --, and
+  for a `Static.directory` or a `Files.directory`, which a test has no
+  filesystem to read --, and
   `Spindle.Openapi.docs`, for one or a description its document cannot name;
   and `Spindle.Test.call`, `Spindle.Test.events` and
   `Spindle.Test.websocket`, which refuse an undeclared code, or a status its

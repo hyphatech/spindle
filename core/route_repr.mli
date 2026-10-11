@@ -23,6 +23,15 @@ type info = {
 }
 (** What a route says of itself, which the document and the route table read. *)
 
+type start = {
+  read : Eio.Fs.dir_ty Eio.Path.t -> (unit, string) result;
+      (** run as the server starts, reading the filesystem *)
+  in_a_test : string;
+      (** what a test, which has no filesystem to start, does instead *)
+}
+(** A route that reads a directory when the server starts: {!Static.directory}'s
+    and {!Files.directory}'s. *)
+
 type t = {
   info : info;
   segments : Path_repr.segment list;
@@ -31,9 +40,7 @@ type t = {
     params:(string * string) list ->
     body:Body_repr.source ->
     Response.t;
-  start : (Eio.Fs.dir_ty Eio.Path.t -> (unit, string) result) option;
-      (** run as the server starts, reading the filesystem: the directory
-          {!Static.directory} names *)
+  start : start option;
 }
 
 val input_key : Dep.need -> (string * string) option

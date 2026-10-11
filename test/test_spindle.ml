@@ -6454,6 +6454,18 @@ let test_a_directory_not_there_is_refused_at_start () =
             "said, naming it" true
             (contains ~sub:"/nowhere/at/all" m))
 
+(* A test has no filesystem for the server to start, so [Test.app]
+   refuses a directory read at start, and says what a test does instead:
+   serve one it opened itself with [Files.route]. *)
+let test_a_test_is_told_to_serve_files_it_opened () =
+  match Spindle.Test.app [ Spindle.Files.directory "uploads" ] with
+  | _ -> Alcotest.fail "a test served a directory it cannot read"
+  | exception Invalid_argument m ->
+      Alcotest.(check bool)
+        ("a test is told to use Files.route: " ^ m)
+        true
+        (contains ~sub:"Files.route" m && not (contains ~sub:"Static" m))
+
 (* A file the build wrote precompressed siblings for is served as the one
    the client takes, typed as the file, and says it varies. *)
 let check_siblings answer =
@@ -7953,6 +7965,8 @@ let () =
             `Quick test_a_file_replaced_before_its_body_sends_nothing;
           Alcotest.test_case "a directory not there is refused at start" `Quick
             test_a_directory_not_there_is_refused_at_start;
+          Alcotest.test_case "a test is told to serve files it opened" `Quick
+            test_a_test_is_told_to_serve_files_it_opened;
         ] );
       ( "bodies",
         [

@@ -214,9 +214,14 @@ let directory ?at ?index ?dotfiles ?not_found ?shell ?immutable ?types path =
     r with
     Route_repr.start =
       Some
-        (fun fs ->
-          Result.map
-            (fun t -> Atomic.set site (Some t))
-            (load ?index ?dotfiles ?not_found ?shell ?immutable ?types
-               Eio.Path.(fs / path)));
+        {
+          read =
+            (fun fs ->
+              Result.map
+                (fun t -> Atomic.set site (Some t))
+                (load ?index ?dotfiles ?not_found ?shell ?immutable ?types
+                   Eio.Path.(fs / path)));
+          in_a_test =
+            "loads it with Static.load and serves it with Static.route";
+        };
   }

@@ -150,12 +150,12 @@ val serve :
     answer one URL, a parameter named twice -- and for a limit or a proxy
     {!Server.run} refuses, before it listens: each is a constant written in
     source. What the routes read when the server starts -- a {!Static.directory}
-    -- is read before it listens too ({!App.start}), from [env]'s filesystem,
-    and one that cannot be read ends the program: an error in the log saying
-    why, and exit code 1, since a server missing what it was written to serve is
-    not the one that was written. A program that builds its routes at run time
-    makes its app with {!App.make}, starts it with {!App.start}, and serves it
-    with {!Server.run}. *)
+    or a {!Files.directory} -- is read before it listens too ({!App.start}),
+    from [env]'s filesystem, and one that cannot be read ends the program: an
+    error in the log saying why, and exit code 1, since a server missing what it
+    was written to serve is not the one that was written. A program that builds
+    its routes at run time makes its app with {!App.make}, starts it with
+    {!App.start}, and serves it with {!Server.run}. *)
 
 val epoch_ms : _ Eio.Time.clock -> unit -> int
 (** The clock's time in epoch milliseconds, which is what [now] is:

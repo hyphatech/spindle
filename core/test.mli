@@ -23,9 +23,10 @@ val app :
     table it refuses, as [Spindle.serve] does: a route table is a constant
     written in source, and a test that made a bad one has nothing to do but
     stop. A test of what {!App.make} refuses calls {!App.make}. It raises too
-    for a {!Static.directory} route, which reads a directory when the server
-    starts and a test has none: a test loads one with {!Static.load} and serves
-    it with {!Static.route}. *)
+    for a {!Static.directory} or {!Files.directory} route, which reads a
+    directory when the server starts and a test has none: a test loads one with
+    {!Static.load} and serves it with {!Static.route}, or serves one it opened
+    itself with {!Files.route}, as the message says. *)
 
 val call :
   ?now:int ->

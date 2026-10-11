@@ -39,6 +39,11 @@
   it does `timeout=5`, where it read no timeout and kept the connection
   idle for its own `idle_s` beside a server that closes it sooner.
 
+- `Spindle.Test.app`'s refusal of a `Files.directory` route tells a test to
+  serve a directory it opened with `Files.route`, where it named
+  `Static.load` and `Static.route` for either; its documents name both
+  routes it refuses.
+
 - `Spindle_client.error`'s deadline that passed is `Timeout`, where it was
   `Timed_out`: the word postgres-eio and Eio's own `Timeout.run` give the
   same failure. Breaking: a match on a call's error names `Timeout`.
