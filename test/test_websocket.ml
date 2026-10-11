@@ -310,6 +310,48 @@ let test_a_socket_whose_tls_breaks_is_lost env () =
       Alcotest.failf "lost, not %s"
         (match called got with Ok s -> "answered " ^ s | Error m -> m)
 
+(* A server that opens the socket and then never reads: the send that
+   cannot go answers [Lost] once the client's limit passes, and the call
+   returns with it rather than waiting for the server to take what is still
+   held. The message is many times what both ends' buffers hold. *)
+let test_a_socket_whose_server_stopped_reading_is_lost env () =
+  Eio.Switch.run @@ fun sw ->
+  let socket =
+    Eio.Net.listen (Eio.Stdenv.net env) ~sw ~backlog:1 ~reuse_addr:true
+      (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
+  in
+  let port =
+    match Eio.Net.listening_addr socket with
+    | `Tcp (_, p) -> p
+    | _ -> Alcotest.fail "expected a TCP socket"
+  in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      let flow, _ = Eio.Net.accept ~sw socket in
+      let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
+      (match Spindle_http.Head.Request.read ~max:65536 r with
+      | Error _ -> Alcotest.fail "the upgrade could not be read"
+      | Ok head ->
+          let key =
+            Option.value ~default:""
+              (Spindle_http.Field.find head.headers "sec-websocket-key")
+          in
+          Eio.Flow.copy_string
+            ("HTTP/1.1 101 Switching Protocols\r\n\
+              Upgrade: websocket\r\n\
+              Connection: Upgrade\r\n\
+              Sec-WebSocket-Accept: " ^ Ws.accept_key key ^ "\r\n\r\n")
+            flow);
+      Eio.Fiber.await_cancel ());
+  match
+    Spindle_client.websocket (client ~sw env ()) ~timeout_s:0.5 chat
+      (Printf.sprintf "ws://127.0.0.1:%d/flood" port) (fun ws ->
+        Ws.send ws { text = String.make (16 * 1024 * 1024) 'x' })
+  with
+  | Error (Spindle_client.Ended (Ws.Lost _)) -> ()
+  | got ->
+      Alcotest.failf "lost, not %s"
+        (match called got with Ok () -> "sent" | Error m -> m)
+
 (* Everybody in a room hears what anybody says, each message encoded once. *)
 let test_a_room_is_a_broadcast_of_frames env () =
   let hub : (unit, said Ws.encoded) Spindle.Broadcast.t =
@@ -568,6 +610,9 @@ let () =
             (test_the_client_speaks_wss env);
           Alcotest.test_case "a socket whose TLS breaks is lost" `Quick
             (test_a_socket_whose_tls_breaks_is_lost env);
+          Alcotest.test_case "a socket whose server stopped reading is lost"
+            `Quick
+            (test_a_socket_whose_server_stopped_reading_is_lost env);
           Alcotest.test_case "a room is a broadcast of frames" `Quick
             (test_a_room_is_a_broadcast_of_frames env);
           Alcotest.test_case "a silent peer is pinged, then dropped" `Quick

@@ -8,6 +8,11 @@
   once it passes. A client that stopped reading held its connection slot
   for ever.
 
+- `Spindle_client.websocket` returns once a send to a server that stopped
+  reading answers `Lost`: what was left unwritten has `timeout_s` for the
+  server to take anything, and is then dropped with the connection. The
+  call waited for it to go, which could be for ever.
+
 - `Spindle_client.error`'s deadline that passed is `Timeout`, where it was
   `Timed_out`: the word postgres-eio and Eio's own `Timeout.run` give the
   same failure. Breaking: a match on a call's error names `Timeout`.

@@ -913,6 +913,46 @@ let refusal_body t c (head : Head.Response.t) =
       | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
       | exception _ -> "")
 
+(* A socket's own writer rather than [Buf_write.with_flow], which waits for
+   everything written to go: to a server that stopped reading, a wait with
+   no end. What is left once [f] returns has [send_timeout_s] for the server
+   to take anything, again after every byte it takes, and is then dropped
+   with the connection. A write the socket refuses aborts the buffer, so the
+   send waiting on it answers rather than raising. *)
+let with_socket_writer t ~send_timeout_s c f =
+  Eio.Switch.run @@ fun sw ->
+  let writer = Eio.Buf_write.create ~sw 4096 in
+  let taken = ref 0 in
+  let copied, all_copied = Eio.Promise.create () in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      let rec copy () =
+        match Eio.Buf_write.await_batch writer with
+        | iovecs -> (
+            match Eio.Flow.single_write c.flow iovecs with
+            | n ->
+                taken := !taken + n;
+                Eio.Buf_write.shift writer n;
+                copy ()
+            | exception Eio.Io _ -> Eio.Buf_write.abort writer)
+        | exception End_of_file -> ()
+      in
+      copy ();
+      Eio.Promise.resolve all_copied ();
+      `Stop_daemon);
+  let v = f writer in
+  Eio.Buf_write.close writer;
+  let rec drain () =
+    let before = !taken in
+    match
+      Eio.Time.Timeout.run (Eio.Time.Timeout.seconds t.clock send_timeout_s)
+        (fun () -> Ok (Eio.Promise.await copied))
+    with
+    | Ok () -> ()
+    | Error `Timeout -> if !taken > before then drain ()
+  in
+  drain ();
+  v
+
 let open_websocket t ?timeout_s ?(headers = []) ?keep_alive_s ?max_message
     protocol url f =
   let deadline = Option.value timeout_s ~default:t.timeout_s in
@@ -986,7 +1026,7 @@ let open_websocket t ?timeout_s ?(headers = []) ?keep_alive_s ?max_message
           Error (Failed (Unreachable m))
       | Ok () ->
           let ended =
-            Eio.Buf_write.with_flow c.flow (fun writer ->
+            with_socket_writer t ~send_timeout_s:deadline c (fun writer ->
                 Websocket.run_client ?keep_alive_s ?max_message
                   ~mask:(fun () -> Mirage_crypto_rng.generate 4)
                   protocol
