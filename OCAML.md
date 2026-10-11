@@ -72,7 +72,7 @@ A change is done when every box holds:
   module made to be opened is opened**: one of binding operators and
   nothing else, file-wide (`open Spindle.Syntax`), and a library of
   combinators or operators locally, around the expression that uses them
-  (`Angstrom.( ... )`, `Float.( ... )`). Any other `open` is one the
+  (`Angstrom.( ... )`, `Float.( ... )`, `Mtime.Span.(30 * s)`). Any other `open` is one the
   repository's rules name, with its reason.
 - [ ] **No silenced warnings.** The warning set in `dune` is the linter --
   warning 9 makes adding a record field a compile error at every pattern
