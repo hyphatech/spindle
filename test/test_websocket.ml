@@ -97,6 +97,36 @@ let test_a_handler_that_raises_is_closed_with_1011 () =
   check_outcome "closed as our bug"
     (Error "closed, 1011: Something went wrong at our end.") (outcome got)
 
+(* The raise is our bug, so the socket's line says so at error, with what
+   was raised and where, as a stream's or a background job's does. *)
+let test_a_handler_that_raises_is_logged_as_an_error () =
+  let lines = ref [] in
+  Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
+    ~out:(fun l -> lines := l :: !lines)
+    ();
+  ignore
+    (Spindle.Test.websocket app chat "/raises" (fun ws ->
+         let* back = Ws.receive ws in
+         Ok back.text)
+      : (string, Spindle.Test.websocket_error) result);
+  let has sub l =
+    let n = String.length sub in
+    let rec at i =
+      i + n <= String.length l
+      && (String.equal (String.sub l i n) sub || at (i + 1))
+    in
+    at 0
+  in
+  match List.filter (has "socket on /raises ended") !lines with
+  | [ line ] ->
+      Alcotest.(check bool)
+        ("at error: " ^ line) true
+        (has {|"level":"error"|} line);
+      Alcotest.(check bool)
+        "with what was raised" true
+        (has {|a bug|} line && has {|"error.stack":"|} line)
+  | lines -> Alcotest.failf "%d lines for the socket's end" (List.length lines)
+
 let test_another_sites_page_cannot_open_one () =
   let got =
     Spindle.Test.websocket
@@ -591,6 +621,8 @@ let () =
             test_a_refusal_comes_before_the_upgrade;
           Alcotest.test_case "a handler that raises is closed with 1011" `Quick
             test_a_handler_that_raises_is_closed_with_1011;
+          Alcotest.test_case "a handler that raises is logged as an error"
+            `Quick test_a_handler_that_raises_is_logged_as_an_error;
           Alcotest.test_case "another site's page cannot open one" `Quick
             test_another_sites_page_cannot_open_one;
           Alcotest.test_case "a socket route is a GET" `Quick

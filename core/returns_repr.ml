@@ -159,20 +159,22 @@ let upgrade : type r.
 let run_socket ~path ?keep_alive_s ?max_message protocol handler
     (c : Response.connection) =
   let started = Eio.Time.Mono.now c.clock in
-  let log_end how =
-    L.info (fun m ->
+  let log_end ?(level = Logs.Info) ?(raised = []) how =
+    L.msg level (fun m ->
         m "socket on %s ended: %s" path how
           ~tags:
             (Log.tags
-               [
-                 ("url.path", `String path);
-                 ( "duration",
-                   `Int
-                     (Int64.to_int
-                        (Mtime.Span.to_uint64_ns
-                           (Mtime.span started (Eio.Time.Mono.now c.clock)))) );
-                 ("spindle.websocket.ended", `String how);
-               ]))
+               ([
+                  ("url.path", `String path);
+                  ( "duration",
+                    `Int
+                      (Int64.to_int
+                         (Mtime.Span.to_uint64_ns
+                            (Mtime.span started (Eio.Time.Mono.now c.clock))))
+                  );
+                  ("spindle.websocket.ended", `String how);
+                ]
+               @ raised)))
   in
   match Websocket.run_server ?keep_alive_s ?max_message protocol c handler with
   | Ok () -> log_end "closed"
@@ -180,7 +182,9 @@ let run_socket ~path ?keep_alive_s ?max_message protocol handler
   | exception (Eio.Cancel.Cancelled _ as ex) ->
       log_end "connection closed";
       raise ex
-  | exception _ -> log_end "its handler raised"
+  | exception ex ->
+      let bt = Printexc.get_raw_backtrace () in
+      log_end ~level:Logs.Error ~raised:(Log.raised ex bt) "its handler raised"
 
 (* The type keeps out another stream's kinds; one of this stream's that the
    route did not declare is still sent, and the route's bug logged. *)

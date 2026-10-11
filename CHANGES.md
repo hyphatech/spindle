@@ -44,6 +44,11 @@
   `Static.load` and `Static.route` for either; its documents name both
   routes it refuses.
 
+- A WebSocket handler that raises ends its socket's line at `error`, with
+  what was raised and where (`error.kind`, `error.message`, `error.stack`),
+  as a stream's or a background job's raise is; it was an `info` line that
+  said only that the handler raised.
+
 - `Spindle_client.error`'s deadline that passed is `Timeout`, where it was
   `Timed_out`: the word postgres-eio and Eio's own `Timeout.run` give the
   same failure. Breaking: a match on a call's error names `Timeout`.
