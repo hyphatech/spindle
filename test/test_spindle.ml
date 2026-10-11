@@ -3820,6 +3820,59 @@ let test_a_failed_read_is_answered_again () =
       ("https", Printf.sprintf "https://localhost:%d/slow" front);
     ]
 
+(* An answer that arrives in the instant the call's deadline passes: the
+   head is written and the test's clock moved to the deadline in one step,
+   so the deadline's fiber is woken, and Eio's POSIX scheduler wakes the
+   head's reader before that fiber runs: both finish. Whichever is taken,
+   the connection is not left open. *)
+let test_an_answer_at_the_deadline_leaves_no_socket_open () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let open_sockets () = Array.length (Sys.readdir "/dev/fd") in
+  let clock = Eio_mock.Clock.Mono.make () in
+  let socket =
+    Eio.Net.listen (Eio.Stdenv.net env) ~sw ~backlog:1 ~reuse_addr:true
+      (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
+  in
+  let port =
+    match Eio.Net.listening_addr socket with
+    | `Tcp (_, p) -> p
+    | `Unix _ -> Alcotest.fail "expected a TCP socket"
+  in
+  let client =
+    Spindle_client.create ~sw ~net:(Eio.Stdenv.net env) ~mono_clock:clock ()
+  in
+  (* Looking up an address once opens what every lookup after it shares. *)
+  ignore
+    (Eio.Net.getaddrinfo_stream (Eio.Stdenv.net env) "127.0.0.1"
+      : Eio.Net.Sockaddr.stream list);
+  let before = open_sockets () in
+  let answered, answer = Eio.Promise.create () in
+  Eio.Fiber.fork ~sw (fun () ->
+      ( Eio.Switch.run @@ fun inner ->
+        let flow, _ = Eio.Net.accept ~sw:inner socket in
+        let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
+        (match Spindle_http.Head.Request.read ~max:65536 r with
+        | Error _ -> Alcotest.fail "the request could not be read"
+        | Ok _ -> ());
+        Eio.Flow.copy_string
+          "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+          flow;
+        Eio_mock.Clock.Mono.set_time clock
+          (Mtime.of_uint64_ns (Int64.of_float 1e9)) );
+      Eio.Promise.resolve answer ());
+  let got =
+    Spindle_client.stream client ~timeout_s:1. `GET
+      (Printf.sprintf "http://127.0.0.1:%d/" port) (fun a -> a.status)
+  in
+  Eio.Promise.await answered;
+  Alcotest.(check bool)
+    "answered, or out of time" true
+    (match got with
+    | Ok 200 | Error (Spindle_client.Timeout _) -> true
+    | Ok _ | Error (Spindle_client.Unreachable _) -> false);
+  check_int "and no socket is left open" before (open_sockets ())
+
 let call_on ~net ~clock ~port ?(headers = []) ?body meth path =
   Eio.Switch.run @@ fun sw ->
   let client = Spindle_client.create ~sw ~net ~mono_clock:clock () in
@@ -7918,6 +7971,8 @@ let () =
             test_the_client_reads_as_it_arrives;
           Alcotest.test_case "a failed read is answered again" `Quick
             test_a_failed_read_is_answered_again;
+          Alcotest.test_case "an answer at the deadline leaves no socket open"
+            `Quick test_an_answer_at_the_deadline_leaves_no_socket_open;
         ] );
       ( "rate limits",
         [

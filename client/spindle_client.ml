@@ -722,8 +722,20 @@ let stream t ?timeout_s ?read_timeout_s ?(headers = []) ?body meth url f =
   let deadline = Option.value timeout_s ~default:t.timeout_s in
   let wait_s = Option.value read_timeout_s ~default:deadline in
   let caller_closes = Field.has_element headers "connection" "close" in
+  (* Rather than [Timeout.run], which keeps the first of two fibers that
+     finish in one step: an answer that arrived as the deadline passed
+     would be dropped with its connection open. It is taken instead. *)
+  let answer_if_any first second =
+    match (first, second) with
+    | (Ok _ as answer), _ | _, (Ok _ as answer) -> answer
+    | Error `Timeout, Error `Timeout -> first
+  in
   match
-    Eio.Time.Timeout.run (Eio.Time.Timeout.seconds t.clock deadline) (fun () ->
+    Eio.Fiber.first ~combine:answer_if_any
+      (fun () ->
+        Eio.Time.Mono.sleep t.clock deadline;
+        Error `Timeout)
+      (fun () ->
         let target = target_of uri in
         Ok (target, open_answer t ~headers ~body meth target))
   with

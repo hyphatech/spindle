@@ -13,6 +13,10 @@
   server to take anything, and is then dropped with the connection. The
   call waited for it to go, which could be for ever.
 
+- `Spindle_client.stream` takes an answer whose head arrived in the instant
+  its deadline passed, where it answered `Timeout` and left the answer's
+  connection open until the client's switch ended.
+
 - `Spindle_client.error`'s deadline that passed is `Timeout`, where it was
   `Timed_out`: the word postgres-eio and Eio's own `Timeout.run` give the
   same failure. Breaking: a match on a call's error names `Timeout`.
