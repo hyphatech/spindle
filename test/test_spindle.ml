@@ -514,7 +514,9 @@ let test_a_refusal_before_the_body_never_reads_it () =
     fst
       (Spindle.App.handle
          (Spindle.Test.app [ route ])
-         (Spindle.Request.make ~headers ~now:(fun () -> 0) `POST "/post")
+         (Spindle.Request.make ~headers
+            ~now:(fun () -> Ptime.epoch)
+            `POST "/post")
          ~body)
   in
   check_status "signed out, first" 401
@@ -727,16 +729,16 @@ let test_query_header_cookie_and_clock () =
               Option.value q ~default:"-";
               Option.value h ~default:"-";
               Option.value c ~default:"-";
-              string_of_int now;
+              Ptime.to_rfc3339 now;
             ]))
   in
   let r =
     Spindle.Test.call
       (Spindle.Test.app [ route ])
-      `GET "/who?q=1" ~now:42
+      `GET "/who?q=1" ~now:(Instants.of_ms 42_000)
       ~headers:[ ("x-thing", "2"); ("cookie", "a=1; b=3"); ("cookie", "c=4") ]
   in
-  check_string "all four" {|["1","2","3","42"]|} r.body
+  check_string "all four" {|["1","2","3","1970-01-01T00:00:42-00:00"]|} r.body
 
 (* Text that is not UTF-8 is refused at its place, as a form's field is,
    before a codec reads it: a JSON answer holding it could not be written. *)
@@ -1045,7 +1047,7 @@ let sealed_app c =
          Ok (Option.value v ~default:"absent"));
     ]
 
-let issued ?(now = 0) app v =
+let issued ?(now = Ptime.epoch) app v =
   let r = Spindle.Test.call ~now app `POST ("/set/" ^ v) in
   match Spindle.Test.header r "set-cookie" with
   | Some h -> (
@@ -1053,7 +1055,7 @@ let issued ?(now = 0) app v =
   | None -> Alcotest.fail "no cookie was set"
 
 (* The Set-Cookie an answer carries for [cookie], as the server writes it. *)
-let read_with ?(now = 0) app cookie =
+let read_with ?(now = Ptime.epoch) app cookie =
   (Spindle.Test.call ~now app `GET "/read" ~headers:[ ("cookie", cookie) ]).body
 
 let value_of cookie =
@@ -1140,11 +1142,11 @@ let test_a_sealed_cookie_ages make =
   let c = make ring ~max_age_s:60 "who" Spindle.Codec.string in
   let app = sealed_app c in
   let made = 1_000_000 in
-  let cookie = issued ~now:made app "kim" in
+  let cookie = issued ~now:(Instants.of_ms made) app "kim" in
   check_string "within its age" "kim"
-    (read_with ~now:(made + 59_000) app cookie);
+    (read_with ~now:(Instants.of_ms (made + 59_000)) app cookie);
   check_string "past it, absent, whatever the browser was told" "absent"
-    (read_with ~now:(made + 61_000) app cookie);
+    (read_with ~now:(Instants.of_ms (made + 61_000)) app cookie);
   let header =
     Option.value ~default:""
       (Spindle.Test.header (Spindle.Test.call app `POST "/set/x") "set-cookie")
@@ -1269,13 +1271,14 @@ let session_cookie (r : Spindle.Test.response) =
       match String.index_opt h ';' with Some i -> String.sub h 0 i | None -> h)
   | None -> Alcotest.fail "no session cookie"
 
-let as_visitor ?(now = 0) app cookie meth target =
+let as_visitor ?(now = Ptime.epoch) app cookie meth target =
   Spindle.Test.call ~now app meth target ~headers:[ ("cookie", cookie) ]
 
 let test_a_session_is_kept_on_the_server () =
   let store, keys, _ = recorded () in
   let sessions =
-    Spindle.Session.create ~store ~idle_s:3600 ~absolute_s:86400 Wiretype.string
+    Spindle.Session.create ~store ~idle:Mtime.Span.hour ~absolute:Mtime.Span.day
+      Wiretype.string
   in
   let app = session_routes sessions in
   let started = Spindle.Test.call app `POST "/start/kim" in
@@ -1319,14 +1322,36 @@ let test_a_session_is_kept_on_the_server () =
   check_string "nor does an id nobody made" "nobody"
     (as_visitor app "session=AAAAAAAAAAAAAAAAAAAAAA" `GET "/me").body
 
+(* [Max-Age] counts whole seconds, so a session's cookie lasts its absolute
+   limit rounded up: the cookie outlives the session, never the reverse. *)
+let test_a_sessions_cookie_lasts_its_limit_rounded_up () =
+  let store, _, _ = recorded () in
+  let sessions =
+    Spindle.Session.create ~store ~idle:Mtime.Span.min
+      ~absolute:Mtime.Span.(Mtime.Span.add (250 * s) ms)
+      Wiretype.string
+  in
+  let started =
+    Spindle.Test.call (session_routes sessions) `POST "/start/kim"
+  in
+  Alcotest.(check bool)
+    "250.001 seconds is a Max-Age of 251" true
+    (contains ~sub:"Max-Age=251"
+       (Option.value ~default:"" (Spindle.Test.header started "set-cookie")))
+
 let test_a_session_ends_by_its_limits () =
   let store, _, saves = recorded () in
   let sessions =
-    Spindle.Session.create ~store ~idle_s:100 ~absolute_s:250 Wiretype.string
+    Spindle.Session.create ~store
+      ~idle:Mtime.Span.(100 * s)
+      ~absolute:Mtime.Span.(250 * s)
+      Wiretype.string
   in
   let app = session_routes sessions in
   let cookie = session_cookie (Spindle.Test.call app `POST "/start/kim") in
-  let me now = (as_visitor ~now app cookie `GET "/me").body in
+  let me ms =
+    (as_visitor ~now:(Instants.of_ms ms) app cookie `GET "/me").body
+  in
   let before = !saves in
   check_string "within its idle limit" "kim" (me 5_000);
   check_int "and not written for it" before !saves;
@@ -1337,15 +1362,20 @@ let test_a_session_ends_by_its_limits () =
   check_string "past its absolute limit, however busy" "nobody" (me 260_000);
   let other = session_cookie (Spindle.Test.call app `POST "/start/lee") in
   check_string "and one left alone past its idle limit" "nobody"
-    (as_visitor ~now:101_000 app other `GET "/me").body;
-  let old = session_cookie (Spindle.Test.call ~now:0 app `POST "/start/old") in
+    (as_visitor ~now:(Instants.of_ms 101_000) app other `GET "/me").body;
+  let old =
+    session_cookie (Spindle.Test.call ~now:Ptime.epoch app `POST "/start/old")
+  in
   ignore old;
-  (match Spindle.Session.sweep sessions ~now:1_000_000 with
+  (match Spindle.Session.sweep sessions ~now:(Instants.of_ms 1_000_000) with
   | Ok n ->
       Alcotest.(check bool) "a sweep deletes what has expired" true (n >= 1)
   | Error _ -> Alcotest.fail "the sweep failed");
   let ints =
-    Spindle.Session.create ~store ~idle_s:100 ~absolute_s:250 Wiretype.int
+    Spindle.Session.create ~store
+      ~idle:Mtime.Span.(100 * s)
+      ~absolute:Mtime.Span.(250 * s)
+      Wiretype.int
   in
   let cookie = session_cookie (Spindle.Test.call app `POST "/start/text") in
   let reads_ints =
@@ -1527,7 +1557,9 @@ let test_a_form_is_read_once_and_only_as_a_form () =
   let call headers body =
     fst
       (Spindle.App.handle a
-         (Spindle.Request.make ~headers ~now:(fun () -> 0) `POST "/profile")
+         (Spindle.Request.make ~headers
+            ~now:(fun () -> Ptime.epoch)
+            `POST "/profile")
          ~body:
            {
              Spindle.Body.whole =
@@ -2073,22 +2105,19 @@ let test_a_limit_that_cannot_be_is_refused () =
         Alcotest.(check bool) (name ^ ", named") true (contains ~sub:name m)
   in
   refused "limit" (fun () ->
-      Spindle.Rate.create ~mono_clock ~limit:0 ~per_s:1. ());
+      Spindle.Rate.create ~mono_clock ~limit:0 ~per:Mtime.Span.s ());
   refused "burst" (fun () ->
-      Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:1. ~burst:0 ());
-  refused "per_s" (fun () ->
-      Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:0. ());
-  refused "per_s" (fun () ->
-      Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:(-1.) ());
-  refused "per_s" (fun () ->
-      Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:Float.nan ());
-  refused "per_s" (fun () ->
-      Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:Float.infinity ());
-  ignore (Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:0.001 ~burst:1 ())
+      Spindle.Rate.create ~mono_clock ~limit:1 ~per:Mtime.Span.s ~burst:0 ());
+  refused "per" (fun () ->
+      Spindle.Rate.create ~mono_clock ~limit:1 ~per:Mtime.Span.zero ());
+  ignore
+    (Spindle.Rate.create ~mono_clock ~limit:1 ~per:Mtime.Span.ms ~burst:1 ())
 
 let test_a_burst_is_its_own_figure () =
   let mono_clock = Eio_mock.Clock.Mono.make () in
-  let calls = Spindle.Rate.create ~mono_clock ~limit:2 ~per_s:1. ~burst:5 () in
+  let calls =
+    Spindle.Rate.create ~mono_clock ~limit:2 ~per:Mtime.Span.s ~burst:5 ()
+  in
   let a =
     Spindle.Test.app
       [
@@ -2114,7 +2143,7 @@ let test_a_burst_is_its_own_figure () =
    it, so a limit by address counts the /64; IPv4's address is its own. *)
 let test_an_ipv6_client_is_counted_by_its_network () =
   let mono_clock = Eio_mock.Clock.Mono.make () in
-  let calls = Spindle.Rate.create ~mono_clock ~limit:1 ~per_s:60. () in
+  let calls = Spindle.Rate.create ~mono_clock ~limit:1 ~per:Mtime.Span.min () in
   let a =
     Spindle.Test.app
       [
@@ -2138,7 +2167,9 @@ let test_an_ipv6_client_is_counted_by_its_network () =
 
 let test_a_limit_refuses_past_its_rate () =
   let mono_clock = Eio_mock.Clock.Mono.make () in
-  let sign_ins = Spindle.Rate.create ~mono_clock ~limit:10 ~per_s:1. () in
+  let sign_ins =
+    Spindle.Rate.create ~mono_clock ~limit:10 ~per:Mtime.Span.s ()
+  in
   let route =
     Spindle.post
       Spindle.Path.(s "sign-in")
@@ -2192,7 +2223,7 @@ let test_a_test_browser_keeps_what_the_app_set () =
   let sessions =
     Spindle.Session.create
       ~store:(Spindle.Session.memory ())
-      ~idle_s:3600 ~absolute_s:86400 Wiretype.string
+      ~idle:Mtime.Span.hour ~absolute:Mtime.Span.day Wiretype.string
   in
   let me = Spindle.Session.cookie sessions in
   let routes =
@@ -2262,7 +2293,8 @@ let test_a_test_browser_keeps_what_the_app_set () =
   check_string "a cookie is set at its path" "seated" (call `POST "/games/1");
   check_string "and sent under it" "1" (call `GET "/games/1/seat");
   check_string "and not under another" "none" (call `GET "/games/2/seat");
-  check_string "nor past its age" "none" (call ~now:61_000 `GET "/games/1/seat")
+  check_string "nor past its age" "none"
+    (call ~now:(Instants.of_ms 61_000) `GET "/games/1/seat")
 
 let test_a_test_reads_a_stream_that_never_ends () =
   Eio_main.run @@ fun _ ->
@@ -2872,7 +2904,8 @@ let test_a_kept_trace_records_its_spans () =
         && price.status = Spindle.Trace.Unset);
       Alcotest.(check bool)
         "and a length" true
-        (price.start_ns > 0 && price.end_ns >= price.start_ns);
+        (Ptime.is_later price.start ~than:Ptime.epoch
+        && Mtime.Span.compare price.duration Mtime.Span.zero >= 0);
       Alcotest.(check (option string))
         "a call inside it is its child"
         (Some (Printf.sprintf "00-%s-%s-01" request.trace_id price.span_id))
@@ -3029,7 +3062,7 @@ let test_a_request_and_its_call_are_one_trace () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> 0)
+        ~now:(fun () -> Ptime.epoch)
         ~trace [ socket ]
         (Spindle.Test.app [ front; back; broken ]);
       `Stop_daemon);
@@ -3260,8 +3293,9 @@ let test_a_whole_batch_is_sent_without_waiting_for_the_tick () =
       spans 600;
       Eio.Promise.resolve let_go ();
       match
-        Eio.Time.Timeout.run (Eio.Time.Timeout.seconds mono_clock 2.) (fun () ->
-            Ok (Eio.Stream.take posts))
+        Eio.Time.Timeout.run
+          (Eio.Time.Timeout.v mono_clock Mtime.Span.(2 * s))
+          (fun () -> Ok (Eio.Stream.take posts))
       with
       | Ok () -> ()
       | Error `Timeout -> Alcotest.fail "the whole batch waited for the tick")
@@ -3392,7 +3426,7 @@ let test_a_server_counts_its_requests () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:2
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> 0)
+        ~now:(fun () -> Ptime.epoch)
         ~metrics [ socket ]
         (Spindle.Test.app (hello :: Spindle.Metrics.routes metrics));
       `Stop_daemon);
@@ -3499,7 +3533,7 @@ let test_the_client_answers_times_out_and_reports domains () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> 0)
+        ~now:(fun () -> Ptime.epoch)
         [ socket ] served;
       `Stop_daemon);
   let client =
@@ -3507,7 +3541,8 @@ let test_the_client_answers_times_out_and_reports domains () =
   and impatient =
     Spindle_client.create ~sw ~net
       ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ~timeout_s:0.3 ()
+      ~timeout:Mtime.Span.(300 * ms)
+      ()
   in
   let url path = Printf.sprintf "http://127.0.0.1:%d%s" port path in
   (match Spindle_client.call client `GET (url "/hello/kim") with
@@ -3616,8 +3651,8 @@ let test_a_refused_address_leaves_no_socket () =
 
 (* An app on a loopback socket of its own, served as Spindle.Server serves one;
    the port it is on. *)
-let serve ~sw ~net ~clock ~domain_mgr ~domains ?(now = fun () -> 0)
-    ?trusted_proxies ?proxy_header ?max_body ?send_timeout_s ?max_connections
+let serve ~sw ~net ~clock ~domain_mgr ~domains ?(now = fun () -> Ptime.epoch)
+    ?trusted_proxies ?proxy_header ?max_body ?send_timeout ?max_connections
     served =
   let socket =
     Eio.Net.listen net ~sw ~backlog:8 ~reuse_addr:true
@@ -3630,8 +3665,8 @@ let serve ~sw ~net ~clock ~domain_mgr ~domains ?(now = fun () -> 0)
   in
   Eio.Fiber.fork_daemon ~sw (fun () ->
       Spindle.Server.serve_on ~mono_clock:clock ~now ~domain_mgr ~domains
-        ?trusted_proxies ?proxy_header ?max_body ?send_timeout_s
-        ?max_connections [ socket ] served;
+        ?trusted_proxies ?proxy_header ?max_body ?send_timeout ?max_connections
+        [ socket ] served;
       `Stop_daemon);
   port
 
@@ -3829,7 +3864,9 @@ let test_the_client_reads_as_it_arrives () =
         r.status
   | _ -> Alcotest.fail "a JSON answer is no event stream");
   match
-    Spindle_client.stream client ~read_timeout_s:0.2 `GET (url "/slow")
+    Spindle_client.stream client
+      ~read_timeout:Mtime.Span.(200 * ms)
+      `GET (url "/slow")
       (fun a ->
         let first = Spindle_client.Body.read a.body in
         let second = Spindle_client.Body.read a.body in
@@ -3873,7 +3910,10 @@ let test_a_failed_read_is_answered_again () =
       ~authenticator ()
   in
   let read_after_failing url =
-    Spindle_client.stream client ~read_timeout_s:0.1 `GET url (fun a ->
+    Spindle_client.stream client
+      ~read_timeout:Mtime.Span.(100 * ms)
+      `GET url
+      (fun a ->
         let rec until_failed () =
           match Spindle_client.Body.read a.body with
           | Ok (`Data _) -> until_failed ()
@@ -3938,7 +3978,7 @@ let test_an_answer_at_the_deadline_leaves_no_socket_open () =
           (Mtime.of_uint64_ns (Int64.of_float 1e9)) );
       Eio.Promise.resolve answer ());
   let got =
-    Spindle_client.stream client ~timeout_s:1. `GET
+    Spindle_client.stream client ~timeout:Mtime.Span.s `GET
       (Printf.sprintf "http://127.0.0.1:%d/" port) (fun a -> a.status)
   in
   Eio.Promise.await answered;
@@ -4013,9 +4053,9 @@ let test_every_serving_domain_raises_its_minor_heap () =
    anything is served, and the edge of each range is taken. *)
 let test_a_limit_out_of_range_is_refused () =
   Eio_main.run @@ fun env ->
-  let serve ?domains ?max_body ?max_header_bytes ?head_timeout_s ?idle_timeout_s
-      ?body_timeout_s ?min_body_rate ?send_timeout_s ?discard_limit ?linger_s
-      ?body_budget ?trusted_proxies ?max_connections ?drain_s () =
+  let serve ?domains ?max_body ?max_header_bytes ?head_timeout ?idle_timeout
+      ?body_timeout ?min_body_rate ?send_timeout ?discard_limit ?linger
+      ?body_budget ?trusted_proxies ?max_connections ?drain () =
     Eio.Switch.run @@ fun sw ->
     let socket =
       Eio.Net.listen (Eio.Stdenv.net env) ~sw ~backlog:1 ~reuse_addr:true
@@ -4026,10 +4066,10 @@ let test_a_limit_out_of_range_is_refused () =
     Spindle.Server.serve_on
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ~now:(fun () -> 0)
-      ?domains ?max_body ?max_header_bytes ?head_timeout_s ?idle_timeout_s
-      ?body_timeout_s ?min_body_rate ?send_timeout_s ?discard_limit ?linger_s
-      ?body_budget ?trusted_proxies ?max_connections ?drain_s ~stop [ socket ]
+      ~now:(fun () -> Ptime.epoch)
+      ?domains ?max_body ?max_header_bytes ?head_timeout ?idle_timeout
+      ?body_timeout ?min_body_rate ?send_timeout ?discard_limit ?linger
+      ?body_budget ?trusted_proxies ?max_connections ?drain ~stop [ socket ]
       (Spindle.Test.app [])
   in
   List.iter
@@ -4046,18 +4086,17 @@ let test_a_limit_out_of_range_is_refused () =
       ("a negative body", fun () -> serve ~max_body:(-1) ());
       ("a negative budget", fun () -> serve ~body_budget:(-1) ());
       ("a negative discard", fun () -> serve ~discard_limit:(-1) ());
-      ("no time for a head", fun () -> serve ~head_timeout_s:0. ());
-      ("no time idle", fun () -> serve ~idle_timeout_s:(-1.) ());
-      ("no time for a body", fun () -> serve ~body_timeout_s:Float.nan ());
-      ("forever to send", fun () -> serve ~send_timeout_s:Float.infinity ());
-      ("a negative linger", fun () -> serve ~linger_s:(-1.) ());
-      ("a negative drain", fun () -> serve ~drain_s:(-0.5) ());
+      ("no time for a head", fun () -> serve ~head_timeout:Mtime.Span.zero ());
+      ("no time idle", fun () -> serve ~idle_timeout:Mtime.Span.zero ());
+      ("no time for a body", fun () -> serve ~body_timeout:Mtime.Span.zero ());
+      ("no time to send", fun () -> serve ~send_timeout:Mtime.Span.zero ());
       ( "a range no address has",
         fun () -> serve ~trusted_proxies:[ "10.0.0.0/33" ] () );
       ("an address cut short", fun () -> serve ~trusted_proxies:[ "10.0.0" ] ());
     ];
   serve ~domains:1 ~max_connections:1 ~min_body_rate:1 ~max_header_bytes:1
-    ~max_body:0 ~body_budget:0 ~discard_limit:0 ~linger_s:0. ~drain_s:0.
+    ~max_body:0 ~body_budget:0 ~discard_limit:0 ~linger:Mtime.Span.zero
+    ~drain:Mtime.Span.zero
     ~trusted_proxies:[ "10.0.0.0/8"; "::1"; "unix:/run/proxy.sock" ]
     ()
 
@@ -4379,7 +4418,7 @@ let test_an_ipv4_peer_through_the_ipv6_wildcard domains () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> 0)
+        ~now:(fun () -> Ptime.epoch)
         ~trusted_proxies:[ "127.0.0.1" ] [ socket ] (Spindle.Test.app [ who ]);
       `Stop_daemon);
   let client, _ =
@@ -4445,18 +4484,18 @@ let test_a_signal_stops_the_server () =
 
 (* An app served on [In_memory]'s virtual time, and the way to connect to
    it. *)
-let serve_in_memory ~sw env ?domains ?send_timeout_s ?max_connections served =
+let serve_in_memory ~sw env ?domains ?send_timeout ?max_connections served =
   let listening, connect = In_memory.listen () in
   Eio.Fiber.fork_daemon ~sw (fun () ->
       Spindle.Server.serve_on
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> 0)
+        ~now:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-        ?domains ?send_timeout_s ?max_connections [ listening ] served;
+        ?domains ?send_timeout ?max_connections [ listening ] served;
       `Stop_daemon);
   connect
 
-let seconds_between a b = Mtime.Span.to_float_ns (Mtime.span a b) /. 1e9
+let span = Alcotest.testable Mtime.Span.pp Mtime.Span.equal
 
 (* A drain that runs out does not wait for the answer still being made: the
    server returns as the drain ends, and says how many it left. *)
@@ -4477,15 +4516,15 @@ let test_a_drain_that_runs_out_ends_on_time domains () =
            Eio.Promise.resolve begun ();
            Eio.Fiber.await_cancel ()))
   in
-  let drain_s = 0.2 in
+  let drain = Mtime.Span.(200 * ms) in
   let stop, stopping = Eio.Promise.create () in
   let returned, return = Eio.Promise.create () in
   let listening, connect = In_memory.listen () in
   Eio.Fiber.fork ~sw (fun () ->
       Spindle.Server.serve_on ~mono_clock:clock
-        ~now:(fun () -> 0)
+        ~now:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-        ~domains ~stop ~drain_s [ listening ]
+        ~domains ~stop ~drain [ listening ]
         (Spindle.Test.app [ never ]);
       Eio.Promise.resolve return (Eio.Time.Mono.now clock));
   Eio.Switch.run @@ fun inner ->
@@ -4494,9 +4533,8 @@ let test_a_drain_that_runs_out_ends_on_time domains () =
   Eio.Promise.await started;
   let stopped_at = Eio.Time.Mono.now clock in
   Eio.Promise.resolve stopping ();
-  Alcotest.(check (float 1e-6))
-    "returned as the drain ended" drain_s
-    (seconds_between stopped_at (Eio.Promise.await returned));
+  Alcotest.check span "returned as the drain ended" drain
+    (Mtime.span stopped_at (Eio.Promise.await returned));
   Alcotest.(check bool)
     "saying what it left" true
     (List.exists (contains ~sub:"1 requests unanswered") !lines)
@@ -4509,13 +4547,14 @@ let test_a_stop_lets_answers_finish domains () =
   Eio.Switch.run @@ fun sw ->
   let clock = Eio.Stdenv.mono_clock env in
   let hub : (unit, string) Spindle.Broadcast.t = Spindle.Broadcast.create () in
-  let answering_s = 0.3 and stop_after_s = 0.1 in
+  let answering = Mtime.Span.(300 * ms)
+  and stop_after = Mtime.Span.(100 * ms) in
   let slow =
     Spindle.get
       Spindle.Path.(s "slow")
       Spindle.Returns.response
       (Spindle.Dep.of_request (fun _ ->
-           Eio.Time.Mono.sleep clock answering_s;
+           Eio.Time.Mono.sleep_span clock answering;
            Ok (Ok (Spindle.Response.json Wiretype.string "done"))))
   in
   let events =
@@ -4543,9 +4582,10 @@ let test_a_stop_lets_answers_finish domains () =
   let started = Eio.Time.Mono.now clock in
   Eio.Fiber.fork ~sw (fun () ->
       Spindle.Server.serve_on ~mono_clock:clock
-        ~now:(fun () -> 0)
+        ~now:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-        ~domains ~stop ~drain_s:2.0
+        ~domains ~stop
+        ~drain:Mtime.Span.(2 * s)
         ~on_stop:(fun () -> Spindle.Broadcast.close hub)
         [ listening ]
         (Spindle.Test.app [ slow; events ]);
@@ -4564,7 +4604,7 @@ let test_a_stop_lets_answers_finish domains () =
         answer :=
           read_all "GET /slow HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
       (fun () ->
-        Eio.Time.Mono.sleep clock stop_after_s;
+        Eio.Time.Mono.sleep_span clock stop_after;
         Eio.Promise.resolve stopping ());
     ];
   Alcotest.(check bool)
@@ -4574,9 +4614,8 @@ let test_a_stop_lets_answers_finish domains () =
   Alcotest.(check bool)
     "the stream ended cleanly, with its last chunk" true
     (String.ends_with ~suffix:"\r\n0\r\n\r\n" !stream);
-  Alcotest.(check (float 1e-6))
-    "and it returned as the answer finished" answering_s
-    (seconds_between started (Eio.Promise.await returned))
+  Alcotest.check span "and it returned as the answer finished" answering
+    (Mtime.span started (Eio.Promise.await returned))
 
 (* A stream of known length -- a file -- ends by itself, so a stop waits
    for it as for an answer being made, within the drain; one of no length
@@ -4585,7 +4624,7 @@ let test_a_stop_lets_a_stream_of_known_length_finish domains () =
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let clock = Eio.Stdenv.mono_clock env in
-  let sending_s = 0.3 and stop_after_s = 0.1 in
+  let sending = Mtime.Span.(300 * ms) and stop_after = Mtime.Span.(100 * ms) in
   let file =
     Spindle.get
       Spindle.Path.(s "file")
@@ -4595,7 +4634,7 @@ let test_a_stop_lets_a_stream_of_known_length_finish domains () =
             (Spindle.Response.stream ~length:6 (fun send ->
                  let ( let* ) = Result.bind in
                  let* () = send "abc" in
-                 Eio.Time.Mono.sleep clock sending_s;
+                 Eio.Time.Mono.sleep_span clock sending;
                  send "def"))))
   in
   let stop, stopping = Eio.Promise.create () in
@@ -4604,9 +4643,11 @@ let test_a_stop_lets_a_stream_of_known_length_finish domains () =
   let started = Eio.Time.Mono.now clock in
   Eio.Fiber.fork ~sw (fun () ->
       Spindle.Server.serve_on ~mono_clock:clock
-        ~now:(fun () -> 0)
+        ~now:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-        ~domains ~stop ~drain_s:2.0 [ listening ]
+        ~domains ~stop
+        ~drain:Mtime.Span.(2 * s)
+        [ listening ]
         (Spindle.Test.app [ file ]);
       Eio.Promise.resolve return (Eio.Time.Mono.now clock));
   let answer = ref "" in
@@ -4618,15 +4659,14 @@ let test_a_stop_lets_a_stream_of_known_length_finish domains () =
         Eio.Flow.copy_string "GET /file HTTP/1.1\r\nHost: t\r\n\r\n" flow;
         answer := Eio.Buf_read.(parse_exn take_all) flow ~max_size:65536);
       (fun () ->
-        Eio.Time.Mono.sleep clock stop_after_s;
+        Eio.Time.Mono.sleep_span clock stop_after;
         Eio.Promise.resolve stopping ());
     ];
   Alcotest.(check bool)
     "the stream was sent whole" true
     (String.ends_with ~suffix:"\r\n\r\nabcdef" !answer);
-  Alcotest.(check (float 1e-6))
-    "and it returned as the stream ended" sending_s
-    (seconds_between started (Eio.Promise.await returned))
+  Alcotest.check span "and it returned as the stream ended" sending
+    (Mtime.span started (Eio.Promise.await returned))
 
 (* An events route on a topic nothing is published to, its producer
    waiting on [Broadcast.next] -- told [until] the client has gone, or not
@@ -4748,7 +4788,7 @@ let test_past_the_cap_a_connection_waits domains () =
          ignore (status second : string);
          false)
        (fun () ->
-         Eio.Time.Mono.sleep (Eio.Stdenv.mono_clock env) 1.0;
+         Eio.Time.Mono.sleep_span (Eio.Stdenv.mono_clock env) Mtime.Span.s;
          true));
   Eio.Flow.close first;
   check_string "and is served once it closes" "HTTP/1.1 200 OK" (status second)
@@ -4775,7 +4815,7 @@ let served_on ~sw ~net ~env ~domains host =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> 0)
+        ~now:(fun () -> Ptime.epoch)
         ~port ?host
         ~ready:(fun where -> Eio.Promise.resolve tell where)
         (Spindle.Test.app [ hello ]);
@@ -4855,7 +4895,7 @@ let test_localhost_held_on_one_loopback_is_refused () =
           ~domain_mgr:(Eio.Stdenv.domain_mgr env)
           ~domains:1
           ~mono_clock:(Eio.Stdenv.mono_clock env)
-          ~now:(fun () -> 0)
+          ~now:(fun () -> Ptime.epoch)
           ~port
           ~ready:(fun where ->
             Alcotest.failf "listening on %s, beside whoever holds [::1]" where)
@@ -4884,7 +4924,7 @@ let test_run_checks_its_limits_before_it_binds () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains:1
       ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ~now:(fun () -> 0)
+      ~now:(fun () -> Ptime.epoch)
       ~port ~host:"127.0.0.1" ~max_connections:0
       ~ready:(fun where -> Alcotest.failf "ready on %s" where)
       (Spindle.Test.app [ hello ])
@@ -4964,7 +5004,9 @@ let test_a_client_that_never_reads_frees_its_slot domains () =
          (Ok (Spindle.Response.make (String.make (1024 * 1024) 'x'))))
   in
   let connect =
-    serve_in_memory ~sw env ~domains ~send_timeout_s:0.3 ~max_connections:1
+    serve_in_memory ~sw env ~domains
+      ~send_timeout:Mtime.Span.(300 * ms)
+      ~max_connections:1
       (Spindle.Test.app [ big; hello ])
   in
   Eio.Switch.run @@ fun inner ->
@@ -4984,7 +5026,7 @@ let test_the_send_limit_is_on_a_stop_not_a_length domains () =
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let clock = Eio.Stdenv.mono_clock env in
-  let limit = 0.3 and size = 1024 * 1024 in
+  let limit = Mtime.Span.(300 * ms) and size = 1024 * 1024 in
   let big =
     Spindle.get
       Spindle.Path.(s "big")
@@ -4992,14 +5034,14 @@ let test_the_send_limit_is_on_a_stop_not_a_length domains () =
       (Spindle.Dep.return (Ok (Spindle.Response.make (String.make size 'x'))))
   in
   let connect =
-    serve_in_memory ~sw env ~domains ~send_timeout_s:limit
+    serve_in_memory ~sw env ~domains ~send_timeout:limit
       (Spindle.Test.app [ big ])
   in
   let buf = Cstruct.create 65536 in
   let rec read_pausing flow total =
     match Eio.Flow.single_read flow buf with
     | n ->
-        Eio.Time.Mono.sleep clock (limit *. 2. /. 3.);
+        Eio.Time.Mono.sleep_span clock Mtime.Span.(200 * ms);
         read_pausing flow (total + n)
     | exception End_of_file -> total
   in
@@ -5014,14 +5056,16 @@ let test_the_send_limit_is_on_a_stop_not_a_length domains () =
   Alcotest.(check bool) "all of it arrived" true (slowly > size);
   Alcotest.(check bool)
     "over many times the limit" true
-    (seconds_between started (Eio.Time.Mono.now clock) > 10. *. limit);
+    (Mtime.Span.is_longer
+       (Mtime.span started (Eio.Time.Mono.now clock))
+       ~than:Mtime.Span.(10 * limit));
   let stopped =
     Eio.Switch.run @@ fun inner ->
     let flow = connect ~sw:inner in
     Eio.Flow.copy_string
       "GET /big HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n" flow;
     let first = Eio.Flow.single_read flow buf in
-    Eio.Time.Mono.sleep clock (limit *. 1.2);
+    Eio.Time.Mono.sleep_span clock Mtime.Span.(360 * ms);
     first
     + String.length
         (Eio.Buf_read.(parse_exn take_all) flow ~max_size:(2 * size))
@@ -5047,7 +5091,8 @@ let test_a_stream_ends_when_its_client_stops_reading domains () =
                  go ()))))
   in
   let connect =
-    serve_in_memory ~sw env ~domains ~send_timeout_s:0.3
+    serve_in_memory ~sw env ~domains
+      ~send_timeout:Mtime.Span.(300 * ms)
       (Spindle.Test.app [ flood ])
   in
   Eio.Switch.run @@ fun inner ->
@@ -5066,9 +5111,9 @@ let test_a_jumping_clock_moves_no_duration domains () =
   Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
     ~out:(fun l -> lines := l :: !lines)
     ();
-  let hour = ref 0 in
+  let hour = ref Ptime.epoch in
   let now () =
-    hour := !hour + 3_600_000;
+    hour := Spindle_http.Instant.add !hour Mtime.Span.hour;
     !hour
   in
   let port =
@@ -5119,7 +5164,8 @@ let test_https_is_never_spoken_as_plain_http domains () =
   let client =
     Spindle_client.create ~sw ~net
       ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ~timeout_s:2. ()
+      ~timeout:Mtime.Span.(2 * s)
+      ()
   in
   match
     Spindle_client.call client `GET
@@ -5250,7 +5296,9 @@ let test_request_ids_are_distinct_across_domains () =
       (Spindle.Test.app [ hello ])
   in
   let client =
-    Spindle_client.create ~sw ~net ~mono_clock:clock ~timeout_s:5. ()
+    Spindle_client.create ~sw ~net ~mono_clock:clock
+      ~timeout:Mtime.Span.(5 * s)
+      ()
   in
   let url = Printf.sprintf "http://127.0.0.1:%d/hello/kim" port in
   let ids =
@@ -5306,7 +5354,7 @@ let domains_answering env ?domains ?(also = ignore) ~expect () =
       Eio.Domain_manager.run domain_mgr (fun () ->
           Spindle.Server.serve_on
             ~mono_clock:(Eio.Stdenv.mono_clock env)
-            ~now:(fun () -> 0)
+            ~now:(fun () -> Ptime.epoch)
             ~domain_mgr ?domains [ socket ]
             (Spindle.Test.app [ where ]));
       `Stop_daemon);
@@ -6276,7 +6324,9 @@ let test_a_file_answers_its_conditions_and_ranges () =
   let a = files root in
   (* a clock past the file's date, since a date later than now is none *)
   let call ?(meth = `GET) headers =
-    Spindle.Test.call ~now:3_000_000_000_000 ~headers a meth "/a.txt"
+    Spindle.Test.call
+      ~now:(Instants.of_ms 3_000_000_000_000)
+      ~headers a meth "/a.txt"
   in
   let whole = call [] in
   let tag = Option.value ~default:"" (Spindle.Test.header whole "etag")
@@ -6419,7 +6469,7 @@ let test_a_file_replaced_before_its_body_sends_nothing () =
   let a = files root in
   let response, _ =
     Spindle.App.handle a
-      (Spindle.Request.make ~now:(fun () -> 0) `GET "/a.txt")
+      (Spindle.Request.make ~now:(fun () -> Ptime.epoch) `GET "/a.txt")
       ~body:
         {
           Spindle.Body.whole = (fun () -> Ok "");
@@ -6971,7 +7021,7 @@ let test_a_route_answers_the_status_it_chose () =
   (* The server sends what the endpoint said and says whose bug it is. *)
   let response, answered =
     Spindle.App.handle a
-      (Spindle.Request.make ~now:(fun () -> 0) `PUT "/users/stray")
+      (Spindle.Request.make ~now:(fun () -> Ptime.epoch) `PUT "/users/stray")
       ~body:
         {
           Spindle.Body.whole = (fun () -> Ok "");
@@ -7590,14 +7640,14 @@ let test_an_alarm_set_again_supersedes () =
           ~background:(Spindle.Background.create ~sw)
           ~mono_clock:clock ()
       in
-      let set key in_ms name =
-        Spindle.Alarm.set alarms ~key ~in_ms ~what:name (fun () ->
+      let set key after name =
+        Spindle.Alarm.set alarms ~key ~after ~what:name (fun () ->
             fired := name :: !fired;
             ignore (Eio.Promise.try_resolve came () : bool))
       in
-      set "k" 60_000 "first";
-      set "gone" 10 "gone";
-      set "k" 20 "second";
+      set "k" Mtime.Span.min "first";
+      set "gone" Mtime.Span.(10 * ms) "gone";
+      set "k" Mtime.Span.(20 * ms) "second";
       Spindle.Alarm.cancel alarms ~key:"gone";
       Eio.Promise.await last;
       Alcotest.(check bool)
@@ -7605,6 +7655,37 @@ let test_an_alarm_set_again_supersedes () =
         (Eio_mock.Clock.Mono.try_advance clock));
   Alcotest.(check (list string))
     "only the last set, and nothing cancelled" [ "second" ] !fired
+
+(* A wait until an instant is the span from now to it, rounded up so it
+   never ends early, and zero once the instant has come. *)
+let test_a_wait_until_an_instant_is_never_negative () =
+  let at = Instants.of_ms in
+  Alcotest.check span "a second ahead" Mtime.Span.s
+    (Spindle.until ~now:(at 1_000) (at 2_000));
+  Alcotest.check span "zero on it" Mtime.Span.zero
+    (Spindle.until ~now:(at 2_000) (at 2_000));
+  Alcotest.check span "zero once it has passed" Mtime.Span.zero
+    (Spindle.until ~now:(at 3_000) (at 2_000));
+  (match Ptime.add_span Ptime.epoch (Ptime.Span.v (0, 1L)) with
+  | Some a_picosecond_on ->
+      Alcotest.check span "a picosecond ahead is a nanosecond" Mtime.Span.ns
+        (Spindle.until ~now:Ptime.epoch a_picosecond_on)
+  | None -> Alcotest.fail "no picosecond after 1970");
+  Alcotest.check span "longer than a span holds, the longest"
+    Mtime.Span.max_span
+    (Spindle.until ~now:Ptime.min Ptime.max)
+
+(* An instant a span on is that instant, or the last of 9999. *)
+let test_an_instant_a_span_on_stops_at_9999 () =
+  Alcotest.check Instants.testable "a day on"
+    (Instants.of_ms 86_400_000)
+    (Spindle_http.Instant.add Ptime.epoch Mtime.Span.day);
+  Alcotest.check Instants.testable "a nanosecond on"
+    (Option.value ~default:Ptime.min
+       (Ptime.add_span Ptime.epoch (Ptime.Span.v (0, 1_000L))))
+    (Spindle_http.Instant.add Ptime.epoch Mtime.Span.ns);
+  Alcotest.check Instants.testable "past 9999, its last instant" Ptime.max
+    (Spindle_http.Instant.add Ptime.max Mtime.Span.s)
 
 (* A key set on one domain and again on others leaves the last set to fire:
    from a domain with a switch of Spindle's the wake-up sleeps there, from
@@ -7625,17 +7706,18 @@ let test_an_alarm_set_from_several_domains_fires_once () =
     let before = Atomic.get fired in
     if not (Atomic.compare_and_set fired before (name :: before)) then note name
   in
-  let set in_ms name =
-    Spindle.Alarm.set alarms ~key:"k" ~in_ms ~what:name (fun () ->
+  let set after name =
+    Spindle.Alarm.set alarms ~key:"k" ~after ~what:name (fun () ->
         note name;
         ignore (Eio.Promise.try_resolve came () : bool))
   in
-  set 3_600_000 "here";
-  Eio.Domain_manager.run domain_mgr (fun () -> set 1_800_000 "posted");
+  set Mtime.Span.hour "here";
+  Eio.Domain_manager.run domain_mgr (fun () ->
+      set Mtime.Span.(30 * min) "posted");
   Eio.Domain_manager.run domain_mgr (fun () ->
       Eio.Switch.run @@ fun sw ->
       Spindle.Local.within ~sw @@ fun () ->
-      set 0 "local";
+      set Mtime.Span.zero "local";
       Eio.Promise.await last);
   Alcotest.(check (list string))
     "only the last set" [ "local" ] (Atomic.get fired)
@@ -8048,6 +8130,8 @@ let () =
             test_a_session_is_kept_on_the_server;
           Alcotest.test_case "a session ends by its limits" `Quick
             test_a_session_ends_by_its_limits;
+          Alcotest.test_case "a session's cookie lasts its limit, rounded up"
+            `Quick test_a_sessions_cookie_lasts_its_limit_rounded_up;
           Alcotest.test_case "refuses what it cannot hold" `Quick
             test_a_cookie_refuses_what_it_cannot_hold;
           QCheck_alcotest.to_alcotest test_an_encoded_cookie_carries_any_text;
@@ -8386,6 +8470,10 @@ let () =
             test_a_slow_subscriber_is_dropped;
           Alcotest.test_case "a depth below one is refused" `Quick
             test_a_depth_below_one_is_refused;
+          Alcotest.test_case "a wait until an instant is never negative" `Quick
+            test_a_wait_until_an_instant_is_never_negative;
+          Alcotest.test_case "an instant a span on stops at 9999" `Quick
+            test_an_instant_a_span_on_stops_at_9999;
           Alcotest.test_case "an alarm set again supersedes" `Quick
             test_an_alarm_set_again_supersedes;
           Alcotest.test_case "an alarm set from several domains fires once"

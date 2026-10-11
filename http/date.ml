@@ -32,21 +32,23 @@ let long_days =
 
 let read_month s ~at = Option.map succ (index_of_name Calendar.months s ~at)
 
-(* [HH:MM:SS], a second of 60 being a leap second. *)
+(* [HH:MM:SS], a second of 60 being a leap second, which Ptime reads as the
+   next minute's first. *)
 let read_time s ~at =
   let* h = read_digits s ~at 2 in
   let* m = read_digits s ~at:(at + 3) 2 in
   let* sec = read_digits s ~at:(at + 6) 2 in
-  if
-    has_text_at s ~at:(at + 2) ":"
-    && has_text_at s ~at:(at + 5) ":"
-    && h <= 23 && m <= 59 && sec <= 60
-  then Some ((h * 3600) + (m * 60) + sec)
+  if has_text_at s ~at:(at + 2) ":" && has_text_at s ~at:(at + 5) ":" then
+    Some (h, m, sec)
   else None
 
-let instant_ms ~year ~month ~day secs =
-  if day < 1 || day > Calendar.days_in ~year ~month then None
-  else Some (((Calendar.days_of_civil ~year ~month ~day * 86_400) + secs) * 1000)
+let compare_time (h, m, s) (h', m', s') =
+  match Int.compare h h' with
+  | 0 -> ( match Int.compare m m' with 0 -> Int.compare s s' | c -> c)
+  | c -> c
+
+let instant ~year ~month ~day time =
+  Ptime.of_date_time ((year, month, day), (time, 0))
 
 (* [Sun, 06 Nov 1994 08:49:37 GMT] *)
 let parse_imf_fixdate s =
@@ -54,12 +56,12 @@ let parse_imf_fixdate s =
   let* day = read_digits s ~at:5 2 in
   let* month = read_month s ~at:8 in
   let* year = read_digits s ~at:12 4 in
-  let* secs = read_time s ~at:17 in
+  let* time = read_time s ~at:17 in
   if
     has_text_at s ~at:3 ", " && has_text_at s ~at:7 " "
     && has_text_at s ~at:11 " " && has_text_at s ~at:16 " "
     && has_text_at s ~at:25 " GMT"
-  then instant_ms ~year ~month ~day secs
+  then instant ~year ~month ~day time
   else None
 
 (* [Sun Nov  6 08:49:37 1994], the day a digit after a space when it is one. *)
@@ -70,12 +72,12 @@ let parse_asctime s =
     if has_text_at s ~at:8 " " then read_digits s ~at:9 1
     else read_digits s ~at:8 2
   in
-  let* secs = read_time s ~at:11 in
+  let* time = read_time s ~at:11 in
   let* year = read_digits s ~at:20 4 in
   if
     has_text_at s ~at:3 " " && has_text_at s ~at:7 " "
     && has_text_at s ~at:10 " " && has_text_at s ~at:19 " "
-  then instant_ms ~year ~month ~day secs
+  then instant ~year ~month ~day time
   else None
 
 (* [Sunday, 06-Nov-94 08:49:37 GMT]: a date more than fifty years ahead of
@@ -90,10 +92,10 @@ let parse_rfc850 ~now s =
   let* day = read_digits s ~at 2 in
   let* month = read_month s ~at:(at + 3) in
   let* yy = read_digits s ~at:(at + 7) 2 in
-  let* secs = read_time s ~at:(at + 10) in
-  let now_s = Calendar.floor_div now 1000 in
-  let today = Calendar.floor_div now_s 86_400 in
-  let this_year, this_month, this_day = Calendar.civil_of_days today in
+  let* time = read_time s ~at:(at + 10) in
+  let (this_year, this_month, this_day), (now_time, _) =
+    Ptime.to_date_time now
+  in
   let year = this_year - (this_year mod 100) + yy in
   (* The first field that differs from fifty years on decides, so that day
      needs no 29 February its year may not have. *)
@@ -105,7 +107,7 @@ let parse_rfc850 ~now s =
           Int.compare year (this_year + 50);
           Int.compare month this_month;
           Int.compare day this_day;
-          Int.compare secs (now_s - (today * 86_400));
+          compare_time time now_time;
         ]
     with
     | Some c -> c > 0
@@ -119,7 +121,7 @@ let parse_rfc850 ~now s =
     && has_text_at s ~at:(at + 6) "-"
     && has_text_at s ~at:(at + 9) " "
     && has_text_at s ~at:(at + 18) " GMT"
-  then instant_ms ~year ~month ~day secs
+  then instant ~year ~month ~day time
   else None
 
 let parse ~now s =

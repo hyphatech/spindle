@@ -11,8 +11,6 @@ let error_to_string : [< error ] -> string = function
   | (#Rowtype_postgres.Transaction.failure | #Rowtype.error) as e ->
       Rowtype_postgres.Transaction.error_to_string e
 
-let instant = Instant.ms
-
 module L = (val Logs.src_log Source.src : Logs.LOG)
 
 (* An unhandled conflict is a 500: a 409 the route never declared is a code
@@ -31,11 +29,11 @@ let refusal : [< error ] -> Spindle.Refusal.t = function
   | #Rowtype.error as e ->
       Spindle.Refusal.internal ~detail:(Rowtype.error_to_string e)
 
-let connect ~sw ~net ~mono_clock:clock ?statement_timeout_ms
-    ?idle_in_transaction_timeout_ms ?connect_timeout_s ?parameters ?timeout_s
+let connect ~sw ~net ~mono_clock:clock ?statement_timeout
+    ?idle_in_transaction_timeout ?connect_timeout ?parameters ?timeout
     ?statement_cache target =
   Result.bind
-    (Bounds.apply ?statement_timeout_ms ?idle_in_transaction_timeout_ms
-       ?connect_timeout_s ?parameters target) (fun (c, parameters) ->
+    (Bounds.apply ?statement_timeout ?idle_in_transaction_timeout
+       ?connect_timeout ?parameters target) (fun (c, parameters) ->
       Rowtype_postgres.connect ~sw ~net ~mono_clock:clock ~parameters
-        ~observe:Traced.observer ?timeout_s ?statement_cache c)
+        ~observe:Traced.observer ?timeout ?statement_cache c)

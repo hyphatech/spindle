@@ -25,12 +25,12 @@ type 'r t =
   | Response : (Response.t, Refusal.t) result t
   | Events : {
       declared : 's Event.declared list;
-      keep_alive_s : float option;
+      keep_alive : Mtime.Span.t option;
     }
       -> ('s Event.stream, Refusal.t) result t
   | Websocket : {
       protocol : ('c, 's) Spindle_http.Websocket.protocol;
-      keep_alive_s : float option;
+      keep_alive : Mtime.Span.t option;
       max_message : int option;
     }
       -> ( ('c, 's) Spindle_http.Websocket.t ->

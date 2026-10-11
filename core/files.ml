@@ -18,8 +18,14 @@ let is_refused_segment ~dotfiles segment =
   || ((not dotfiles) && Char.equal segment.[0] '.')
   || String.exists (function '/' | '\\' | '\000' -> true | _ -> false) segment
 
-(* As it is on disk now, by its path beneath the directory. *)
-type file = { rel : string; name : string; size : int; mtime : float }
+(* As it is on disk now, by its path beneath the directory: when it was last
+   changed, where that is an instant of the years 0000 to 9999. *)
+type file = {
+  rel : string;
+  name : string;
+  size : int;
+  modified : Ptime.t option;
+}
 
 (* A directory is its index, where one is named, never a listing. *)
 let lookup dir o segments =
@@ -28,7 +34,12 @@ let lookup dir o segments =
     match st.kind with
     | `Regular_file ->
         `File
-          { rel; name; size = Optint.Int63.to_int st.size; mtime = st.mtime }
+          {
+            rel;
+            name;
+            size = Optint.Int63.to_int st.size;
+            modified = Ptime.of_float_s st.mtime;
+          }
     | `Directory -> `Directory
     | _ -> `Missing
   in
@@ -63,6 +74,13 @@ let find_file root o segments =
       Ok None
   | exception (Eio.Io _ as e) -> Error (Printexc.to_string e)
 
+(* Nanoseconds since 1970, which 64 bits hold to the year 2262. *)
+let nanoseconds t =
+  let d, ps = Ptime.Span.to_d_ps (Ptime.to_span t) in
+  Int64.add
+    (Int64.mul (Int64.of_int d) 86_400_000_000_000L)
+    (Int64.div ps 1_000L)
+
 (* A strong tag of size and nanosecond time, since a resumed download
    matches only a strong one. *)
 let validators f =
@@ -71,9 +89,10 @@ let validators f =
       {
         Spindle_http.Etag.weak = false;
         opaque =
-          Printf.sprintf "%x-%Lx" f.size (Int64.of_float (f.mtime *. 1e9));
+          Printf.sprintf "%x-%Lx" f.size
+            (Option.fold ~none:0L ~some:nanoseconds f.modified);
       };
-    modified_ms = Some (Float.to_int (Float.floor (f.mtime *. 1000.)));
+    modified = f.modified;
   }
 
 (* The largest read sent at once. *)
@@ -84,7 +103,8 @@ let read_bytes = 65_536
    then closes the connection. *)
 let send_file root f ~first ~count send =
   let unchanged (st : Eio.File.Stat.t) =
-    Optint.Int63.to_int st.size = f.size && Float.equal st.mtime f.mtime
+    Optint.Int63.to_int st.size = f.size
+    && Option.equal Ptime.equal (Ptime.of_float_s st.mtime) f.modified
   in
   let send_range file =
     let buf = Cstruct.create (max 1 (min read_bytes count)) in
@@ -175,7 +195,7 @@ let choose_representation root req f =
                   f with
                   rel;
                   size = Optint.Int63.to_int st.size;
-                  mtime = st.mtime;
+                  modified = Ptime.of_float_s st.mtime;
                 }
           | _ -> None)
     with

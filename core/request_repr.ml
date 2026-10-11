@@ -27,7 +27,7 @@ type t = {
   client : string;
   proxied : bool;
   proxy_header : proxy_header;
-  now : unit -> int;
+  now : unit -> Ptime.t;
   matched : matched option;  (** set once the route table has chosen *)
   client_gone : unit Eio.Promise.t * unit Eio.Promise.u;
       (** resolved by the server once the exchange is over, or sooner where it

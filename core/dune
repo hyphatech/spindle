@@ -40,6 +40,8 @@
   cstruct
   optint
   mtime
+  ptime
+  ptime.clock.os
   uri
   wiretype
   ipaddr

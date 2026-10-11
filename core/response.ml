@@ -1,7 +1,7 @@
 module Status = Spindle_http.Status
 
 type gone = Gone
-type keep_alive = { quiet_s : float; filler : string }
+type keep_alive = { quiet : Mtime.Span.t; filler : string }
 
 type stream = {
   produce : (string -> (unit, gone) result) -> (unit, gone) result;
@@ -13,7 +13,7 @@ type connection = Spindle_http.Connection.t = {
   reader : Eio.Buf_read.t;
   writer : Eio.Buf_write.t;
   clock : Eio.Time.Mono.ty Eio.Resource.t;
-  send_timeout_s : float;
+  send_timeout : Mtime.Span.t;
   stopping : unit Eio.Promise.t;
 }
 
@@ -138,9 +138,9 @@ let takeover ~protocol ?(headers = []) ?(cookies = []) handle =
 (* Under the minute after which common proxies drop a quiet connection
    (nginx's proxy_read_timeout is 60 s), and how late a client that has gone
    is noticed: SSE practice is 15 to 30 seconds. *)
-let events_keep_alive_s = 15.
+let events_keep_alive = Mtime.Span.(15 * s)
 
-let events ?headers ?(keep_alive_s = events_keep_alive_s) produce =
+let events ?headers ?(keep_alive = events_keep_alive) produce =
   let r =
     stream ~content_type:"text/event-stream"
       ~headers:
@@ -154,8 +154,7 @@ let events ?headers ?(keep_alive_s = events_keep_alive_s) produce =
       Stream
         {
           produce;
-          keep_alive =
-            Some { quiet_s = keep_alive_s; filler = ": keep-alive\n\n" };
+          keep_alive = Some { quiet = keep_alive; filler = ": keep-alive\n\n" };
           length = None;
         };
   }

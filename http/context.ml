@@ -15,8 +15,8 @@ type span = {
   parent_id : string option;
   name : string;
   kind : kind;
-  start_ns : int;
-  end_ns : int;
+  start : Ptime.t;
+  duration : Mtime.Span.t;
   attributes : (string * value) list;
   status : status;
 }
@@ -24,14 +24,14 @@ type span = {
 type exporter = {
   record : span -> unit;
   ratio : float;
-  wall_ns : unit -> int;
-  mono_ns : unit -> int;
+  wall : unit -> Ptime.t;
+  mono : unit -> Mtime.t;
 }
 
 (* Begun and not yet ended; written only by the fiber that began it. *)
 type recording = {
   exporter : exporter;
-  started_mono : int;
+  started_mono : Mtime.t;
   mutable span : span;
 }
 
@@ -112,7 +112,7 @@ let sample_root e =
 let start_span exporter ~trace_id ~span_id ~parent_id ~kind ~attributes name =
   {
     exporter;
-    started_mono = exporter.mono_ns ();
+    started_mono = exporter.mono ();
     span =
       {
         trace_id;
@@ -120,8 +120,8 @@ let start_span exporter ~trace_id ~span_id ~parent_id ~kind ~attributes name =
         parent_id;
         name;
         kind;
-        start_ns = exporter.wall_ns ();
-        end_ns = 0;
+        start = exporter.wall ();
+        duration = Mtime.Span.zero;
         attributes;
         status = Unset;
       };
@@ -130,8 +130,8 @@ let start_span exporter ~trace_id ~span_id ~parent_id ~kind ~attributes name =
 (* Start time from the wall clock, length from the monotonic one, so a wall
    clock jumping mid-span cannot change the length. *)
 let end_span (u : recording) =
-  let length = u.exporter.mono_ns () - u.started_mono in
-  u.exporter.record { u.span with end_ns = u.span.start_ns + max 0 length }
+  u.exporter.record
+    { u.span with duration = Mtime.span u.started_mono (u.exporter.mono ()) }
 
 let add_attributes (u : recording) attributes =
   u.span <- { u.span with attributes = u.span.attributes @ attributes }

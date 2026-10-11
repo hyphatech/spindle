@@ -64,7 +64,7 @@ curl -i -X PUT localhost:8080/names/ada
 HTTP/1.1 201 Created
 ...
 
-{"name":"ada","claimed_at":1791451486621}
+{"name":"ada","claimed_at":"2026-10-08T09:24:46.621Z"}
 ```
 
 ```sh
@@ -75,7 +75,7 @@ curl -i -X PUT localhost:8080/names/ada
 HTTP/1.1 200 OK
 ...
 
-{"name":"ada","claimed_at":1791451486621}
+{"name":"ada","claimed_at":"2026-10-08T09:24:46.621Z"}
 ```
 
 `Pool.transaction` borrows a connection and runs your function in one
@@ -108,11 +108,16 @@ its locks for ever:
 
 | Option | Default | |
 |---|---|---|
-| `~statement_timeout_ms` | 10 000 | a statement running longer is ended by Postgres |
-| `~idle_in_transaction_timeout_ms` | 30 000 | so is a transaction left open and idle |
-| `~connect_timeout_s` | 10 | unless the connection string says `connect_timeout` |
+| `~statement_timeout` | 10 s | a statement running longer is ended by Postgres |
+| `~idle_in_transaction_timeout` | 30 s | so is a transaction left open and idle |
+| `~connect_timeout` | 10 s | unless the connection string says `connect_timeout` |
 | `~size` | 8 | connections, all opened at start-up |
-| `~wait_s` | 5 | a borrow waiting longer is `` `Pool `Busy ``, a `503` |
+| `~wait` | 5 s | a borrow waiting longer is `` `Pool `Busy ``, a `503` |
+
+Each is an `Mtime.Span.t`, written `Mtime.Span.(2 * s)`. Postgres is given
+the two bounds in whole milliseconds, rounded up, so a span under a
+millisecond is still a bound; a span of zero lifts one, as Postgres's `0`
+does.
 
 `~statement_cache:0` is for a pooler in front of Postgres that cannot carry
 named statements.

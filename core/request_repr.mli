@@ -23,7 +23,7 @@ val make :
   ?version:Spindle_http.Head.version ->
   ?host:string ->
   ?headers:(string * string) list ->
-  now:(unit -> int) ->
+  now:(unit -> Ptime.t) ->
   Spindle_http.Meth.t ->
   string ->
   t
@@ -52,6 +52,6 @@ val peer : t -> string
 val proxied : t -> bool
 val proxy_header : t -> proxy_header
 val client : t -> string
-val now : t -> int
+val now : t -> Ptime.t
 val host : t -> string option
 val secure : t -> bool

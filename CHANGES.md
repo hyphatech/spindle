@@ -2,6 +2,83 @@
 
 ## Unreleased
 
+- Breaking: every instant is a `Ptime.t`, where it was an `int` of
+  milliseconds since 1970 that said neither its unit nor that it was a
+  time. `Spindle.now` is a `Ptime.t Dep.t`, and so is what `Request.now`
+  answers; the `~now` that `Spindle.serve`, `Server.run`,
+  `Server.serve_on` and `Request.make` take is a `unit -> Ptime.t`, and
+  `Spindle.epoch_ms` is `Spindle.clock_now`, the clock's time as one.
+  `Test.call`, `Test.Browser.call`, `Test.events` and `Test.websocket`
+  take `?now:Ptime.t`, `Ptime.epoch` unless given. `Session.entry`'s
+  `created_ms`, `seen_ms` and `expires_ms` are `created`, `seen` and
+  `expires`, and `Session.find`, `start`, `renew`, `update` and `sweep`,
+  a store's `sweep` and `Cookie.Named.unseal` take `~now:Ptime.t`.
+  `Codec.instant` is a `Ptime.t Codec.t`, and `Conditional`'s validators,
+  and so a file's `Last-Modified`, hold a `Ptime.t`. In `spindle.http`,
+  `Date.parse` is `now:Ptime.t -> string -> Ptime.t option` and
+  `Write.date` writes a `Ptime.t`; a trace's span holds `start : Ptime.t`
+  and `duration : Mtime.Span.t`, where it held `start_ns` and `end_ns`.
+  `Spindle_postgres.instant` is gone: `Rowtype.instant` reads and writes a
+  `Ptime.t`. Each is written as it was -- an HTTP date, an RFC 3339 JSON
+  string, a `timestamptz`, OTLP's nanoseconds -- where it crosses a wire.
+
+- Breaking: every duration is an `Mtime.Span.t` named for what it bounds,
+  where it was a float of seconds, or an int of milliseconds, named for its
+  unit: a wait in the wrong unit no longer compiles. Write
+  `~send_timeout:Mtime.Span.(60 * s)`. `Spindle.serve`, `Server.run` and
+  `Server.serve_on` take `?head_timeout`, `?idle_timeout`,
+  `?body_timeout`, `?send_timeout`, `?linger` and `?drain`, where each
+  ended in `_s`, and refuse a timeout of zero. `Returns.events`,
+  `Returns.websocket`, `Response.events` and `Spindle_http.Websocket`'s
+  `run_server` and `run_client` take `?keep_alive`; `Response.stream`'s
+  keep-alive is `{ quiet; filler }`, and `Response.connection` and
+  `Spindle_http.Connection.t` hold `send_timeout`. `Spindle_client`'s
+  `create` and `run` take `?timeout` and `?idle_timeout`, where they took
+  `?timeout_s` and `?idle_s`; `call`, `stream`, `events` and `websocket`
+  take `?timeout`, `stream` and `events` `?read_timeout`, and `websocket`
+  `?keep_alive`; and `Spindle_client.Timeout` carries the
+  `Mtime.Span.t` that passed. `Alarm.create` takes `?slack` and
+  `Alarm.set` `~after`, where they took `?slack_ms` and `~in_ms`.
+  `Rate.create` takes `~per`, the span its `~limit` is counted over, where
+  it took `~per_s`, and refuses a `~per` of zero. `Session.create` takes
+  `~idle` and `~absolute`, where it took `~idle_s` and `~absolute_s`.
+  `spindle_postgres`'s `connect`, `Pool.create` and `Pool.run` take
+  `?statement_timeout`, `?idle_in_transaction_timeout`, `?connect_timeout`
+  and `?timeout`, `Pool.create` and `Pool.run` `?wait`, `?max_lifetime`
+  and `?idle_check` too, and `Pool.use`, `query` and `transaction`
+  `?wait`. Every default is the same length as before.
+
+- `Spindle.until ~now deadline` is how long until an instant: the span
+  from `now` to it, rounded up to the nanosecond, and zero once it has
+  passed, since a wait cannot be negative -- what an `Alarm` is set for,
+  `~after:(Spindle.until ~now deadline)`. `Spindle_http.Instant` has it,
+  and an instant read from a clock and an instant a span on.
+
+- In `spindle_postgres`, a statement's and an idle transaction's bounds
+  are written to Postgres in whole milliseconds, rounded up, so a span
+  under a millisecond is still a bound; a span of zero lifts one, as
+  Postgres's `0` does.
+
+- A number written into a message for another to read stays a whole
+  number in the message's unit, labelled with it: `Refusal.rate_limited
+  ~retry_after_s` and `Refusal.busy ?retry_after_s`, `Cors.make
+  ?max_age_s`, `Cookie.make ?max_age_s`, `Cookie.signed` and
+  `Cookie.encrypted`'s `~max_age_s`, `Event.retry ~ms` and a read event's
+  `retry_ms`. A session's cookie's `Max-Age` is its absolute limit in
+  whole seconds, rounded up, so the cookie outlives the session.
+
+- `spindle` asks for wiretype 0.3.0 and depends on ptime, and
+  `spindle_postgres` for rowtype 0.4.0 and postgres-eio 0.3.0, each pinned
+  at that tag, so what changed there reaches a program through them.
+  Breaking: a program that uses one of them itself moves with it --
+  wiretype's `instant` is a `Ptime.t`, its `duration` an `Mtime.Span.t` and
+  its `dict` labels `~key` and `~value`; rowtype-postgres's durations are
+  `Mtime.Span.t`s named for what they bound.
+
+- A log line's time is read from the system's clock through ptime, and a
+  file's entity tag is made from its time to the nanosecond as ptime holds
+  it, so a file's tag may change once, a cache asking for it again.
+
 - Breaking: `Refusal.rate_limited` is `retry_after_s:int -> t`, without
   the `()` it took after its one argument, which is labelled and not
   optional: `Refusal.rate_limited ~retry_after_s:30`.
@@ -21,13 +98,13 @@
   connection within the wait".
 
 - A connection's last bytes -- what a WebSocket handler wrote before it
-  returned, a stream's last chunk -- have `send_timeout_s` from the last
+  returned, a stream's last chunk -- have `send_timeout` from the last
   byte the client took, as every answer has, and the connection is closed
   once it passes. A client that stopped reading held its connection slot
   for ever.
 
 - `Spindle_client.websocket` returns once a send to a server that stopped
-  reading answers `Lost`: what was left unwritten has `timeout_s` for the
+  reading answers `Lost`: what was left unwritten has `timeout` for the
   server to take anything, and is then dropped with the connection. The
   call waited for it to go, which could be for ever.
 
@@ -55,7 +132,7 @@
 
 - `Spindle_client` reads a server's `Keep-Alive: timeout="5"`, quoted, as
   it does `timeout=5`, where it read no timeout and kept the connection
-  idle for its own `idle_s` beside a server that closes it sooner.
+  idle for its own `idle_timeout` beside a server that closes it sooner.
 
 - `Spindle.Test.app`'s refusal of a `Files.directory` route tells a test to
   serve a directory it opened with `Files.route`, where it named
@@ -87,7 +164,7 @@
   `` `Pool `Busy `` where `Spindle_postgres.error`, `Pool.use`, `query` and
   `transaction` answered `` `Busy ``, and `` `Pool `Closed `` for a pool
   closed, or closing under a borrow waiting, at once, where a closed pool
-  waited out `wait_s` and answered `` `Busy ``. `refusal` answers both
+  waited out `wait` and answered `` `Busy ``. `refusal` answers both
   `503 busy`, logged as a warning with no detail, and `error_to_string`
   words the closed one "the pool is closed". A closed connection stays
   rowtype's, a `500`. Breaking: a match on what a pool answers names
@@ -116,8 +193,7 @@
 
 - Breaking: `Compress.make` raises `Invalid_argument` for a `~level`
   outside 1 to 9 or a negative `~min_bytes`, and `Rate.create` for a
-  `~limit` or `~burst` below one or a `~per_s` that is not a positive
-  number of seconds. A level was clamped into range, a negative size
+  `~limit` or `~burst` below one or a `~per` of zero. A level was clamped into range, a negative size
   compressed everything, and a limit of nothing was read as one.
 
 - Breaking: a plain `OPTIONS` of a path a route names, where no route
@@ -222,19 +298,13 @@
   RFC 8615 places it; one deeper is a dot-name like any other, skipped
   unless `~dotfiles:true`.
 
-- Breaking: every duration names its unit, and its type is what the value
-  is: a wait counted on a clock a float of seconds, a value a protocol
-  writes in whole seconds an int. `spindle_postgres`'s
-  `?connect_timeout_s`, in `connect`, `Pool.create` and `Pool.run`, takes
-  a float, as `?timeout_s` and `?wait_s` beside it do and as postgres-eio
-  holds it; `Cookie.make`'s `?max_age` is `?max_age_s`;
+- Breaking: `Cookie.make`'s `?max_age` is `?max_age_s`;
   `Refusal.rate_limited`'s `~retry_after` and `Refusal.busy`'s
-  `?retry_after` are `~retry_after_s` and `?retry_after_s`;
-  `Event.retry` and `Spindle_http.Event_stream.retry` take `~ms`, and an
-  event read from a stream, `Spindle_http.Event_stream.event`, holds its
-  reconnection time as `retry_ms`, where it was `retry`; and
-  `Response.stream`'s `keep_alive` is a record, `{ quiet_s; filler }`,
-  where it was a pair.
+  `?retry_after` are `~retry_after_s` and `?retry_after_s`; `Event.retry`
+  and `Spindle_http.Event_stream.retry` take `~ms`, and an event read from
+  a stream, `Spindle_http.Event_stream.event`, holds its reconnection time
+  as `retry_ms`, where it was `retry`; and `Response.stream`'s
+  `keep_alive` is a record, `{ quiet; filler }`, where it was a pair.
 
 - Breaking: the OpenAPI document is valid for every route. Two
   dependencies that read one input -- a query parameter, a header, whose
@@ -257,7 +327,7 @@
   its `.mli` said: a limit out of range raised only after the port was
   held and `ready` had announced it.
 - Breaking: a graceful stop waits for a stream of known length, a file
-  above all, to send its last byte, within `drain_s`, as it does for any
+  above all, to send its last byte, within `drain`, as it does for any
   answer being made. It counted such a stream as finished once its head
   was sent, and cancelled it mid-file if nothing else was in flight.
 

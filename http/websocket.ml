@@ -69,7 +69,7 @@ let mask_bytes = 4
 
 (* How long a closing socket waits for the other side: the handler to take
    the peer's close, or the peer to answer ours. *)
-let close_wait_s = 1.
+let close_wait = Mtime.Span.(1 * s)
 
 type error =
   | Closed of { code : close_code; reason : string }
@@ -95,7 +95,7 @@ type ('i, 'o) t = {
   mask : (unit -> string) option;  (** a client's; a server masks nothing *)
   writer : W.t;
   clock : Eio.Time.Mono.ty Eio.Resource.t;
-  send_timeout_s : float;
+  send_timeout : Mtime.Span.t;
   write_lock : Eio.Mutex.t;
   received : received Eio.Stream.t;
       (** of capacity 0, so the reader reads no further until the handler takes
@@ -120,15 +120,15 @@ let end_with t e = ignore (Eio.Promise.try_resolve t.resolve_ended e : bool)
    slowly is not cut off. *)
 let flush_bounded t () =
   match
-    Timeout.run (Timeout.seconds t.clock t.send_timeout_s) (fun () ->
+    Timeout.run (Timeout.v t.clock t.send_timeout) (fun () ->
         Ok (W.flush t.writer))
   with
   | Ok () -> Ok ()
   | Error `Timeout ->
       Error
         (Lost
-           (Printf.sprintf "nothing written was taken for %.0fs"
-              t.send_timeout_s))
+           (Format.asprintf "nothing written was taken for %a" Mtime.Span.pp
+              t.send_timeout))
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
   | exception ex -> Error (Lost (Printexc.to_string ex))
 
@@ -362,7 +362,7 @@ let read_frames t ~side ~max_message ~on_frame reader =
                before it, unless this end began the close (§5.5.1). *)
             if Option.is_none (Atomic.get t.close_frame) then
               ignore
-                (Timeout.run (Timeout.seconds t.clock close_wait_s) (fun () ->
+                (Timeout.run (Timeout.v t.clock close_wait) (fun () ->
                      Ok
                        (Eio.Fiber.first
                           (fun () -> hand_over t (Close (code, reason)))
@@ -401,39 +401,38 @@ let read_frames t ~side ~max_message ~on_frame reader =
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
   | exception ex -> Lost (Printexc.to_string ex)
 
-(* Pings after [keep_alive_s] without a frame, and gives up at twice that.
+(* Pings after [keep_alive] without a frame, and gives up at twice that.
    Time spent waiting for the handler is not the peer's silence. *)
-let keep_alive t ~keep_alive_s ~last_frame_at =
+let ping_while_silent t ~keep_alive ~last_frame_at =
+  let give_up = Mtime.Span.(2 * keep_alive) in
   let rec watch () =
     if Atomic.get t.awaiting_handler then
       Atomic.set last_frame_at (Eio.Time.Mono.now t.clock);
-    let silent_s =
-      Mtime.Span.to_float_ns
-        (Mtime.span (Atomic.get last_frame_at) (Eio.Time.Mono.now t.clock))
-      /. 1e9
+    let silent =
+      Mtime.span (Atomic.get last_frame_at) (Eio.Time.Mono.now t.clock)
     in
-    if silent_s >= 2. *. keep_alive_s then
-      Lost (Printf.sprintf "nothing heard for %.0fs" silent_s)
-    else if silent_s >= keep_alive_s then (
+    if not (Mtime.Span.is_shorter silent ~than:give_up) then
+      Lost (Format.asprintf "nothing heard for %a" Mtime.Span.pp silent)
+    else if not (Mtime.Span.is_shorter silent ~than:keep_alive) then (
       match write t Frame.Ping "" with
       | Error e -> e
       | Ok () ->
-          Eio.Time.Mono.sleep t.clock ((2. *. keep_alive_s) -. silent_s);
+          Eio.Time.Mono.sleep_span t.clock (Mtime.Span.abs_diff give_up silent);
           watch ())
     else (
-      Eio.Time.Mono.sleep t.clock (keep_alive_s -. silent_s);
+      Eio.Time.Mono.sleep_span t.clock (Mtime.Span.abs_diff keep_alive silent);
       watch ())
   in
   watch ()
 
 (* A ping well inside the half a minute after which proxies and load
    balancers commonly drop a silent connection. *)
-let default_keep_alive_s = 15.
+let default_keep_alive = Mtime.Span.(15 * s)
 
 (* A mebibyte, as a request body's default limit is. *)
 let default_max_message = 1 lsl 20
 
-let run ~side ~mask ?(keep_alive_s = default_keep_alive_s)
+let run ~side ~mask ?(keep_alive = default_keep_alive)
     ?(max_message = default_max_message) ~incoming ~outgoing (c : Connection.t)
     f =
   let ended, resolve_ended = Eio.Promise.create () in
@@ -445,7 +444,7 @@ let run ~side ~mask ?(keep_alive_s = default_keep_alive_s)
       mask;
       writer = c.writer;
       clock = c.clock;
-      send_timeout_s = c.send_timeout_s;
+      send_timeout = c.send_timeout;
       write_lock = Eio.Mutex.create ();
       received = Eio.Stream.create 0;
       awaiting_handler = Atomic.make false;
@@ -461,7 +460,7 @@ let run ~side ~mask ?(keep_alive_s = default_keep_alive_s)
   let close_and_wait close_with =
     Option.iter (fun (code, reason) -> close ~code ~reason t) close_with;
     ignore
-      (Timeout.run (Timeout.seconds c.clock close_wait_s) (fun () ->
+      (Timeout.run (Timeout.v c.clock close_wait) (fun () ->
            Ok (Eio.Promise.await ended))
         : (error, [ `Timeout ]) result)
   in
@@ -471,7 +470,7 @@ let run ~side ~mask ?(keep_alive_s = default_keep_alive_s)
       end_with t
         (Eio.Fiber.first
            (fun () -> read_frames t ~side ~max_message ~on_frame c.reader)
-           (fun () -> keep_alive t ~keep_alive_s ~last_frame_at));
+           (fun () -> ping_while_silent t ~keep_alive ~last_frame_at));
       `Stop_daemon);
   Eio.Fiber.fork_daemon ~sw (fun () ->
       Eio.Promise.await c.stopping;
@@ -499,10 +498,10 @@ let run ~side ~mask ?(keep_alive_s = default_keep_alive_s)
 
 let accept_key = Frame.accept_key
 
-let run_server ?keep_alive_s ?max_message p c f =
-  run ~side:Server_side ~mask:None ?keep_alive_s ?max_message ~incoming:p.client
+let run_server ?keep_alive ?max_message p c f =
+  run ~side:Server_side ~mask:None ?keep_alive ?max_message ~incoming:p.client
     ~outgoing:p.server c f
 
-let run_client ?keep_alive_s ?max_message ~mask p c f =
-  run ~side:Client_side ~mask:(Some mask) ?keep_alive_s ?max_message
+let run_client ?keep_alive ?max_message ~mask p c f =
+  run ~side:Client_side ~mask:(Some mask) ?keep_alive ?max_message
     ~incoming:p.server ~outgoing:p.client c f

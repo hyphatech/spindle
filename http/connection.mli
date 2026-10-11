@@ -7,7 +7,7 @@ type t = {
           to read from, never the socket underneath *)
   writer : Eio.Buf_write.t;
   clock : Eio.Time.Mono.ty Eio.Resource.t;  (** a monotonic clock *)
-  send_timeout_s : float;
+  send_timeout : Mtime.Span.t;
       (** how long a write may wait for the peer to take anything *)
   stopping : unit Eio.Promise.t;
       (** resolved when this end begins to stop, while the connection can still

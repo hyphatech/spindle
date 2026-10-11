@@ -182,8 +182,10 @@ let serve ~sw env ?stop routes =
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1
-        ~now:(fun () -> 0)
-        ?stop ~drain_s:0.1 [ socket ] (Spindle.Test.app routes);
+        ~now:(fun () -> Ptime.epoch)
+        ?stop
+        ~drain:Mtime.Span.(100 * ms)
+        [ socket ] (Spindle.Test.app routes);
       `Stop_daemon);
   port
 
@@ -373,9 +375,11 @@ let test_a_socket_whose_server_stopped_reading_is_lost env () =
             flow);
       Eio.Fiber.await_cancel ());
   match
-    Spindle_client.websocket (client ~sw env ()) ~timeout_s:0.5 chat
-      (Printf.sprintf "ws://127.0.0.1:%d/flood" port) (fun ws ->
-        Ws.send ws { text = String.make (16 * 1024 * 1024) 'x' })
+    Spindle_client.websocket (client ~sw env ())
+      ~timeout:Mtime.Span.(500 * ms)
+      chat
+      (Printf.sprintf "ws://127.0.0.1:%d/flood" port)
+      (fun ws -> Ws.send ws { text = String.make (16 * 1024 * 1024) 'x' })
   with
   | Error (Spindle_client.Ended (Ws.Lost _)) -> ()
   | got ->
@@ -461,7 +465,7 @@ let test_a_silent_peer_is_pinged_then_dropped () =
       Spindle.Server.serve_on ~mono_clock:clock
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1
-        ~now:(fun () -> 0)
+        ~now:(fun () -> Ptime.epoch)
         [ listening ] (Spindle.Test.app routes);
       `Stop_daemon);
   let flow = connect ~sw in
@@ -497,7 +501,7 @@ let test_a_silent_peer_is_pinged_then_dropped () =
   Alcotest.(check bool) "thirty, and the connection is ended" true gone
 
 (* A handler whose send to a peer that stopped reading is lost returns,
-   and what it had written is given [send_timeout_s] to go, as any answer
+   and what it had written is given [send_timeout] to go, as any answer
    is: the connection then closes and its slot is the next client's. *)
 let test_a_socket_whose_peer_stopped_reading_gives_back_its_slot () =
   In_memory.run @@ fun env ->
@@ -525,8 +529,8 @@ let test_a_socket_whose_peer_stopped_reading_gives_back_its_slot () =
       Spindle.Server.serve_on
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-        ~domains:1 ~max_connections:1 ~send_timeout_s:1.
-        ~now:(fun () -> 0)
+        ~domains:1 ~max_connections:1 ~send_timeout:Mtime.Span.s
+        ~now:(fun () -> Ptime.epoch)
         [ listening ]
         (Spindle.Test.app [ flood; hello ]);
       `Stop_daemon);

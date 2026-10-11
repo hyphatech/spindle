@@ -25,12 +25,12 @@ type 'r t =
   | Response : (Response.t, Refusal.t) result t
   | Events : {
       declared : 's Event.declared list;
-      keep_alive_s : float option;
+      keep_alive : Mtime.Span.t option;
     }
       -> ('s Event.stream, Refusal.t) result t
   | Websocket : {
       protocol : ('c, 's) Websocket.protocol;
-      keep_alive_s : float option;
+      keep_alive : Mtime.Span.t option;
       max_message : int option;
     }
       -> ( ('c, 's) Websocket.t -> (unit, Websocket.error) result,
@@ -69,8 +69,8 @@ let shape : type r. r t -> shape = function
   | Empty status -> Empty status
   | Empty_response statuses -> Empty_response statuses
   | Response -> Response
-  | Events { declared; keep_alive_s = _ } -> Events declared
-  | Websocket { protocol; keep_alive_s = _; max_message = _ } ->
+  | Events { declared; keep_alive = _ } -> Events declared
+  | Websocket { protocol; keep_alive = _; max_message = _ } ->
       Websocket protocol
 
 (* On any of the field's lines, since several are one list (RFC 9110 §5.3);
@@ -156,7 +156,7 @@ let upgrade : type r.
       Ok []
 
 (* It outlives its answer, so it logs a line of its own when it ends. *)
-let run_socket ~path ?keep_alive_s ?max_message protocol handler
+let run_socket ~path ?keep_alive ?max_message protocol handler
     (c : Response.connection) =
   let started = Eio.Time.Mono.now c.clock in
   let log_end ?(level = Logs.Info) ?(raised = []) how =
@@ -176,7 +176,7 @@ let run_socket ~path ?keep_alive_s ?max_message protocol handler
                 ]
                @ raised)))
   in
-  match Websocket.run_server ?keep_alive_s ?max_message protocol c handler with
+  match Websocket.run_server ?keep_alive ?max_message protocol c handler with
   | Ok () -> log_end "closed"
   | Error e -> log_end (Websocket.error_to_string e)
   | exception (Eio.Cancel.Cancelled _ as ex) ->
@@ -244,20 +244,20 @@ let respond : type r.
       match r with
       | Error refusal -> Response.refusal refusal
       | Ok p -> with_outgoing p)
-  | Events { declared; keep_alive_s } -> (
+  | Events { declared; keep_alive } -> (
       match r with
       | Error refusal -> refuse refusal
       | Ok stream ->
           with_outgoing
-            (Response.events ?keep_alive_s (fun send ->
+            (Response.events ?keep_alive (fun send ->
                  stream (send_checked ~pattern declared send))))
-  | Websocket { protocol; keep_alive_s; max_message } -> (
+  | Websocket { protocol; keep_alive; max_message } -> (
       match r with
       | Error refusal -> refuse refusal
       | Ok handler ->
           with_outgoing
             (Response.takeover ~protocol:"websocket" ~headers:upgrade
-               (run_socket ~path ?keep_alive_s ?max_message protocol handler)))
+               (run_socket ~path ?keep_alive ?max_message protocol handler)))
 
 (* A route with one status sets it itself, so only a list is checked. *)
 let declares shape status =

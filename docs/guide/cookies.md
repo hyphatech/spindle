@@ -85,7 +85,7 @@ a random id.
 ```ocaml
 let sessions =
   Spindle.Session.create ~store:(Spindle.Session.memory ())
-    ~idle_s:(14 * 86400) ~absolute_s:(90 * 86400) visit_json
+    ~idle:Mtime.Span.(14 * day) ~absolute:Mtime.Span.(90 * day) visit_json
 
 (let+ session = Spindle.Session.cookie sessions
  and+ set_cookie = Spindle.set_cookie
@@ -102,9 +102,10 @@ let sessions =
 | `close` | deletes it and clears the cookie: sign-out |
 | `sweep` | deletes every expired session, for an `Alarm` to run |
 
-- A session ends `idle_s` seconds after it was last used, or `absolute_s`
-  after it began, whichever is first. The cookie is named `session` unless
-  you pass `~cookie`.
+- A session ends `idle` after it was last used, or `absolute` after it
+  began, whichever is first; each is an `Mtime.Span.t`, and the instants are
+  `Spindle.now`'s `Ptime.t`. The cookie is named `session` unless you pass
+  `~cookie`, and its `Max-Age` is `absolute` in whole seconds, rounded up.
 - `Session.memory ()` lives in one process and ends with it.
   `Spindle_postgres.Session.store pool ~table` keeps sessions in your
   database ([pool settings](../tutorial/database.md#pool-settings)).

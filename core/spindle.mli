@@ -106,23 +106,23 @@ val serve :
   ?check_origin:bool ->
   ?trusted_origins:string list ->
   ?trailing_slash:App.trailing_slash ->
-  ?now:(unit -> int) ->
+  ?now:(unit -> Ptime.t) ->
   ?max_body:int ->
   ?max_header_bytes:int ->
-  ?head_timeout_s:float ->
-  ?idle_timeout_s:float ->
-  ?body_timeout_s:float ->
+  ?head_timeout:Mtime.Span.t ->
+  ?idle_timeout:Mtime.Span.t ->
+  ?body_timeout:Mtime.Span.t ->
   ?min_body_rate:int ->
-  ?send_timeout_s:float ->
+  ?send_timeout:Mtime.Span.t ->
   ?discard_limit:int ->
-  ?linger_s:float ->
+  ?linger:Mtime.Span.t ->
   ?body_budget:int ->
   ?trusted_proxies:string list ->
   ?proxy_header:Server.proxy_header ->
   ?backlog:int ->
   ?max_connections:int ->
   ?stop:unit Eio.Promise.t ->
-  ?drain_s:float ->
+  ?drain:Mtime.Span.t ->
   ?on_stop:(unit -> unit) ->
   ?ready:(string -> unit) ->
   ?trace:Trace.exporter ->
@@ -139,7 +139,7 @@ val serve :
     ]}
 
     Each argument is {!App.make}'s or {!Server.run}'s, of the same name and
-    default, and these are its own: [port] is [8080]; [now] is {!epoch_ms} of
+    default, and these are its own: [port] is [8080]; [now] is {!clock_now} of
     [env]'s clock; [stop] is {!Server.stop_on_signals}, so SIGTERM and SIGINT
     stop it cleanly, and a program that wants no handler passes a promise of its
     own; and [ready] prints the address it listens on to stdout. It opens a
@@ -158,9 +158,22 @@ val serve :
     its routes at run time makes its app with {!App.make}, starts it with
     {!App.start}, and serves it with {!Server.run}. *)
 
-val epoch_ms : _ Eio.Time.clock -> unit -> int
-(** The clock's time in epoch milliseconds, which is what [now] is:
-    [Spindle.epoch_ms (Eio.Stdenv.clock env)]. *)
+val clock_now : _ Eio.Time.clock -> unit -> Ptime.t
+(** The clock's time, which is what [now] is:
+    [Spindle.clock_now (Eio.Stdenv.clock env)]. A clock reads a time within the
+    years 0000 to 9999, and one that does not is read as the nearest instant in
+    them. *)
+
+val until : now:Ptime.t -> Ptime.t -> Mtime.Span.t
+(** [until ~now deadline]: how long from [now] until [deadline], rounded up to
+    the nanosecond, and zero once it has passed -- a wait cannot be negative. It
+    is how a wait until an instant is worked out, and the one place a deadline
+    already passed is decided:
+
+    {[
+    Spindle.Alarm.set alarms ~key ~after:(Spindle.until ~now ends)
+      ~what:"a turn's clock" (fun () -> end_turn game)
+    ]} *)
 
 (** {1 Blocking work} *)
 
@@ -202,8 +215,8 @@ val param : 'a Path.param -> 'a Dep.t
 
 val request : Request.t Dep.t
 
-val now : int Dep.t
-(** The application's clock, in epoch milliseconds. *)
+val now : Ptime.t Dep.t
+(** The application's clock: the instant the request is answered at. *)
 
 val set_cookie : (Cookie.t -> unit) Dep.t
 (** A function that sets a cookie on this request's answer: an endpoint that

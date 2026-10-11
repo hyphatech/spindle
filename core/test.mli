@@ -29,7 +29,7 @@ val app :
     itself with {!Files.route}, as the message says. *)
 
 val call :
-  ?now:int ->
+  ?now:Ptime.t ->
   ?peer:string ->
   ?proxied:bool ->
   ?proxy_header:Request.proxy_header ->
@@ -40,10 +40,10 @@ val call :
   Spindle_http.Meth.t ->
   string ->
   response
-(** [call app meth target]. [now] defaults to [0] and [peer] to [127.0.0.1];
-    [proxied] says the peer is a proxy the server trusts ({!Request.proxied}),
-    false unless given, and [proxy_header] which header it writes; [version] is
-    the one the request is sent in, HTTP/1.1 unless given.
+(** [call app meth target]. [now] defaults to [Ptime.epoch] and [peer] to
+    [127.0.0.1]; [proxied] says the peer is a proxy the server trusts
+    ({!Request.proxied}), false unless given, and [proxy_header] which header it
+    writes; [version] is the one the request is sent in, HTTP/1.1 unless given.
 
     The status and headers are exactly the ones the server would write for this
     request -- its length, its [x-request-id], its cookies as written for this
@@ -66,7 +66,7 @@ module Browser : sig
   type t
 
   val call :
-    ?now:int ->
+    ?now:Ptime.t ->
     ?peer:string ->
     ?headers:(string * string) list ->
     ?body:string ->
@@ -97,7 +97,7 @@ val browser : App.t -> Browser.t
 (** {1 An events route} *)
 
 val events :
-  ?now:int ->
+  ?now:Ptime.t ->
   ?headers:(string * string) list ->
   App.t ->
   string ->
@@ -121,7 +121,7 @@ type websocket_error =
       (** how the function's socket ended *)
 
 val websocket :
-  ?now:int ->
+  ?now:Ptime.t ->
   ?headers:(string * string) list ->
   App.t ->
   ('c, 's) Spindle_http.Websocket.protocol ->

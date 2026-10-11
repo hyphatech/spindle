@@ -26,7 +26,7 @@ let test_echo () =
   `Files.directory` route: load the files with `Static.load` and serve them
   with `Static.route`, or serve a directory the test opened with
   `Files.route`, instead.
-- `Test.call app meth target` takes `?now` (epoch milliseconds, default 0),
+- `Test.call app meth target` takes `?now` (a `Ptime.t`, default `Ptime.epoch`),
   `?peer` (default `127.0.0.1`), `?headers` and `?body`.
 - The answer's status and headers are exactly what the server would write,
   cookies included, minus `connection`. A stream is run to its end.
@@ -56,7 +56,7 @@ Here, three events of the [count stream](streams.md):
 ```ocaml
 let test_count () =
   Eio_main.run @@ fun env ->
-  let app = Spindle.Test.app (routes ~clock:(Eio.Stdenv.clock env)) in
+  let app = Spindle.Test.app (routes ~mono_clock:(Eio.Stdenv.mono_clock env)) in
   let seen = ref [] in
   match
     Spindle.Test.events app "/count" (fun e ->

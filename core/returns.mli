@@ -77,21 +77,20 @@ val response : (Response.t, Refusal.t) result t
     as no more than that. *)
 
 val events :
-  ?keep_alive_s:float ->
+  ?keep_alive:Mtime.Span.t ->
   's Event.declared list ->
   ('s Event.stream, Refusal.t) result t
 (** A stream of Server-Sent Events of stream ['s], each a kind declared here:
     the endpoint's [send] takes no event of another stream, and one of this
     stream's left out of the list is sent and logged as the route's bug. A
-    [: keep-alive] comment goes whenever nothing has been sent for
-    [keep_alive_s] (15) seconds, so nothing in between closes a quiet stream as
-    idle, and a client that has gone is found by the keep-alive it cannot be
-    sent ({!Spindle.client_gone}). A reconnecting browser's [Last-Event-ID] is
-    an input like any header, [Spindle.Header.optional "last-event-id" codec].
-*)
+    [: keep-alive] comment goes whenever nothing has been sent for [keep_alive]
+    (15 s), so nothing in between closes a quiet stream as idle, and a client
+    that has gone is found by the keep-alive it cannot be sent
+    ({!Spindle.client_gone}). A reconnecting browser's [Last-Event-ID] is an
+    input like any header, [Spindle.Header.optional "last-event-id" codec]. *)
 
 val websocket :
-  ?keep_alive_s:float ->
+  ?keep_alive:Mtime.Span.t ->
   ?max_message:int ->
   ('c, 's) Spindle_http.Websocket.protocol ->
   ( ('c, 's) Spindle_http.Websocket.t ->
@@ -104,8 +103,8 @@ val websocket :
     runs: a request that opens no socket is {!Refusal.Code.upgrade_required}, a
     malformed one [invalid] at the header that is wrong, and one from another
     site's page [cross_origin], though it is a [GET]. The handler is
-    {!Spindle_http.Websocket.run_server}'s, with [keep_alive_s] and
-    [max_message] its own; the socket gets a log line when it ends. *)
+    {!Spindle_http.Websocket.run_server}'s, with [keep_alive] and [max_message]
+    its own; the socket gets a log line when it ends. *)
 
 (** What a route returns, for whatever describes it. *)
 type shape = Returns_repr.shape =

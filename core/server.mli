@@ -13,27 +13,27 @@ val run :
   sw:Eio.Switch.t ->
   net:_ Eio.Net.t ->
   mono_clock:_ Eio.Time.Mono.t ->
-  now:(unit -> int) ->
+  now:(unit -> Ptime.t) ->
   domain_mgr:_ Eio.Domain_manager.t ->
   ?domains:int ->
   port:int ->
   ?host:string ->
   ?max_body:int ->
   ?max_header_bytes:int ->
-  ?head_timeout_s:float ->
-  ?idle_timeout_s:float ->
-  ?body_timeout_s:float ->
+  ?head_timeout:Mtime.Span.t ->
+  ?idle_timeout:Mtime.Span.t ->
+  ?body_timeout:Mtime.Span.t ->
   ?min_body_rate:int ->
-  ?send_timeout_s:float ->
+  ?send_timeout:Mtime.Span.t ->
   ?discard_limit:int ->
-  ?linger_s:float ->
+  ?linger:Mtime.Span.t ->
   ?body_budget:int ->
   ?trusted_proxies:string list ->
   ?proxy_header:proxy_header ->
   ?backlog:int ->
   ?max_connections:int ->
   ?stop:unit Eio.Promise.t ->
-  ?drain_s:float ->
+  ?drain:Mtime.Span.t ->
   ?on_stop:(unit -> unit) ->
   ?ready:(string -> unit) ->
   ?trace:Spindle_http.Trace.exporter ->
@@ -75,10 +75,10 @@ val run :
     are collected young rather than promoted; [OCAMLRUNPARAM]'s [s] asks for
     more.
 
-    [now] is the application's clock, in epoch milliseconds, and the only one a
-    handler sees. [mono_clock] measures every duration the server keeps or
-    reports -- the timeouts, the drain and the access log's [ms] -- and is
-    monotonic, so a wall clock that jumps moves none of them.
+    [now] is the application's clock, and the only one a handler sees.
+    [mono_clock] measures every duration the server keeps or reports -- the
+    timeouts, the drain and the access log's [duration] -- and is monotonic, so
+    a wall clock that jumps moves none of them.
 
     {b Bodies.} A body longer than [max_body] (1 MiB) is [413] -- a chunked
     body's extensions count toward it -- and a declared length past it is
@@ -95,20 +95,20 @@ val run :
 
     {b Heads.} A request head larger than [max_header_bytes] (16 KiB) is [431],
     or [414] when it is the request line that does not fit; one that takes
-    longer than [head_timeout_s] (10) to arrive is [408]; an HTTP/1.1 request
+    longer than [head_timeout] (10 s) to arrive is [408]; an HTTP/1.1 request
     without exactly one [Host] is [400]; a head whose framing RFC 9112 forbids
     -- a [Transfer-Encoding] beside a [Content-Length], two different lengths,
     [chunked] twice or not last -- is [400]; and a coding under [chunked] --
     [gzip, chunked] -- is [501], since no coding but [chunked] is implemented;
-    each is closed. A connection with no request for [idle_timeout_s] (60) is
+    each is closed. A connection with no request for [idle_timeout] (60 s) is
     closed.
 
     {b Waiting.} A connection has one deadline, moved as it makes progress, and
-    every wait on the client runs against it: between requests, [idle_timeout_s]
-    from the last answer; for a head, [head_timeout_s] from its first byte; for
-    a body, [body_timeout_s] (20) from when it is first read, moved a second
-    later for every [min_body_rate] (500) bytes that arrive -- what came in with
-    the head included -- so a body must keep up that rate once its allowance is
+    every wait on the client runs against it: between requests, [idle_timeout]
+    from the last answer; for a head, [head_timeout] from its first byte; for a
+    body, [body_timeout] (20 s) from when it is first read, moved a second later
+    for every [min_body_rate] (500) bytes that arrive -- what came in with the
+    head included -- so a body must keep up that rate once its allowance is
     spent, and a byte just inside every wait cannot hold a connection for as
     long as its length allows. The figures are a floor no ordinary upload is
     near: a megabyte at the floor still arrives in about half an hour. A body
@@ -117,7 +117,7 @@ val run :
     pays it is the per-address limit's to stop, which is a proxy's.
 
     {b Answers.} Every 2xx, 3xx and 4xx carries [Date], from [now]. A write the
-    client does not read for [send_timeout_s] (30) -- a head, a body, a stream's
+    client does not read for [send_timeout] (30 s) -- a head, a body, a stream's
     event -- closes the connection, and a stream ends as its client having
     stopped reading: a client that never reads would otherwise hold a fiber and
     a connection slot for as long as the process lives. A takeover's writes are
@@ -133,7 +133,7 @@ val run :
     asked for it, its body was read to the end, the server is not stopping and
     the answer did not say [Connection: close]; otherwise the server closes it
     itself, in stages: its own side first, then what the client is still sending
-    read and dropped -- up to [discard_limit], for at most [linger_s] (1) -- and
+    read and dropped -- up to [discard_limit], for at most [linger] (1 s) -- and
     then the socket, so the answer is not lost to the reset a closed socket
     answers unread bytes with. [max_connections] (512) is how many connections
     each address holds at once; past it the kernel's [backlog] (128) keeps the
@@ -145,13 +145,13 @@ val run :
     {b Stopping.} Without [stop], serves until the switch is cancelled. When
     [stop] resolves: [on_stop ()] runs -- where the application ends its
     streams, since a stream never ends on its own -- the addresses stop
-    accepting, the requests being answered get [drain_s] (10) seconds to finish
-    -- a stream of known length ({!Response.val-stream}'s [length]) until its
-    last byte, one of no length only until its head, since [on_stop] is what
-    ends it -- and each answer says [Connection: close], and then whatever is
-    left, on every domain, is cancelled and [run] returns. The drain counts
-    requests, not connections, so a proxy's idle connections do not hold it
-    open. See {!stop_on_signals}.
+    accepting, the requests being answered get [drain] (10 s) to finish -- a
+    stream of known length ({!Response.val-stream}'s [length]) until its last
+    byte, one of no length only until its head, since [on_stop] is what ends it
+    -- and each answer says [Connection: close], and then whatever is left, on
+    every domain, is cancelled and [run] returns. The drain counts requests, not
+    connections, so a proxy's idle connections do not hold it open. See
+    {!stop_on_signals}.
 
     Every request gets an id, answered in [x-request-id] and carried by every
     line logged while it is handled, and one [info] line when it is answered.
@@ -173,32 +173,31 @@ val run :
 
     {b Raises} [Invalid_argument], before anything listens, for a limit out of
     its range -- fewer than one domain, connection, header byte or byte a
-    second; a negative size; a time that is not finite, or not above zero, but
-    for [linger_s] and [drain_s], which may be zero -- and for a trusted proxy
-    that is no address, range or [unix:<path>]: each is a constant written where
-    the server starts, and read as given it would serve nobody, or trust nobody,
-    without a word. *)
+    second; a negative size; a timeout of zero, where [linger] and [drain] may
+    be zero -- and for a trusted proxy that is no address, range or
+    [unix:<path>]: each is a constant written where the server starts, and read
+    as given it would serve nobody, or trust nobody, without a word. *)
 
 val serve_on :
   mono_clock:_ Eio.Time.Mono.t ->
-  now:(unit -> int) ->
+  now:(unit -> Ptime.t) ->
   domain_mgr:_ Eio.Domain_manager.t ->
   ?domains:int ->
   ?max_body:int ->
   ?max_header_bytes:int ->
-  ?head_timeout_s:float ->
-  ?idle_timeout_s:float ->
-  ?body_timeout_s:float ->
+  ?head_timeout:Mtime.Span.t ->
+  ?idle_timeout:Mtime.Span.t ->
+  ?body_timeout:Mtime.Span.t ->
   ?min_body_rate:int ->
-  ?send_timeout_s:float ->
+  ?send_timeout:Mtime.Span.t ->
   ?discard_limit:int ->
-  ?linger_s:float ->
+  ?linger:Mtime.Span.t ->
   ?body_budget:int ->
   ?trusted_proxies:string list ->
   ?proxy_header:proxy_header ->
   ?max_connections:int ->
   ?stop:unit Eio.Promise.t ->
-  ?drain_s:float ->
+  ?drain:Mtime.Span.t ->
   ?on_stop:(unit -> unit) ->
   ?trace:Spindle_http.Trace.exporter ->
   ?metrics:Metrics.t ->

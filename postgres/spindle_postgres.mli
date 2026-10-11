@@ -24,12 +24,6 @@ val error_to_string : [< error ] -> string
     [Rowtype.error_to_string] does, a transaction's and a pool's own as
     [Rowtype_postgres]'s printers do. No value is in the words. *)
 
-val instant : int Rowtype.ty
-(** An instant as {!Spindle.now} gives it, epoch milliseconds, in a
-    [timestamptz] column: converted exactly to and from [Rowtype.instant]'s
-    [Ptime.t], for years 1 to 9999. One later is written as the latest instant
-    of 9999; one earlier is refused by the column. *)
-
 val refusal : [< error ] -> Spindle.Refusal.t
 (** The default wording, for whatever a route does not answer itself:
     [`Pool `Busy], and a [`Not_serializable] its retries did not get past, are
@@ -54,26 +48,28 @@ val connect :
   sw:Eio.Switch.t ->
   net:_ Eio.Net.t ->
   mono_clock:_ Eio.Time.Mono.t ->
-  ?statement_timeout_ms:int ->
-  ?idle_in_transaction_timeout_ms:int ->
-  ?connect_timeout_s:float ->
+  ?statement_timeout:Mtime.Span.t ->
+  ?idle_in_transaction_timeout:Mtime.Span.t ->
+  ?connect_timeout:Mtime.Span.t ->
   ?parameters:(string * string) list ->
-  ?timeout_s:float ->
+  ?timeout:Mtime.Span.t ->
   ?statement_cache:int ->
   string ->
   (Rowtype_postgres.conn, [> Rowtype.error ]) result
 (** [connect ~sw ~net ~mono_clock target] -- a [postgres://] URL or a keyword
-    list -- with every statement bounded by [statement_timeout_ms] (10 000) and
-    every transaction left idle by [idle_in_transaction_timeout_ms] (30 000), so
-    a query that hangs or a transaction somebody forgot is ended by the server
-    rather than holding a pooled connection and its locks. The bounds are
-    start-up parameters, with [DateStyle=ISO], which is how [Rowtype.instant]
-    reads one, and [parameters] after them -- an application's own,
-    [client_min_messages] say, winning over the framework's where they name one
-    -- so a connection made again keeps every one.
+    list -- with every statement bounded by [statement_timeout] (10 s) and every
+    transaction left idle by [idle_in_transaction_timeout] (30 s), so a query
+    that hangs or a transaction somebody forgot is ended by the server rather
+    than holding a pooled connection and its locks. The bounds are start-up
+    parameters, written in whole milliseconds rounded up, so a span under a
+    millisecond is still a bound and only a span of zero lifts one, as Postgres
+    reads [0]; with [DateStyle=ISO], which is how [Rowtype.instant] reads one,
+    and [parameters] after them -- an application's own, [client_min_messages]
+    say, winning over the framework's where they name one -- so a connection
+    made again keeps every one.
 
-    Connecting waits at most [connect_timeout_s] (10) unless the connection
-    string says [connect_timeout] itself. [timeout_s] and [statement_cache] are
+    Connecting waits at most [connect_timeout] (10 s) unless the connection
+    string says [connect_timeout] itself. [timeout] and [statement_cache] are
     [Rowtype_postgres.connect]'s, passed through.
 
     Each statement it runs in a kept trace is a span ({!Spindle.Trace}), a

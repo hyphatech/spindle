@@ -353,7 +353,7 @@ let max_head_on_the_server = 1024
 let discard_on_the_server = 1024
 
 (* RFC 9110 §5.6.7's example instant, and how it is written. *)
-let example_instant = 784_111_777_000
+let example_instant = Instants.of_ms 784_111_777_000
 let example_date = "Sun, 06 Nov 1994 08:49:37 GMT"
 
 (* The server, on [In_memory]'s virtual time, and the way to connect to
@@ -1659,8 +1659,8 @@ type call = {
   userinfo : string option;
   headers : (string * string) list;
   body : string option;
-  after : float;
-      (** the seconds that pass before it, for an idle limit to run out *)
+  after : Mtime.Span.t;
+      (** what passes before it, for an idle limit to run out *)
   once_closed : int option;
       (** made once the client has closed this connection, counted from 0, for
           what it noticed to have been acted on *)
@@ -1701,7 +1701,7 @@ type client_row = {
 }
 
 let call ?(meth = `GET) ?(path = "/") ?userinfo ?(headers = []) ?body
-    ?(after = 0.) ?once_closed returns =
+    ?(after = Mtime.Span.zero) ?once_closed returns =
   ({ meth; path; userinfo; headers; body; after; once_closed }, returns)
 
 let gives ?body ?headers status = Gives (answer ?body ?headers status)
@@ -1866,7 +1866,7 @@ let client_rows =
           ];
         ]
       ~saw:[ Connections 2 ]
-      [ ok_call; call ~after:1.2 (gives 200) ];
+      [ ok_call; call ~after:Mtime.Span.(1_200 * ms) (gives 200) ];
     crow "9112 §9.5"
       "a connection is not lent in the server's last second of Keep-Alive"
       ~first:
@@ -1879,7 +1879,7 @@ let client_rows =
           ];
         ]
       ~saw:[ Connections 2 ]
-      [ ok_call; call ~after:1.2 (gives 200) ];
+      [ ok_call; call ~after:Mtime.Span.(1_200 * ms) (gives 200) ];
     crow "9112 §9.5" "a server's Keep-Alive of a second keeps no connection"
       ~first:
         [
@@ -2015,7 +2015,7 @@ let script ~tls ~delivery seen i socket acts =
 (* A row, the server's answers delivered as [delivery] says: [Ok ()], or
    every way it went wrong. *)
 let run_client_row env (row : client_row) delivery =
-  let clock = Eio.Stdenv.clock env in
+  let mono_clock = Eio.Stdenv.mono_clock env in
   let seen =
     {
       opened = 0;
@@ -2087,7 +2087,8 @@ let run_client_row env (row : client_row) delivery =
       let calls () =
         List.iteri
           (fun n ((c : call), returns) ->
-            if c.after > 0. then Eio.Time.sleep clock c.after;
+            if not (Mtime.Span.equal c.after Mtime.Span.zero) then
+              Eio.Time.Mono.sleep_span mono_clock c.after;
             Option.iter
               (fun i -> await (fun () -> List.mem i seen.hung_up))
               c.once_closed;
@@ -2463,9 +2464,10 @@ let test_a_target_that_could_split_is_never_written () =
 
 let test_a_date_is_an_imf_fixdate () =
   List.iter
-    (fun (ms, date) -> Alcotest.(check string) date date (Write.date ms))
+    (fun (ms, date) ->
+      Alcotest.(check string) date date (Write.date (Instants.of_ms ms)))
     [
-      (example_instant, example_date);
+      (784_111_777_000, example_date);
       (0, "Thu, 01 Jan 1970 00:00:00 GMT");
       (951_782_400_000, "Tue, 29 Feb 2000 00:00:00 GMT");
       (4_102_444_799_999, "Thu, 31 Dec 2099 23:59:59 GMT");
@@ -4075,14 +4077,17 @@ module Etag = Spindle_http.Etag
 module Range = Spindle_http.Range
 
 (* 2026-09-30, for the two-digit year. *)
-let now = 1_790_000_000_000
+let now = Instants.of_ms 1_790_000_000_000
 
 let dates rfc says value owes =
   Value
     {
       rfc;
       says;
-      parse = (fun v -> Option.to_result ~none:"no date" (Date.parse ~now v));
+      parse =
+        (fun v ->
+          Option.to_result ~none:"no date"
+            (Option.map Instants.to_ms (Date.parse ~now v)));
       show = string_of_int;
       value;
       owes;
@@ -4221,7 +4226,9 @@ let test_a_representation_answers_as_the_rfc_says () =
     "0123456789";
   let app = Spindle.Test.app [ Spindle.Files.route root ] in
   let call headers =
-    Spindle.Test.call ~now:3_000_000_000_000 ~headers app `GET "/f.txt"
+    Spindle.Test.call
+      ~now:(Instants.of_ms 3_000_000_000_000)
+      ~headers app `GET "/f.txt"
   in
   let whole = call [] in
   let field name = Option.value ~default:"" (Spindle.Test.header whole name) in
@@ -4531,38 +4538,29 @@ let gen_dictionary =
                 gen_sf_parameters;
             ])))
 
-(* The first and the last instant four digits of a year hold. *)
+(* The first and the last instant four digits of a year hold, which are
+   Ptime's. *)
 let earliest_date_ms = -62_167_219_200_000
 let latest_date_ms = 253_402_300_799_999
 
-(* An instant reads back as its second, and one past what four digits of a
-   year hold as the nearest that is not. *)
+(* An instant reads back as its second. *)
 let test_a_written_date_reads_back_as_its_second =
   QCheck.Test.make ~count:2000 ~name:"a written date reads back as its second"
     (QCheck.make ~print:string_of_int
        G.(
          oneof
            [
-             int;
              earliest_date_ms -- latest_date_ms;
-             oneof_list
-               [
-                 earliest_date_ms - 1; latest_date_ms + 1; min_int; max_int; -1;
-               ];
+             oneof_list [ earliest_date_ms; latest_date_ms; -1; 0; 1 ];
            ]))
     (fun ms ->
-      let clamped = Int.min latest_date_ms (Int.max earliest_date_ms ms) in
-      let second =
-        (if clamped < 0 && clamped mod 1000 <> 0 then (clamped / 1000) - 1
-         else clamped / 1000)
-        * 1000
-      in
-      let written = Write.date ms in
+      let second = Ptime.truncate ~frac_s:0 (Instants.of_ms ms) in
+      let written = Write.date (Instants.of_ms ms) in
       match Date.parse ~now written with
-      | Some read when read = second -> true
+      | Some read when Ptime.equal read second -> true
       | Some read ->
-          QCheck.Test.fail_reportf "%S read back as %d, not %d" written read
-            second
+          QCheck.Test.fail_reportf "%S read back as %d, not %d" written
+            (Instants.to_ms read) (Instants.to_ms second)
       | None -> QCheck.Test.fail_reportf "%S is refused" written)
 
 let printers_and_parsers =

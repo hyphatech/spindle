@@ -51,10 +51,10 @@ val uuid : string t
 val date : (int * int * int) t
 (** [(year, month, day)], as RFC 3339 [full-date]: [2026-09-30]. *)
 
-val instant : int t
-(** Epoch milliseconds, as {!Spindle.now} gives them, written as RFC 3339
-    [date-time]: [2026-09-30T12:00:00Z], with any fraction and offset, printed
-    in UTC with milliseconds. *)
+val instant : Ptime.t t
+(** An instant, as {!Spindle.now} gives it, written as RFC 3339 [date-time]:
+    [2026-09-30T12:00:00Z], with any fraction and offset, printed in UTC with
+    milliseconds. *)
 
 val bool : bool t
 (** [true] or [false], and nothing else. *)

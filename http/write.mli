@@ -37,8 +37,7 @@ val chunk : Eio.Buf_write.t -> string -> unit
 val last_chunk : Eio.Buf_write.t -> unit
 (** The chunk that ends a chunked body, with no trailer. *)
 
-val date : int -> string
-(** An instant, given in milliseconds since the epoch, as RFC 9110 §5.6.7's
-    IMF-fixdate -- [Sun, 06 Nov 1994 08:49:37 GMT] -- which is the one form of
-    date a sender may write. One outside the years 0000 to 9999 is written as
-    the nearest instant in them, since the form has four digits for a year. *)
+val date : Ptime.t -> string
+(** An instant as RFC 9110 §5.6.7's IMF-fixdate --
+    [Sun, 06 Nov 1994 08:49:37 GMT] -- which is the one form of date a sender
+    may write, its fraction of a second dropped. *)

@@ -13,42 +13,45 @@ let level_name = function
   | Logs.Info -> "info"
   | Logs.Debug -> "debug"
 
-let now_with_ms () =
-  let t = Unix.gettimeofday () in
-  (t, int_of_float ((t -. Float.of_int (int_of_float t)) *. 1000.))
+(* The reporter is set before any event loop, and runs on whichever thread
+   logged, so it reads the system's clock itself rather than an Eio one. *)
+let now_with_ms ?tz_offset_s () =
+  let now = Ptime_clock.now () in
+  let date, ((hh, mm, ss), _) = Ptime.to_date_time ?tz_offset_s now in
+  let _, ps = Ptime.Span.to_d_ps (Ptime.frac_s now) in
+  (date, (hh, mm, ss), Int64.to_int (Int64.div ps 1_000_000_000L))
 
 (* Digit by digit: a seven-argument format string cost a line nearly as much
    as all its fields. *)
 let add_iso_time b =
-  let t, ms = now_with_ms () in
-  let tm = Unix.gmtime t in
+  let (year, month, day), (hh, mm, ss), ms = now_with_ms () in
   let two_digits n =
     Buffer.add_char b (Char.chr (48 + (n / 10)));
     Buffer.add_char b (Char.chr (48 + (n mod 10)))
   in
-  let year = tm.tm_year + 1900 in
   Buffer.add_char b '"';
   two_digits (year / 100);
   two_digits (year mod 100);
   Buffer.add_char b '-';
-  two_digits (tm.tm_mon + 1);
+  two_digits month;
   Buffer.add_char b '-';
-  two_digits tm.tm_mday;
+  two_digits day;
   Buffer.add_char b 'T';
-  two_digits tm.tm_hour;
+  two_digits hh;
   Buffer.add_char b ':';
-  two_digits tm.tm_min;
+  two_digits mm;
   Buffer.add_char b ':';
-  two_digits tm.tm_sec;
+  two_digits ss;
   Buffer.add_char b '.';
   Buffer.add_char b (Char.chr (48 + (ms / 100)));
   two_digits (ms mod 100);
   Buffer.add_string b "Z\""
 
 let local_clock_time () =
-  let t, ms = now_with_ms () in
-  let tm = Unix.localtime t in
-  Printf.sprintf "%02d:%02d:%02d.%03d" tm.tm_hour tm.tm_min tm.tm_sec ms
+  let _, (hh, mm, ss), ms =
+    now_with_ms ?tz_offset_s:(Ptime_clock.current_tz_offset_s ()) ()
+  in
+  Printf.sprintf "%02d:%02d:%02d.%03d" hh mm ss ms
 
 (* An integer past 2^53 is written as a string: a reader holding numbers as
    doubles would round it. *)
@@ -132,7 +135,7 @@ let pass_lock = Mutex.create ()
 
 (* Each pass carries a millisecond of lines: woken for each line, the writer
    cost a third of a core under load. *)
-let pass_interval_s = 0.001
+let pass_interval = Mtime.Span.ms
 
 (* A domain's buffer leaves [registered] once the domain has ended and its
    lines are written, so a program that starts domains as it goes keeps none
@@ -195,7 +198,8 @@ let writer () =
         done;
         woken := false);
     Mutex.protect pass_lock write_pass;
-    Unix.sleepf pass_interval_s
+    (* A domain of its own, with no Eio clock: [Unix.sleepf] takes seconds. *)
+    Unix.sleepf (Mtime.Span.to_float_ns pass_interval /. 1e9)
   done
 
 let writer_started = Atomic.make false

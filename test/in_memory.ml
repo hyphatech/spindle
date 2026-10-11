@@ -186,7 +186,7 @@ let at_once ~clock flow =
 (* Past an hour of virtual time a test is waiting for something that will
    not come: a server's sweep ticks for ever, so the backend never finds
    every fiber idle to report the deadlock itself. *)
-let hour = 3600.
+let hour = Mtime.Span.hour
 
 let run f =
   Eio_mock.Backend.run_full @@ fun mock ->
@@ -200,5 +200,5 @@ let run f =
   Eio.Fiber.first
     (fun () -> f env)
     (fun () ->
-      Eio.Time.Mono.sleep mock#mono_clock hour;
+      Eio.Time.Mono.sleep_span mock#mono_clock hour;
       Alcotest.fail "an hour of virtual time went by: the test waits for ever")

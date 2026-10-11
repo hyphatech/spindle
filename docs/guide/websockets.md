@@ -54,7 +54,7 @@ heard: goodbye
 URL, runs `f` on the socket and closes it when `f` returns. It answers `f`'s
 result, or `Failed` (the handshake could not be made), `Refused` (the server
 answered without a `101`, with that answer) or `Ended` (how the socket
-ended). `~timeout_s` bounds the handshake and each write.
+ended). `~timeout` bounds the handshake and each write.
 
 Both programs declare the same protocol. When the two ends are separate
 programs, put it in a library both link so they cannot drift apart.
@@ -72,20 +72,20 @@ How the handler's loop ended is the close code:
 To close with another code, call `Ws.close ~code ~reason ws` and return.
 Nothing raises into your handler: a socket whose peer has gone answers its
 next `receive` or `send` with an error. A `send` you cut off -- under
-`Eio.Time.with_timeout`, or in an `Eio.Fiber.first` it lost -- may have
+`Eio.Time.Timeout.run`, or in an `Eio.Fiber.first` it lost -- may have
 written part of its frame, so it ends the socket: the cancellation goes on,
 and every later `send` answers `Lost`.
 
 The framework handles the rest of the protocol for you:
 
-- ping and pong: a ping after `~keep_alive_s` (15) seconds of silence, and a
+- ping and pong: a ping after `~keep_alive` (15 s) of silence, and a
   peer silent for twice that is `Lost`;
 - a message over `~max_message` (1 MiB) closes the socket with 1009, and one
   of a kind the socket does not carry with 1003;
 - a stopping server closes every socket with 1001;
 - one log line when a socket ends: how long it lived and why.
 
-`~keep_alive_s` and `~max_message` are arguments of
+`~keep_alive` and `~max_message` are arguments of
 `Spindle.Returns.websocket` and `Spindle_client.websocket`.
 
 ## Broadcasting to many sockets

@@ -1,14 +1,18 @@
 (* The house rules a reader of the source can check: run by [dune test], so
    CI and an agent find a broken rule as a failing test naming the line. *)
 
-(* The libraries' directories. *)
+(* The libraries' directories; the tests and the examples are held to the
+   rules on time alone. *)
 let dirs = [ "http"; "core"; "client"; "postgres"; "cli" ]
 let command_dirs = []
+let test_dirs = [ "test"; "examples"; "examples/pages" ]
 
 (* An [open] is refused but where it is a module made to be opened: a
    library of combinators or operators, around the expression that uses it --
    Angstrom as [A], a path's [/], a route's metadata, a digest's, a
-   statement's shapes -- and Cmdliner's binding operators, file-wide. *)
+   statement's shapes -- and Cmdliner's binding operators, file-wide. A span
+   is written as OCAML.md writes it, [Mtime.Span.(5 * s)], a module of
+   operators opened around the one expression that uses them, in any file. *)
 let allowed_opens =
   [
     ("http/accept.ml", "A");
@@ -23,13 +27,35 @@ let allowed_opens =
     ("http/range.ml", "A");
     ("http/structured.ml", "A");
     ("core/files.ml", "Path");
+    ("core/files.ml", "Eio.Path");
     ("core/openapi.ml", "Path");
     ("core/static.ml", "Path");
+    ("core/static.ml", "Eio.Path");
     ("core/health.ml", "Meta");
     ("core/metrics.ml", "Meta");
-    ("core/session.ml", "SHA256");
+    ("core/session.ml", "Digestif.SHA256");
     ("postgres/session.ml", "S");
     ("cli/spindle_cli.ml", "Cmdliner.Term.Syntax");
+  ]
+
+let operator_modules = [ "Mtime.Span" ]
+
+let a_time =
+  "a time is a Ptime.t or an Mtime.Span.t: Ptime.of_float_s (Eio.Time.now \
+   clock), Eio.Time.Timeout.v, Eio.Time.Mono.sleep_span"
+
+(* What counts time in a bare float: OCAML.md's names, and the two Eio
+   twins they leave out, the [_exn] timeout and the monotonic clock's float
+   sleep, so Eio is reached through its span forms alone. *)
+let time_as_a_float =
+  [
+    "Unix.gettimeofday";
+    "Unix.time";
+    "Eio.Time.sleep";
+    "Eio.Time.with_timeout";
+    "Eio.Time.with_timeout_exn";
+    "Eio.Time.Timeout.seconds";
+    "Eio.Time.Mono.sleep";
   ]
 
 (* A banned identifier allowed where the [.mli] documents it. Each
@@ -84,6 +110,7 @@ let banned =
     ( "Uri.get_query_param",
       "splits a value at commas: use Spindle_http.Urlencoded.parse" );
   ]
+  @ List.map (fun name -> (name, a_time)) time_as_a_float
   @ List.map
       (fun name -> (name, "a library never prints: log through Logs"))
       [
@@ -281,10 +308,112 @@ let no_banned_identifier () =
   in
   Alcotest.(check (list string)) "banned identifiers" [] found
 
+(* A time is one of the four shapes in the tests and the examples too, which
+   are held to no other name the libraries are. *)
+let no_time_as_a_float_outside_the_libraries () =
+  let found =
+    List.concat_map
+      (fun file ->
+        identifiers (code_of (read_source file))
+        |> List.filter_map (fun (line, word) ->
+            if List.mem (unqualified word) time_as_a_float then
+              Some (Printf.sprintf "%s:%d: %s -- %s" file line word a_time)
+            else None))
+      (sources ~dirs:test_dirs ".ml" @ sources ~dirs:test_dirs ".mlx")
+  in
+  Alcotest.(check (list string)) "time as a float" [] found
+
+(* A [float] labelled with a unit, [timeout_s : float] or [?wait_ms:float]:
+   a duration is an Mtime.Span.t named for what it bounds. Read off the
+   code, so a comment or a string may say it. *)
+let unit_suffixes = [ "_s"; "_ms"; "_us"; "_ns" ]
+
+let floats_with_a_unit file source =
+  let code = code_of source in
+  let n = String.length code in
+  let is_space c = Char.equal c ' ' || Char.equal c '\n' in
+  let word_at i w =
+    i + String.length w <= n
+    && String.equal (String.sub code i (String.length w)) w
+    && (i = 0 || not (is_ident_char code.[i - 1]))
+    && (i + String.length w = n
+       || not (is_ident_char code.[i + String.length w]))
+  in
+  let rec back_over_space i =
+    if i >= 0 && is_space code.[i] then back_over_space (i - 1) else i
+  in
+  let label_before i =
+    let colon = back_over_space (i - 1) in
+    if colon >= 0 && Char.equal code.[colon] ':' then (
+      let last = back_over_space (colon - 1) in
+      let first = ref last in
+      while !first >= 0 && is_ident_char code.[!first] do
+        decr first
+      done;
+      if last > !first then Some (String.sub code (!first + 1) (last - !first))
+      else None)
+    else None
+  in
+  let line_of i =
+    let l = ref 1 in
+    for x = 0 to i - 1 do
+      if Char.equal code.[x] '\n' then incr l
+    done;
+    !l
+  in
+  let rec go i acc =
+    if i >= n then List.rev acc
+    else if word_at i "float" then
+      match label_before i with
+      | Some label
+        when List.exists
+               (fun suffix -> String.ends_with ~suffix label)
+               unit_suffixes ->
+          go (i + 5)
+            (Printf.sprintf
+               "%s:%d: %s : float -- a duration is an Mtime.Span.t named for \
+                what it bounds"
+               file (line_of i) label
+            :: acc)
+      | Some _ | None -> go (i + 5) acc
+    else go (i + 1) acc
+  in
+  go 0 []
+
+let no_float_with_a_unit () =
+  let all = dirs @ command_dirs @ test_dirs in
+  let found =
+    List.concat_map
+      (fun file -> floats_with_a_unit file (read_source file))
+      (sources ~dirs:all ".ml" @ sources ~dirs:all ".mli"
+      @ sources ~dirs:test_dirs ".mlx")
+  in
+  Alcotest.(check (list string)) "floats labelled with a unit" [] found
+
+let a_float_with_a_unit_is_found () =
+  let found source = List.length (floats_with_a_unit "row.ml" source) in
+  List.iter
+    (fun source -> Alcotest.(check int) source 1 (found source))
+    [
+      "val connect : ?timeout_s:float -> unit";
+      "type t = { wait_ms : float option }";
+      "let f (heartbeat_s : float) = heartbeat_s";
+      "val v : timeout_s:\n  float -> t";
+    ];
+  List.iter
+    (fun source -> Alcotest.(check int) source 0 (found source))
+    [
+      "val connect : ?timeout:Mtime.Span.t -> unit";
+      "val ratio : float";
+      "(* timeout_s : float *)";
+      "let x_s : int = 1";
+    ]
+
 (* Every local open, [M.(...)], [M.[...]] or [M.{...}], with its line and
-   module: a bracket after a path whose last name is capitalised. An array's
-   or a string's index follows a value's name, which is not. An operator
-   reached by its path, [M.( + )], is matched too; bind it to a name. *)
+   the module's path: a bracket after a path whose names are capitalised. An
+   array's or a string's index follows a value's name, which is not. An
+   operator reached by its path, [M.( + )], is matched too; bind it to a
+   name. *)
 let local_opens code =
   let n = String.length code in
   let is_name_char = function
@@ -299,22 +428,29 @@ let local_opens code =
       && match code.[i + 1] with '(' | '[' | '{' -> true | _ -> false
     then (
       let j = ref i in
-      while !j > 0 && is_name_char code.[!j - 1] do
+      while
+        !j > 0 && (is_name_char code.[!j - 1] || Char.equal code.[!j - 1] '.')
+      do
         decr j
       done;
-      match code.[!j] with
-      | 'A' .. 'Z' when !j < i ->
-          go (i + 1) line ((line, String.sub code !j (i - !j)) :: acc)
-      | _ -> go (i + 1) line acc)
+      let path = String.sub code !j (i - !j) in
+      let is_module name =
+        String.length name > 0
+        && match name.[0] with 'A' .. 'Z' -> true | _ -> false
+      in
+      if String.split_on_char '.' path |> List.for_all is_module then
+        go (i + 1) line ((line, path) :: acc)
+      else go (i + 1) line acc)
     else go (i + 1) line acc
   in
   go 0 1 []
 
 let no_open_but_the_named () =
   let allowed file name =
-    List.exists
-      (fun (f, m) -> String.equal f file && String.equal m name)
-      allowed_opens
+    List.mem name operator_modules
+    || List.exists
+         (fun (f, m) -> String.equal f file && String.equal m name)
+         allowed_opens
   in
   let found =
     List.concat_map
@@ -520,6 +656,12 @@ let () =
       ( "libraries",
         [
           Alcotest.test_case "no banned identifier" `Quick no_banned_identifier;
+          Alcotest.test_case "no time as a float outside the libraries" `Quick
+            no_time_as_a_float_outside_the_libraries;
+          Alcotest.test_case "no float labelled with a unit" `Quick
+            no_float_with_a_unit;
+          Alcotest.test_case "a float labelled with a unit is found" `Quick
+            a_float_with_a_unit_is_found;
           Alcotest.test_case "no open but the named" `Quick
             no_open_but_the_named;
           Alcotest.test_case "no silenced warning" `Quick no_silenced_warning;

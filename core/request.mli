@@ -29,16 +29,16 @@ val make :
   ?version:Spindle_http.Head.version ->
   ?host:string ->
   ?headers:(string * string) list ->
-  now:(unit -> int) ->
+  now:(unit -> Ptime.t) ->
   Spindle_http.Meth.t ->
   string ->
   t
 (** [make meth target] for a server adapter or a test. [target] is the path and
     query string as they arrived. Header names are matched without regard to
-    case. [now] is the application's clock, in epoch milliseconds. [client]
-    defaults to [peer], and [id] to a fresh one. [proxied] says the peer is a
-    proxy the server was told to trust (false), and [proxy_header] which header
-    it writes ([X_forwarded_for]). [version] is the one the request was sent in
+    case. [now] is the application's clock. [client] defaults to [peer], and
+    [id] to a fresh one. [proxied] says the peer is a proxy the server was told
+    to trust (false), and [proxy_header] which header it writes
+    ([X_forwarded_for]). [version] is the one the request was sent in
     ([Http_1_1]), and [host] the host its head names (see
     {!Spindle_http.Head.Request.t}) -- its [Host] header, when not given. *)
 
@@ -100,8 +100,8 @@ val client : t -> string
     is read in every line of it: the rightmost address the proxy did not write
     itself, and the peer where that hop is [unknown] or hidden. *)
 
-val now : t -> int
-(** The application's clock, in epoch milliseconds. *)
+val now : t -> Ptime.t
+(** The application's clock. *)
 
 val client_gone : t -> unit Eio.Promise.t
 (** Resolved once the client has gone: when the exchange is over, or sooner,

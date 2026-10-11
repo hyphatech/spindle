@@ -7,17 +7,17 @@ type entry = { generation : int; resolve_stopped : unit Eio.Promise.u }
 type t = {
   background : Background.t;
   clock : Eio.Time.Mono.ty Eio.Resource.t;
-  slack_ms : int;
+  slack : Mtime.Span.t;
   lock : Eio.Mutex.t;
   current : (string, entry) Hashtbl.t;
   mutable last_generation : int;  (** under [lock] *)
 }
 
-let create ?(slack_ms = 50) ~background ~mono_clock:clock () =
+let create ?(slack = Mtime.Span.(50 * ms)) ~background ~mono_clock:clock () =
   {
     background;
     clock :> Eio.Time.Mono.ty Eio.Resource.t;
-    slack_ms;
+    slack;
     lock = Eio.Mutex.create ();
     current = Hashtbl.create 16;
     last_generation = 0;
@@ -38,7 +38,7 @@ let remove_entry t ~key =
 
 let cancel t ~key = locked t (fun () -> remove_entry t ~key)
 
-let set t ~key ~in_ms ~what f =
+let set t ~key ~after ~what f =
   let stopped, resolve_stopped = Eio.Promise.create () in
   let generation =
     locked t (fun () ->
@@ -52,8 +52,7 @@ let set t ~key ~in_ms ~what f =
       let woke =
         Eio.Fiber.first
           (fun () ->
-            Eio.Time.Mono.sleep t.clock
-              (float_of_int (max 0 in_ms + t.slack_ms) /. 1000.);
+            Eio.Time.Mono.sleep_span t.clock (Mtime.Span.add after t.slack);
             true)
           (fun () ->
             Eio.Promise.await stopped;

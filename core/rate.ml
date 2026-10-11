@@ -1,28 +1,28 @@
-(* Every instant is nanoseconds on the monotonic clock. *)
+(* Every instant is the monotonic clock's. *)
 
 type t = {
-  now : unit -> int;
-  interval : int;  (** between two calls, at the sustained rate *)
-  tolerance : int;  (** how far ahead of now a key's instant may run *)
-  next_allowed : (string, int) Hashtbl.t;
+  mono_clock : Eio.Time.Mono.ty Eio.Resource.t;
+  interval : Mtime.Span.t;  (** between two calls, at the sustained rate *)
+  tolerance : Mtime.Span.t;  (** how far ahead of now a key's instant may run *)
+  next_allowed : (string, Mtime.t) Hashtbl.t;
       (** GCRA's theoretical arrival time per key: the soonest it may call *)
   lock : Eio.Mutex.t;
   mutable writes_since_sweep : int;
 }
 
-let create ~mono_clock ~limit ~per_s ?(burst = limit) () =
+let create ~mono_clock ~limit ~per ?(burst = limit) () =
   let refuse what = invalid_arg ("Spindle.Rate.create: " ^ what) in
   if limit < 1 then refuse (Printf.sprintf "~limit:%d, below one" limit);
   if burst < 1 then refuse (Printf.sprintf "~burst:%d, below one" burst);
-  if not (Float.is_finite per_s && per_s > 0.) then
-    refuse (Printf.sprintf "~per_s:%g, not a positive number of seconds" per_s);
-  let interval = int_of_float (per_s *. 1e9 /. float_of_int limit) in
+  if Mtime.Span.equal per Mtime.Span.zero then refuse "~per, a span of zero";
+  let interval =
+    Mtime.Span.of_uint64_ns
+      (Int64.unsigned_div (Mtime.Span.to_uint64_ns per) (Int64.of_int limit))
+  in
   {
-    now =
-      (fun () ->
-        Int64.to_int (Mtime.to_uint64_ns (Eio.Time.Mono.now mono_clock)));
+    mono_clock :> Eio.Time.Mono.ty Eio.Resource.t;
     interval;
-    tolerance = interval * (burst - 1);
+    tolerance = Mtime.Span.((burst - 1) * interval);
     next_allowed = Hashtbl.create 64;
     lock = Eio.Mutex.create ();
     writes_since_sweep = 0;
@@ -35,7 +35,7 @@ let writes_per_sweep = 1000
 let sweep t now =
   let passed =
     Hashtbl.fold
-      (fun k at acc -> if at <= now then k :: acc else acc)
+      (fun k at acc -> if Mtime.is_later at ~than:now then acc else k :: acc)
       t.next_allowed []
   in
   List.iter (Hashtbl.remove t.next_allowed) passed
@@ -43,15 +43,19 @@ let sweep t now =
 (* GCRA: a call passes while the key's instant is within the burst of now,
    and moves it on one interval. *)
 let check t key =
-  let now = t.now () in
+  let now = Eio.Time.Mono.now t.mono_clock in
   Eio.Mutex.use_rw ~protect:false t.lock (fun () ->
       let at =
-        max now
-          (Option.value (Hashtbl.find_opt t.next_allowed key) ~default:now)
+        match Hashtbl.find_opt t.next_allowed key with
+        | Some at when Mtime.is_later at ~than:now -> at
+        | Some _ | None -> now
       in
-      if at - now > t.tolerance then `Wait (at - now - t.tolerance)
+      let ahead = Mtime.span now at in
+      if Mtime.Span.is_longer ahead ~than:t.tolerance then
+        `Wait (Mtime.Span.abs_diff ahead t.tolerance)
       else (
-        Hashtbl.replace t.next_allowed key (at + t.interval);
+        Hashtbl.replace t.next_allowed key
+          (Option.value (Mtime.add_span at t.interval) ~default:Mtime.max_stamp);
         t.writes_since_sweep <- t.writes_since_sweep + 1;
         if t.writes_since_sweep mod writes_per_sweep = 0 then sweep t now;
         `Pass))
@@ -77,8 +81,14 @@ let limit t ~key =
        (fun k ->
          match check t (counted k) with
          | `Pass -> Ok ()
-         | `Wait ns ->
+         | `Wait span ->
+             (* Whole seconds, rounded up, as [Retry-After] counts them. *)
+             let ns = Mtime.Span.to_uint64_ns span in
              Error
                (Refusal.rate_limited
-                  ~retry_after_s:((ns + 999_999_999) / 1_000_000_000)))
+                  ~retry_after_s:
+                    (Int64.to_int
+                       (Int64.unsigned_div
+                          (Int64.add ns 999_999_999L)
+                          1_000_000_000L))))
        key)

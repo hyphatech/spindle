@@ -3,9 +3,17 @@
 
 module Pg = Rowtype_postgres
 
-let apply ?(statement_timeout_ms = 10_000)
-    ?(idle_in_transaction_timeout_ms = 30_000) ?(connect_timeout_s = 10.)
-    ?(parameters = []) target =
+(* Postgres reads a timeout in whole milliseconds, and 0 as none: rounded
+   up, so a span under a millisecond is still a bound. *)
+let milliseconds span =
+  Int64.to_string
+    (Int64.unsigned_div
+       (Int64.add (Mtime.Span.to_uint64_ns span) 999_999L)
+       1_000_000L)
+
+let apply ?(statement_timeout = Mtime.Span.(10 * s))
+    ?(idle_in_transaction_timeout = Mtime.Span.(30 * s))
+    ?(connect_timeout = Mtime.Span.(10 * s)) ?(parameters = []) target =
   Result.map
     (fun (c : Pg.Conninfo.t) ->
       (* DateStyle because an instant is read as the server writes it; the
@@ -14,16 +22,16 @@ let apply ?(statement_timeout_ms = 10_000)
          its locks. The application's parameters win. *)
       let framework =
         [
-          ("statement_timeout", string_of_int statement_timeout_ms);
+          ("statement_timeout", milliseconds statement_timeout);
           ( "idle_in_transaction_session_timeout",
-            string_of_int idle_in_transaction_timeout_ms );
+            milliseconds idle_in_transaction_timeout );
           ("DateStyle", "ISO");
         ]
       in
       ( {
           c with
-          connect_timeout_s =
-            Some (Option.value c.connect_timeout_s ~default:connect_timeout_s);
+          connect_timeout =
+            Some (Option.value c.connect_timeout ~default:connect_timeout);
         },
         List.filter (fun (k, _) -> not (List.mem_assoc k parameters)) framework
         @ parameters ))

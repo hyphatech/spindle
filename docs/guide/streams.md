@@ -46,7 +46,7 @@ data: 42
 - **Resuming:** give each event an id (`Event.make ~id`). A browser sends
   the last one back as `Last-Event-ID` when it reconnects.
 - A quiet stream gets a `: keep-alive` comment every 15 seconds
-  (`Returns.events ~keep_alive_s`).
+  (`Returns.events ~keep_alive`).
 
 ## Broadcasting to many clients
 

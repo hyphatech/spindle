@@ -231,16 +231,17 @@ let json ?refusal ?(examples = []) t =
               Error (Refusal.make ~detail code sentence)
           | None -> Error (Refusal.invalid (body_problems problems))))
 
-let epoch_ms clock () = int_of_float (Eio.Time.now clock *. 1000.)
+let clock_now clock () = Spindle_http.Instant.of_clock clock
+let until = Spindle_http.Instant.until
 
 (* A route table [App.make] refuses is a constant in source, so it raises:
    the program ends before it listens, saying why. *)
 let serve ?(port = 8080) ?host ?domains ?middleware ?codes ?not_found ?cors
     ?compress ?check_origin ?trusted_origins ?trailing_slash ?now ?max_body
-    ?max_header_bytes ?head_timeout_s ?idle_timeout_s ?body_timeout_s
-    ?min_body_rate ?send_timeout_s ?discard_limit ?linger_s ?body_budget
-    ?trusted_proxies ?proxy_header ?backlog ?max_connections ?stop ?drain_s
-    ?on_stop ?ready ?trace ?metrics env routes =
+    ?max_header_bytes ?head_timeout ?idle_timeout ?body_timeout ?min_body_rate
+    ?send_timeout ?discard_limit ?linger ?body_budget ?trusted_proxies
+    ?proxy_header ?backlog ?max_connections ?stop ?drain ?on_stop ?ready ?trace
+    ?metrics env routes =
   let app =
     match
       App.make ?middleware ?codes ?not_found ?cors ?compress ?check_origin
@@ -256,7 +257,7 @@ let serve ?(port = 8080) ?host ?domains ?middleware ?codes ?not_found ?cors
       L.err (fun f -> f "cannot start: %s" m);
       exit 1);
   Eio.Switch.run @@ fun sw ->
-  let now = Option.value now ~default:(epoch_ms (Eio.Stdenv.clock env)) in
+  let now = Option.value now ~default:(clock_now (Eio.Stdenv.clock env)) in
   let stop =
     match stop with Some s -> s | None -> Server.stop_on_signals ~sw ()
   in
@@ -273,7 +274,7 @@ let serve ?(port = 8080) ?host ?domains ?middleware ?codes ?not_found ?cors
     ~mono_clock:(Eio.Stdenv.mono_clock env)
     ~now
     ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-    ?domains ~port ?host ?max_body ?max_header_bytes ?head_timeout_s
-    ?idle_timeout_s ?body_timeout_s ?min_body_rate ?send_timeout_s
-    ?discard_limit ?linger_s ?body_budget ?trusted_proxies ?proxy_header
-    ?backlog ?max_connections ~stop ?drain_s ?on_stop ~ready ?trace ?metrics app
+    ?domains ~port ?host ?max_body ?max_header_bytes ?head_timeout ?idle_timeout
+    ?body_timeout ?min_body_rate ?send_timeout ?discard_limit ?linger
+    ?body_budget ?trusted_proxies ?proxy_header ?backlog ?max_connections ~stop
+    ?drain ?on_stop ~ready ?trace ?metrics app

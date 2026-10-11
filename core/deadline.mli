@@ -15,9 +15,9 @@ type t
 type sweep
 (** What looks at every deadline made from it. *)
 
-val sweep : mono_clock:_ Eio.Time.Mono.t -> tick:float -> sweep
-(** [sweep ~mono_clock ~tick] looks every [tick] seconds, once {!watch} runs it:
-    a deadline passes up to [tick] late. *)
+val sweep : mono_clock:_ Eio.Time.Mono.t -> tick:Mtime.Span.t -> sweep
+(** [sweep ~mono_clock ~tick] looks every [tick], once {!watch} runs it: a
+    deadline passes up to [tick] late. *)
 
 val watch : sweep -> 'a
 (** Runs the sweep, for as long as the fiber it is given lasts. *)
@@ -31,18 +31,18 @@ val reading : t -> _ Eio.Flow.source -> Eio.Flow.source_ty Eio.Resource.t
     ends as the end of the input, and so does every read until it is armed
     again. Each byte read is {!progress}. *)
 
-val arm : ?per_byte:float -> t -> float -> unit
-(** [arm t s] has the deadline [s] seconds from now, and every byte of progress
-    after it moves it later by [per_byte] seconds (none): a rate to keep up. *)
+val arm : ?per_byte:Mtime.Span.t -> t -> Mtime.Span.t -> unit
+(** [arm t span] has the deadline [span] from now, and every byte of progress
+    after it moves it later by [per_byte] (none): a rate to keep up. *)
 
-val arm_since_last : t -> float -> unit
-(** [arm_since_last t s] has the deadline [s] seconds from now, and [s] from
+val arm_since_last : t -> Mtime.Span.t -> unit
+(** [arm_since_last t span] has the deadline [span] from now, and [span] from
     every byte of progress after it: a bound on a lack of progress, not a rate.
 *)
 
-val remaining : t -> float option
-(** How long until it passes, in seconds, as it now stands -- none when it is
-    armed for nothing; past it, less than zero. *)
+val remaining : t -> Mtime.Span.t option
+(** How long until it passes, as it now stands -- none when it is armed for
+    nothing; zero once it has passed. *)
 
 val clear : t -> unit
 (** Nothing is waited for against it: a wait now lasts as long as it takes. *)

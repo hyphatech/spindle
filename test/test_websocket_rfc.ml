@@ -177,7 +177,7 @@ let over_raw delivery input run =
               Eio.Buf_read.of_flow (source (split delivery input)) ~max_size:64;
             writer;
             clock;
-            send_timeout_s = 10.;
+            send_timeout = Mtime.Span.(10 * s);
             stopping = fst (Eio.Promise.create ());
           })
   in
@@ -338,7 +338,7 @@ let test_a_length_is_written_in_the_fewest_bytes () =
                      ~max_size:64;
                  writer;
                  clock;
-                 send_timeout_s = 10.;
+                 send_timeout = Mtime.Span.(10 * s);
                  stopping = fst (Eio.Promise.create ());
                }
                echo
@@ -554,7 +554,7 @@ let test_a_send_cut_off_mid_frame_ends_the_socket side () =
             writer;
             clock =
               (Eio_mock.Clock.Mono.make () :> Eio.Time.Mono.ty Eio.Resource.t);
-            send_timeout_s = 10.;
+            send_timeout = Mtime.Span.(10 * s);
             stopping = fst (Eio.Promise.create ());
           }
         in
@@ -717,7 +717,7 @@ let check_handshake (r : handshake_row) () =
 (* One connection: the head the client sent, then [answer] of its key; and,
    for a 101, every frame after it read and a close answered, so the
    client's own closing handshake completes. *)
-let scripted ?(timeout_s = 2.) env answer f =
+let scripted ?(timeout = Mtime.Span.(2 * s)) env answer f =
   Eio.Switch.run @@ fun sw ->
   let net = Eio.Stdenv.net env in
   let socket =
@@ -783,7 +783,7 @@ let scripted ?(timeout_s = 2.) env answer f =
   let client =
     Spindle_client.create ~sw ~net
       ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ~timeout_s ()
+      ~timeout ()
   in
   let url = Printf.sprintf "ws://127.0.0.1:%d/socket" port in
   let got =
@@ -808,10 +808,9 @@ let outcome = function
       "failed: " ^ Spindle_client.error_to_string e
   | Error (Spindle_client.Ended e) -> "ended: " ^ Ws.error_to_string e
 
-let check_client_handshake ?timeout_s env ~protocol answer expected () =
+let check_client_handshake ?timeout env ~protocol answer expected () =
   let got, _ =
-    scripted ?timeout_s env answer (fun open_ ->
-        open_ protocol (fun _ -> Ok ()))
+    scripted ?timeout env answer (fun open_ -> open_ protocol (fun _ -> Ok ()))
   in
   let got = outcome got in
   Alcotest.(check bool)
@@ -869,11 +868,11 @@ let test_a_key_is_fresh_every_time env () =
     (Option.equal String.equal a b)
 
 let client_handshake_rows env =
-  let row rfc says ?(protocol = texts) ?timeout_s answer expected =
+  let row rfc says ?(protocol = texts) ?timeout answer expected =
     Alcotest.test_case
       (rfc ^ " " ^ says)
       `Quick
-      (check_client_handshake ?timeout_s env ~protocol answer expected)
+      (check_client_handshake ?timeout env ~protocol answer expected)
   in
   [
     row "4.1" "a 101 that accepts the key opens the socket" upgrade "opened";
@@ -881,7 +880,7 @@ let client_handshake_rows env =
       (fun _ -> "HTTP/1.1 403 Forbidden\r\nContent-Length: 4\r\n\r\nNope")
       "refused 403: Nope";
     row "4.1" "a refusal whose body stalls is held to the handshake's deadline"
-      ~timeout_s:0.2
+      ~timeout:Mtime.Span.(200 * ms)
       (fun _ -> "HTTP/1.1 403 Forbidden\r\nContent-Length: 100\r\n\r\nNot all")
       "failed: no answer within";
     row "4.1" "a 101 whose accept is not for this key fails"

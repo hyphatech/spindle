@@ -66,15 +66,15 @@ let reads_a_part =
    are where its state is proven safe from several. On [In_memory]'s virtual
    time; what it answers is [on_connection]'s, below. *)
 let serve ~sw env ?(domains = 4) ?max_body ?max_header_bytes ?discard_limit
-    ?body_budget ?stop ?drain_s served =
+    ?body_budget ?stop ?drain served =
   let listening, connect = In_memory.listen () in
   Eio.Fiber.fork_daemon ~sw (fun () ->
       Spindle.Server.serve_on
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains
-        ~now:(fun () -> 0)
-        ?max_body ?max_header_bytes ?discard_limit ?body_budget ?stop ?drain_s
+        ~now:(fun () -> Ptime.epoch)
+        ?max_body ?max_header_bytes ?discard_limit ?body_budget ?stop ?drain
         [ listening ] served;
       `Stop_daemon);
   connect
@@ -598,17 +598,17 @@ let test_a_refused_head_is_answered_before_the_connection_goes () =
   check_int "refused" 400 (read_answer r).status;
   check_bool "and closed" true (closed r)
 
-(* One domain's server, and [after s], which waits until [s] seconds of
-   virtual time have gone: a limit passes when the test says so, and never
+(* One domain's server, and [after span], which waits until [span] of
+   virtual time has gone: a limit passes when the test says so, and never
    because a machine was slow. *)
 let with_mock_clock routes f =
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let connect = serve ~sw env ~domains:1 (Spindle.Test.app routes) in
-  let after s =
+  let after span =
     Eio.Time.Mono.sleep_until
       (Eio.Stdenv.mono_clock env)
-      (Mtime.of_uint64_ns (Int64.of_float (s *. 1e9)))
+      (Mtime.of_uint64_ns (Mtime.Span.to_uint64_ns span))
   in
   f (on_connection env connect) after
 
@@ -619,12 +619,12 @@ let test_a_limit_passes_within_a_tick () =
   with_mock_clock [ hello ] @@ fun connect after ->
   connect @@ fun send r ->
   send "GET /hello/a HTTP/1.1\r\n";
-  after 9.95;
+  after Mtime.Span.(9950 * ms);
   send "Host: t\r\n\r\n";
   check_string "a head finished a moment before its limit is answered" "a"
     (read_answer r).body;
   send "GET /hello/b HTTP/1.1\r\n";
-  after 20.95;
+  after Mtime.Span.(20950 * ms);
   check_int "one that is not is 408 within a tick" 408 (read_answer r).status;
   check_bool "and closed" true (closed r)
 
@@ -632,7 +632,7 @@ let test_a_slow_head_is_408 () =
   with_mock_clock [ hello ] @@ fun connect after ->
   connect @@ fun send r ->
   send "GET /hello/a HTTP/1.1\r\n";
-  after 11.;
+  after Mtime.Span.(11 * s);
   check_int "too slow" 408 (read_answer r).status;
   check_bool "and closed" true (closed r)
 
@@ -678,17 +678,17 @@ let test_a_quiet_stream_is_kept_alive () =
   send (get "/quiet");
   read_events_head r;
   check_string "the event" "event: said\ndata: hello\n\n" (read_chunk r);
-  after 15.;
+  after Mtime.Span.(15 * s);
   check_string "then, fifteen seconds on, a comment" ": keep-alive\n\n"
     (read_chunk r);
-  after 20.;
+  after Mtime.Span.(20 * s);
   Eio.Promise.resolve say_again ();
   check_string "an event" "event: said\ndata: again\n\n" (read_chunk r);
-  after 34.9;
+  after Mtime.Span.(34900 * ms);
   Eio.Promise.resolve say_third ();
   check_string "nothing due fifteen seconds after the comment"
     "event: said\ndata: third\n\n" (read_chunk r);
-  after 50.;
+  after Mtime.Span.(50 * s);
   check_string "only fifteen after the last event" ": keep-alive\n\n"
     (read_chunk r)
 
@@ -697,7 +697,7 @@ let test_an_idle_connection_is_closed () =
   connect @@ fun send r ->
   send (get "/hello/a");
   check_string "answered" "a" (read_answer r).body;
-  after 61.;
+  after Mtime.Span.(61 * s);
   check_bool "then closed once idle" true (closed r)
 
 (* A byte a second is inside every idle wait, but the body has twenty
@@ -707,10 +707,10 @@ let test_a_body_that_falls_behind_is_cut_off () =
   connect @@ fun send r ->
   send "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 1000\r\n\r\n";
   for second = 1 to 20 do
-    after (float_of_int second);
+    after Mtime.Span.(second * s);
     send "x"
   done;
-  after 21.;
+  after Mtime.Span.(21 * s);
   let a = read_answer r in
   check_int "unreadable" 400 a.status;
   check_bool "said as such" true
@@ -726,10 +726,10 @@ let test_a_body_kept_at_the_rate_is_read_whole () =
      the body to twenty-two seconds, and the part sent at nineteen to
      twenty-three -- which only its being read can pay for. *)
   send (part ^ part);
-  after 19.;
+  after Mtime.Span.(19 * s);
   send part;
-  after 21.;
-  after 22.5;
+  after Mtime.Span.(21 * s);
+  after Mtime.Span.(22500 * ms);
   send part;
   let a = read_answer r in
   check_int "read" 200 a.status;
@@ -887,10 +887,8 @@ let test_a_takeover_owns_the_connection_until_the_server_stops () =
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let stop, stopping = Eio.Promise.create () in
-  let drain_s = 0.5 in
-  let connect =
-    serve ~sw env ~stop ~drain_s (Spindle.Test.app [ echo_lines ])
-  in
+  let drain = Mtime.Span.(500 * ms) in
+  let connect = serve ~sw env ~stop ~drain (Spindle.Test.app [ echo_lines ]) in
   on_connection env connect @@ fun send r ->
   (* The first bytes of the new protocol arrive with the request. *)
   send
@@ -905,7 +903,7 @@ let test_a_takeover_owns_the_connection_until_the_server_stops () =
   send "pong\n";
   check_string "and after it" "pong" (Eio.Buf_read.line r);
   Eio.Promise.resolve stopping ();
-  Eio.Time.Mono.sleep (Eio.Stdenv.mono_clock env) drain_s;
+  Eio.Time.Mono.sleep_span (Eio.Stdenv.mono_clock env) drain;
   check_bool "ended by the stop as its drain ran out" true (closed r)
 
 (* ------------------------------------------------------------------ *)
@@ -950,10 +948,10 @@ let test_a_streamed_body_that_falls_behind_is_cut_off () =
   connect @@ fun send r ->
   send "POST /upload HTTP/1.1\r\nHost: t\r\nContent-Length: 1000\r\n\r\n";
   for second = 1 to 20 do
-    after (float_of_int second);
+    after Mtime.Span.(second * s);
     send "x"
   done;
-  after 21.;
+  after Mtime.Span.(21 * s);
   let a = read_answer r in
   check_int "unreadable" 400 a.status;
   check_bool "and closed" true (closed r)

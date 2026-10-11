@@ -29,10 +29,10 @@ type span = {
   parent_id : string option;  (** [None] for a trace's root *)
   name : string;
   kind : kind;
-  start_ns : int;  (** since the epoch, by the wall clock *)
-  end_ns : int;
-      (** its start and its length on the monotonic clock, so a wall clock that
-          jumps moves a span and never lengthens one *)
+  start : Ptime.t;  (** by the wall clock *)
+  duration : Mtime.Span.t;
+      (** on the monotonic clock, so a wall clock that jumps moves a span and
+          never lengthens one *)
   attributes : (string * value) list;
   status : status;
 }

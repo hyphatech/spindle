@@ -49,10 +49,10 @@ comment on column %s.expires_at is 'When the first of its idle and absolute limi
     t create_index t t t t t
 
 type statements = {
-  find : (string, (string * int * int * int) option) S.statement;
-  save : (string * string * int * int * int, unit) S.statement;
+  find : (string, (string * Ptime.t * Ptime.t * Ptime.t) option) S.statement;
+  save : (string * string * Ptime.t * Ptime.t * Ptime.t, unit) S.statement;
   delete : (string, unit) S.statement;
-  sweep : (int, int) S.statement;
+  sweep : (Ptime.t, int) S.statement;
 }
 
 let statements_for ~table =
@@ -60,14 +60,14 @@ let statements_for ~table =
   {
     find =
       S.find_opt ~params:S.text
-        ~row:S.(t4 text Instant.ms Instant.ms Instant.ms)
+        ~row:S.(t4 text instant instant instant)
         (Printf.sprintf
            "select data, created_at, seen_at, expires_at from %s where digest \
             = $1"
            t);
     save =
       S.exec
-        ~params:S.(t5 text text Instant.ms Instant.ms Instant.ms)
+        ~params:S.(t5 text text instant instant instant)
         (Printf.sprintf
            "insert into %s (digest, data, created_at, seen_at, expires_at) \
             values ($1, $2, $3, $4, $5) on conflict (digest) do update set \
@@ -78,7 +78,7 @@ let statements_for ~table =
       S.exec ~params:S.text
         (Printf.sprintf "delete from %s where digest = $1" t);
     sweep =
-      S.exec_count ~params:Instant.ms
+      S.exec_count ~params:S.instant
         (Printf.sprintf "delete from %s where expires_at <= $1" t);
   }
 
@@ -99,12 +99,12 @@ let store pool ~table =
     Spindle.Session.find =
       (fun digest ->
         Result.map
-          (Option.map (fun (data, created_ms, seen_ms, expires_ms) ->
-               { Spindle.Session.data; created_ms; seen_ms; expires_ms }))
+          (Option.map (fun (data, created, seen, expires) ->
+               { Spindle.Session.data; created; seen; expires }))
           (run s.find digest));
     save =
       (fun digest (e : Spindle.Session.entry) ->
-        run s.save (digest, e.data, e.created_ms, e.seen_ms, e.expires_ms));
+        run s.save (digest, e.data, e.created, e.seen, e.expires));
     delete = (fun digest -> run s.delete digest);
     sweep = (fun ~now -> run s.sweep now);
   }

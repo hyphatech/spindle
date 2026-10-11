@@ -7,7 +7,7 @@ module Range = Spindle_http.Range
 
 type validators = {
   tag : Etag.t;
-  modified_ms : int option;  (** where the representation has a date *)
+  modified : Ptime.t option;  (** where the representation has a date *)
 }
 
 type answer =
@@ -24,7 +24,8 @@ let joined_field req name =
   | values -> Some (String.concat ", " values)
 
 (* An HTTP-date is to the second. *)
-let to_seconds ms = if ms >= 0 then ms / 1000 else ((ms + 1) / 1000) - 1
+let to_seconds t = Ptime.truncate ~frac_s:0 t
+let not_after a b = not (Ptime.is_later a ~than:b)
 
 let date_field req name =
   Option.bind (joined_field req name) (Date.parse ~now:(Request.now req))
@@ -33,8 +34,8 @@ let date_field req name =
 let if_match_passes req v =
   match joined_field req "if-match" with
   | None -> (
-      match (date_field req "if-unmodified-since", v.modified_ms) with
-      | Some since, Some m -> to_seconds m <= to_seconds since
+      match (date_field req "if-unmodified-since", v.modified) with
+      | Some since, Some m -> not_after (to_seconds m) (to_seconds since)
       | (Some _ | None), (Some _ | None) -> true)
   | Some value -> (
       match Etag.condition value with
@@ -52,9 +53,9 @@ let client_has_current req v =
       | Ok (Etag.Tags tags) -> List.exists (Etag.weak_equal v.tag) tags
       | Error _ -> false)
   | None -> (
-      match (date_field req "if-modified-since", v.modified_ms) with
-      | Some since, Some m when since <= Request.now req ->
-          to_seconds m <= to_seconds since
+      match (date_field req "if-modified-since", v.modified) with
+      | Some since, Some m when not_after since (Request.now req) ->
+          not_after (to_seconds m) (to_seconds since)
       | (Some _ | None), (Some _ | None) -> false)
 
 (* §13.1.5: by a strong tag or the exact date; a weak tag never matches. A
@@ -72,8 +73,8 @@ let if_range_passes req v =
       | Ok tag -> Etag.strong_equal v.tag tag
       | Error _ -> false)
   | Some value -> (
-      match (Date.parse ~now:(Request.now req) value, v.modified_ms) with
-      | Some d, Some m -> to_seconds m = to_seconds d
+      match (Date.parse ~now:(Request.now req) value, v.modified) with
+      | Some d, Some m -> Ptime.equal (to_seconds m) (to_seconds d)
       | (Some _ | None), (Some _ | None) -> false)
 
 (* §14.2: only a GET, and only one range, in part; an empty representation
@@ -104,7 +105,7 @@ let representation_headers v ~headers =
   @ Option.to_list
       (Option.map
          (fun m -> ("last-modified", Spindle_http.Write.date m))
-         v.modified_ms)
+         v.modified)
   @ headers
 
 (* A 304 repeats the tag alone: RFC 9110 §15.4.5 repeats a date only where

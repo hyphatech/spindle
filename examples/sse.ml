@@ -19,24 +19,24 @@ type counting
 let count : (int, counting) Spindle.Event.kind =
   Spindle.Event.json "count" Wiretype.int
 
-let count_from ~clock n send =
+let count_from ~mono_clock n send =
   let rec go n =
     let* () = send (Spindle.Event.make ~id:(string_of_int n) count n) in
-    Eio.Time.sleep clock 1.0;
+    Eio.Time.Mono.sleep_span mono_clock Mtime.Span.s;
     go (n + 1)
   in
   go n
 
-let routes ~clock =
+let routes ~mono_clock =
   [
     Spindle.get
       Spindle.Path.(s "count")
       (Spindle.Returns.events Spindle.Event.[ declare count ])
       (let+ last = Spindle.Header.optional "last-event-id" Spindle.Codec.int in
-       Ok (count_from ~clock (Option.fold ~none:1 ~some:succ last)));
+       Ok (count_from ~mono_clock (Option.fold ~none:1 ~some:succ last)));
   ]
 
 let () =
   Spindle.Log.setup ();
   Eio_main.run @@ fun env ->
-  Spindle.serve env (routes ~clock:(Eio.Stdenv.clock env))
+  Spindle.serve env (routes ~mono_clock:(Eio.Stdenv.mono_clock env))

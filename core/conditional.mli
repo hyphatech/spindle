@@ -3,7 +3,7 @@
 
 type validators = {
   tag : Spindle_http.Etag.t;
-  modified_ms : int option;  (** where the representation has a date *)
+  modified : Ptime.t option;  (** where the representation has a date *)
 }
 
 (** What a request's preconditions and range come to. *)

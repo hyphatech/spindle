@@ -55,11 +55,15 @@ a reason.
 | `max_body` | 1 MiB | the body is `413` |
 | `body_budget` | 64 MiB | bodies held at once, across all requests; past it `503 busy` |
 | `max_header_bytes` | 16 KiB | the head is `431` (`414` for a long request line) |
-| `head_timeout_s` | 10 | a head still arriving is `408` |
-| `idle_timeout_s` | 60 | an idle connection is closed |
-| `body_timeout_s` | 20 | a body's allowance, which grows a second for every `min_body_rate` (500) bytes; a body that falls behind is closed |
-| `send_timeout_s` | 30 | a client that stops reading the answer is closed |
+| `head_timeout` | 10 s | a head still arriving is `408` |
+| `idle_timeout` | 60 s | an idle connection is closed |
+| `body_timeout` | 20 s | a body's allowance, which grows a second for every `min_body_rate` (500) bytes; a body that falls behind is closed |
+| `send_timeout` | 30 s | a client that stops reading the answer is closed |
 | `max_connections` | 512 | connections held at once, per address; the rest wait in `backlog` (128) |
+
+A wait is an `Mtime.Span.t`, named for what it bounds:
+`~send_timeout:Mtime.Span.(60 * s)`. One of zero is refused, as a server
+that would wait for nothing.
 
 A route that takes large uploads reads its body as a stream, with a limit of
 its own ([dependencies](../tutorial/dependencies.md#large-bodies)).
@@ -74,7 +78,7 @@ On the first SIGTERM or SIGINT:
 1. `~on_stop` runs. End your streams here -- an event stream or a broadcast
    never ends on its own.
 2. The server stops accepting connections.
-3. Requests in flight get `~drain_s` (10 seconds) to finish, each answered
+3. Requests in flight get `~drain` (10 s) to finish, each answered
    with `Connection: close`. A stream of known length -- a file -- counts
    as one until its last byte is sent; an event stream does not, since only
    `~on_stop` ends it.

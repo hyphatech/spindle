@@ -66,7 +66,7 @@ module Named : sig
   val sealed : 'a named -> bool
   (** Whether it is {!signed} or {!encrypted}. *)
 
-  val unseal : 'a named -> now:int -> string -> string option
+  val unseal : 'a named -> now:Ptime.t -> string -> string option
   (** The value a request carried for it, as its codec reads it: the value
       itself for a plain cookie, and for a sealed one what it sealed, if its
       signature, its seal and its age hold at [now]. *)

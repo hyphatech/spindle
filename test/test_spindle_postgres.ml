@@ -5,15 +5,16 @@ let ok = function
   | Ok v -> v
   | Error e -> Alcotest.failf "unexpected error: %s" (S.error_to_string e)
 
-let connect ?statement_timeout_ms target =
+let connect ?statement_timeout ?idle_in_transaction_timeout target =
   ok
     (Spindle_postgres.connect ~sw:(Db_target.sw ()) ~net:(Db_target.net ())
-       ~mono_clock:(Db_target.mono ()) ?statement_timeout_ms target)
+       ~mono_clock:(Db_target.mono ()) ?statement_timeout
+       ?idle_in_transaction_timeout target)
 
-let pool ?(size = 1) ?(wait_s = 2.) ?statement_cache target =
+let pool ?(size = 1) ?(wait = Mtime.Span.(2 * s)) ?statement_cache target =
   ok
     (Spindle_postgres.Pool.create ~sw:(Db_target.sw ()) ~net:(Db_target.net ())
-       ~mono_clock:(Db_target.mono ()) ~size ~wait_s ?statement_cache target)
+       ~mono_clock:(Db_target.mono ()) ~size ~wait ?statement_cache target)
 
 module T = Rowtype_postgres.Transaction
 
@@ -162,7 +163,7 @@ let test_an_exhausted_pool_is_a_warning () =
    has been answered, whatever either took. *)
 let test_a_held_pool_is_busy_then_serves () =
   Db_target.with_postgres (fun target ->
-      let pool = pool ~wait_s:0.2 target in
+      let pool = pool ~wait:Mtime.Span.(200 * ms) target in
       let answer = ref None in
       let held, hold = Eio.Promise.create ()
       and answered, answer_given = Eio.Promise.create () in
@@ -198,7 +199,7 @@ let test_a_held_pool_is_busy_then_serves () =
    patience, however fast the machine. *)
 let test_a_closed_pool_answers_closed_at_once () =
   Db_target.with_postgres (fun target ->
-      let pool = pool ~wait_s:600. target in
+      let pool = pool ~wait:Mtime.Span.(10 * min) target in
       Spindle_postgres.Pool.close pool;
       match
         Spindle_postgres.Pool.query pool (S.exec ~params:S.unit "select 1") ()
@@ -276,7 +277,8 @@ let test_a_pool_takes_the_drivers_options () =
 
 (* An instant goes into a timestamptz and comes back the same millisecond,
    before 1970 and on a day's edge as anywhere, through both of Postgres's
-   formats; one past what Ptime holds is written as the nearest it can. *)
+   formats: the text one reads it as a connection's DateStyle has the server
+   write it. *)
 let test_an_instant_reads_back_to_the_millisecond () =
   let day = 86_400_000 in
   (* Years 1 to 9999: Ptime's range, but for its year 0, which the column
@@ -310,22 +312,20 @@ let test_an_instant_reads_back_to_the_millisecond () =
                  ~net:(Db_target.net ()) ~mono_clock:(Db_target.mono ())
                  ?statement_cache target)
           in
-          let back ms =
+          let back t =
             ok
               (Pg.run db
-                 (S.find_opt ~params:Spindle_postgres.instant
-                    ~row:Spindle_postgres.instant "select $1::timestamptz")
-                 ms)
+                 (S.find_opt ~params:S.instant ~row:S.instant
+                    "select $1::timestamptz")
+                 t)
           in
           List.iter
             (fun ms ->
-              Alcotest.(check (option int))
+              let t = Instants.of_ms ms in
+              Alcotest.(check (option Instants.testable))
                 (Printf.sprintf "%d reads back" ms)
-                (Some ms) (back ms))
+                (Some t) (back t))
             (edges @ random);
-          Alcotest.(check (option int))
-            "past year 9999, the latest Ptime holds" (Some latest)
-            (back (latest + day));
           Pg.close db)
         [ None; Some 0 ])
 
@@ -339,18 +339,21 @@ let test_a_connection_that_keeps_no_statements_reads_text () =
              ~net:(Db_target.net ()) ~mono_clock:(Db_target.mono ())
              ~statement_cache:0 target)
       in
-      let shape = S.(t5 int float text bool Spindle_postgres.instant) in
+      let shape = S.(t5 int float text bool instant) in
+      let instant = Instants.of_ms 1_700_000_000_123 in
       let back =
         ok
           (Pg.run db
              (S.find_opt ~params:shape ~row:shape
                 "select $1::integer, $2::double precision, $3::text, \
                  $4::boolean, $5::timestamptz")
-             (42, 1.5, "hi", true, 1_700_000_000_123))
+             (42, 1.5, "hi", true, instant))
       in
       Pg.close db;
       match back with
-      | Some (42, f, "hi", true, 1_700_000_000_123) when Float.equal f 1.5 -> ()
+      | Some (42, f, "hi", true, t)
+        when Float.equal f 1.5 && Ptime.equal t instant ->
+          ()
       | Some _ -> Alcotest.fail "a value read in text is not what was sent"
       | None -> Alcotest.fail "no row")
 
@@ -500,7 +503,7 @@ let test_a_pool_says_how_it_stands () =
    re-established, where a SET after connecting would not. *)
 let test_a_revived_connection_keeps_its_bounds () =
   Db_target.with_postgres (fun target ->
-      let db = connect ~statement_timeout_ms:150 target in
+      let db = connect ~statement_timeout:Mtime.Span.(150 * ms) target in
       Fun.protect
         ~finally:(fun () -> Pg.close db)
         (fun () ->
@@ -546,6 +549,31 @@ let test_a_connection_is_bounded_by_default () =
             "an idle transaction" (Some "30s")
             (show "idle_in_transaction_session_timeout")))
 
+(* A bound is written in whole milliseconds, rounded up, as Postgres reads
+   one: a span under a millisecond is still a bound, never the 0 that lifts
+   it. *)
+let test_a_bound_is_whole_milliseconds_rounded_up () =
+  Db_target.with_postgres (fun target ->
+      let db =
+        connect
+          ~statement_timeout:Mtime.Span.(Mtime.Span.add (2_500 * ms) ns)
+          ~idle_in_transaction_timeout:Mtime.Span.ns target
+      in
+      Fun.protect
+        ~finally:(fun () -> Pg.close db)
+        (fun () ->
+          let show name =
+            ok
+              (Pg.run db
+                 (S.find_opt ~params:S.unit ~row:S.text ("show " ^ name))
+                 ())
+          in
+          Alcotest.(check (option string))
+            "a statement" (Some "2501ms") (show "statement_timeout");
+          Alcotest.(check (option string))
+            "an idle transaction" (Some "1ms")
+            (show "idle_in_transaction_session_timeout")))
+
 (* A borrow whose caller went away does not wait out its statement: the
    server is asked to stop it, and the one connection serves the next
    borrow. The statement would run for an hour, so a connection back within
@@ -555,7 +583,9 @@ let test_an_abandoned_query_is_stopped_at_the_server () =
       let mono = Db_target.mono () in
       let pool = pool target in
       (match
-         Eio.Time.Timeout.run (Eio.Time.Timeout.seconds mono 0.3) (fun () ->
+         Eio.Time.Timeout.run
+           (Eio.Time.Timeout.v mono Mtime.Span.(300 * ms))
+           (fun () ->
              Ok
                (Spindle_postgres.Pool.use pool (fun db ->
                     Pg.exec_raw db "select pg_sleep(3600)")))
@@ -610,7 +640,7 @@ let test_a_silent_server_is_given_up_on () =
       in
       match
         Spindle_postgres.connect ~sw:(Db_target.sw ()) ~net:(Db_target.net ())
-          ~mono_clock:(Db_target.mono ()) ~connect_timeout_s:1.
+          ~mono_clock:(Db_target.mono ()) ~connect_timeout:Mtime.Span.s
           (Printf.sprintf "postgres://nobody@127.0.0.1:%d/none?sslmode=disable"
              port)
       with
@@ -733,7 +763,7 @@ let test_a_refused_bracket_keeps_nothing_unless_it_says () =
    whatever the machine's speed. *)
 let test_a_stores_busy_pool_reads_as_the_pools_words () =
   Db_target.with_postgres (fun target ->
-      let pool = pool ~wait_s:0.05 target in
+      let pool = pool ~wait:Mtime.Span.(50 * ms) target in
       let store = Spindle_postgres.Session.store pool ~table:"sessions" in
       let answer =
         Spindle_postgres.Pool.use pool (fun _ -> Ok (store.find "d1"))
@@ -768,12 +798,12 @@ let test_sessions_are_kept_in_a_table () =
           let store =
             Spindle_postgres.Session.store (pool target) ~table:"sessions"
           in
-          let entry expires_ms =
+          let entry expires =
             {
               Spindle.Session.data = {|"kim"|};
-              created_ms = 1_000;
-              seen_ms = 2_000;
-              expires_ms;
+              created = Instants.of_ms 1_000;
+              seen = Instants.of_ms 2_000;
+              expires = Instants.of_ms expires;
             }
           in
           let got = function Ok v -> v | Error m -> Alcotest.fail m in
@@ -782,18 +812,22 @@ let test_sessions_are_kept_in_a_table () =
           (match got (store.find "d1") with
           | Some e ->
               Alcotest.(check string) "its data" {|"kim"|} e.data;
-              Alcotest.(check int)
-                "its instants, to the millisecond" 10_000 e.expires_ms
+              Alcotest.check Instants.testable
+                "its instants, to the millisecond" (Instants.of_ms 10_000)
+                e.expires
           | None -> Alcotest.fail "the session was not kept");
-          got (store.save "d1" { (entry 20_000) with seen_ms = 3_000 });
-          Alcotest.(check (option int))
-            "a save replaces" (Some 3_000)
+          got
+            (store.save "d1"
+               { (entry 20_000) with seen = Instants.of_ms 3_000 });
+          Alcotest.(check (option Instants.testable))
+            "a save replaces"
+            (Some (Instants.of_ms 3_000))
             (Option.map
-               (fun (e : Spindle.Session.entry) -> e.seen_ms)
+               (fun (e : Spindle.Session.entry) -> e.seen)
                (got (store.find "d1")));
           Alcotest.(check int)
             "a sweep deletes what has expired" 1
-            (got (store.sweep ~now:6_000));
+            (got (store.sweep ~now:(Instants.of_ms 6_000)));
           got (store.delete "d1");
           Alcotest.(check bool)
             "and a delete, what it names" true
@@ -827,9 +861,9 @@ let test_a_reserved_word_is_a_table's_name () =
             (store.save "d1"
                {
                  Spindle.Session.data = {|"kim"|};
-                 created_ms = 1_000;
-                 seen_ms = 2_000;
-                 expires_ms = 10_000;
+                 created = Instants.of_ms 1_000;
+                 seen = Instants.of_ms 2_000;
+                 expires = Instants.of_ms 10_000;
                });
           Alcotest.(check (option string))
             "kept in it" (Some {|"kim"|})
@@ -889,6 +923,8 @@ let () =
             `Quick test_a_cancelled_run_pool_passes_the_cancellation_on;
           Alcotest.test_case "a connection that keeps no statements reads text"
             `Quick test_a_connection_that_keeps_no_statements_reads_text;
+          Alcotest.test_case "a bound is whole milliseconds, rounded up" `Quick
+            test_a_bound_is_whole_milliseconds_rounded_up;
           Alcotest.test_case "an instant reads back to the millisecond" `Quick
             test_an_instant_reads_back_to_the_millisecond;
           Alcotest.test_case "a statement is a span" `Quick

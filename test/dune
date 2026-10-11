@@ -1,7 +1,8 @@
 ; Spindle's suites, and the Postgres kit's against SPINDLE_TEST_PG. Another
 ; server a test stands in is stub_server.ml; a database of a case's own is
 ; db_target.ml; a server on virtual time, and connections to it in memory,
-; is in_memory.ml; a certificate, and TLS before a server, is tls_front.ml.
+; is in_memory.ml; a certificate, and TLS before a server, is tls_front.ml;
+; an instant a row gives in milliseconds is instants.ml.
 
 (tests
  (names
@@ -31,6 +32,8 @@
   eio_main
   eio.mock
   mtime
+  ptime
+  ptime.clock.os
   uri
   yojson
   alcotest
@@ -48,7 +51,6 @@
   tls
   tls-eio
   x509
-  ptime
   mirage-crypto-rng.unix
   base64
   unix)
@@ -86,6 +88,11 @@
   (glob_files ../postgres/*.mli)
   (glob_files ../cli/*.ml)
   (glob_files ../cli/*.mli)
+  ; The tests and the examples, held to the rules on time.
+  (glob_files *.ml)
+  (glob_files ../examples/*.ml)
+  (glob_files ../examples/pages/*.ml)
+  (glob_files ../examples/pages/*.mlx)
   ; Every example built, and every page that may include one.
   ../examples/dune
   (glob_files_rec ../docs/*.md)))

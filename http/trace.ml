@@ -8,8 +8,8 @@ type span = Context.span = {
   parent_id : string option;
   name : string;
   kind : kind;
-  start_ns : int;
-  end_ns : int;
+  start : Ptime.t;
+  duration : Mtime.Span.t;
   attributes : (string * value) list;
   status : status;
 }
@@ -20,11 +20,8 @@ let exporter ?(ratio = 1.) ~clock ~mono_clock record =
   {
     Context.record;
     ratio;
-    wall_ns =
-      (fun () -> Int64.to_int (Int64.of_float (Eio.Time.now clock *. 1e9)));
-    mono_ns =
-      (fun () ->
-        Int64.to_int (Mtime.to_uint64_ns (Eio.Time.Mono.now mono_clock)));
+    wall = (fun () -> Instant.of_clock clock);
+    mono = (fun () -> Eio.Time.Mono.now mono_clock);
   }
 
 type recording = Context.recording option

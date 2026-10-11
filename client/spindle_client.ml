@@ -53,10 +53,10 @@ type t = {
           {!create} is total and the failure arrives from {!call} like any other
       *)
   clock : Eio.Time.Mono.ty Eio.Resource.t;
-  timeout_s : float;
+  timeout : Mtime.Span.t;
   max_body : int;
   per_host : int;
-  idle_s : float;
+  idle_timeout : Mtime.Span.t;
   domain : Domain.id;  (** [sw]'s *)
   idle : (string, connection list) Hashtbl.t Domain.DLS.key;
       (** by scheme, host and port, one table per domain, so a call borrows only
@@ -69,11 +69,11 @@ type response = {
   body : string;
 }
 
-type error = Unreachable of string | Timeout of float
+type error = Unreachable of string | Timeout of Mtime.Span.t
 
 let error_to_string = function
   | Unreachable m -> m
-  | Timeout s -> Printf.sprintf "no answer within %.0fs" s
+  | Timeout span -> Format.asprintf "no answer within %a" Mtime.Span.pp span
 
 (* Four times what the server allows a request's head. *)
 let max_head = 65_536
@@ -92,29 +92,30 @@ let tls ~authenticator =
       | Error (`Msg m) -> Error ("cannot configure TLS: " ^ m)
       | Ok config -> Ok config)
 
-let create ~sw ~net ~mono_clock:clock ?(timeout_s = 30.)
-    ?(max_body = 16_777_216) ?(per_host = 4) ?(idle_s = 15.) ?authenticator () =
+let create ~sw ~net ~mono_clock:clock ?(timeout = Mtime.Span.(30 * s))
+    ?(max_body = 16_777_216) ?(per_host = 4)
+    ?(idle_timeout = Mtime.Span.(15 * s)) ?authenticator () =
   {
     sw;
     net :> [ `Generic ] Eio.Net.ty Eio.Resource.t;
     tls = tls ~authenticator;
     clock :> Eio.Time.Mono.ty Eio.Resource.t;
-    timeout_s;
+    timeout;
     max_body;
     per_host;
-    idle_s;
+    idle_timeout;
     domain = Domain.self ();
     idle = Domain.DLS.new_key (fun () -> Hashtbl.create 8);
   }
 
 (* Watches are daemons, so nothing idle holds the switch open; ending it
    closes what was kept. *)
-let run ?timeout_s ?max_body ?per_host ?idle_s ?authenticator env f =
+let run ?timeout ?max_body ?per_host ?idle_timeout ?authenticator env f =
   Eio.Switch.run @@ fun sw ->
   f
     (create ~sw ~net:(Eio.Stdenv.net env)
        ~mono_clock:(Eio.Stdenv.mono_clock env)
-       ?timeout_s ?max_body ?per_host ?idle_s ?authenticator ())
+       ?timeout ?max_body ?per_host ?idle_timeout ?authenticator ())
 
 let idle_connections t = Domain.DLS.get t.idle
 
@@ -349,7 +350,7 @@ let keep_idle t k c ~idle_for =
               (fun () ->
                 Eio.Fiber.first
                   (fun () ->
-                    Eio.Time.Mono.sleep t.clock idle_for;
+                    Eio.Time.Mono.sleep_span t.clock idle_for;
                     true)
                   (fun () ->
                     Eio.Promise.await stopped;
@@ -468,8 +469,7 @@ let keep_alive_timeout headers =
   | values -> (
       match Spindle_http.Cache_control.parse (String.concat ", " values) with
       | Ok elements ->
-          Option.map float_of_int
-            (Spindle_http.Cache_control.delta_seconds elements "timeout")
+          Spindle_http.Cache_control.delta_seconds elements "timeout"
       | Error _ -> None)
 
 (* [None] where either side said close or the body ended with the connection
@@ -483,9 +483,14 @@ let keep_idle_for t (head : Head.Response.t) framing ~caller_closes =
       if caller_closes || not (Head.Response.keep_alive head) then None
       else
         match keep_alive_timeout head.headers with
-        | Some s when s <= 1. -> None
-        | Some s -> Some (Float.min (s -. 1.) t.idle_s)
-        | None -> Some t.idle_s)
+        | Some seconds when seconds <= 1 -> None
+        | Some seconds ->
+            let before_server = Mtime.Span.((seconds - 1) * s) in
+            Some
+              (if Mtime.Span.is_shorter before_server ~than:t.idle_timeout then
+                 before_server
+               else t.idle_timeout)
+        | None -> Some t.idle_timeout)
 
 let receive_response t c meth ~caller_closes =
   let head = read_final_head c ~first:true in
@@ -602,16 +607,16 @@ let within_client_span meth uri f =
       in
       f ~answered ~failed)
 
-let call t ?timeout_s ?(headers = []) ?body meth url =
+let call t ?timeout ?(headers = []) ?body meth url =
   let uri = Uri.of_string url in
   within_client_span meth uri @@ fun ~answered ~failed ->
-  let deadline = Option.value timeout_s ~default:t.timeout_s in
+  let deadline = Option.value timeout ~default:t.timeout in
   let started = Eio.Time.Mono.now t.clock in
   let reused = ref false in
   let result =
     match
-      Eio.Time.Timeout.run (Eio.Time.Timeout.seconds t.clock deadline)
-        (fun () -> Ok (exchange t ~headers ~body meth (target_of uri) ~reused))
+      Eio.Time.Timeout.run (Eio.Time.Timeout.v t.clock deadline) (fun () ->
+          Ok (exchange t ~headers ~body meth (target_of uri) ~reused))
     with
     | Ok answer -> Ok answer
     | Error `Timeout -> Error (Timeout deadline)
@@ -620,15 +625,15 @@ let call t ?timeout_s ?(headers = []) ?body meth url =
         match error_of_exn ex with Some e -> Error e | None -> raise ex)
   in
   L.debug (fun m ->
-      m "%s %s: %s on a %s connection  (%.0f ms)"
+      m "%s %s: %s on a %s connection  (%a)"
         (Spindle_http.Meth.to_string meth)
         (Option.value (Uri.host uri) ~default:"?")
         (match result with
         | Ok r -> string_of_int r.status
         | Error e -> error_to_string e)
         (if !reused then "reused" else "new")
-        (Mtime.Span.to_float_ns (Mtime.span started (Eio.Time.Mono.now t.clock))
-        /. 1e6));
+        Mtime.Span.pp
+        (Mtime.span started (Eio.Time.Mono.now t.clock)));
   (match result with Ok r -> answered r.status | Error e -> failed e);
   result
 
@@ -639,7 +644,7 @@ module Body = struct
   type t = {
     reader : Framing.reader;
     clock : Eio.Time.Mono.ty Eio.Resource.t;
-    wait_s : float;
+    wait : Mtime.Span.t;
     mutable state : state;
     mutable function_returned : bool;
   }
@@ -664,13 +669,12 @@ module Body = struct
       | Failed e -> Error e
       | Reading -> (
           match
-            Eio.Time.Timeout.run (Eio.Time.Timeout.seconds b.clock b.wait_s)
-              (fun () ->
+            Eio.Time.Timeout.run (Eio.Time.Timeout.v b.clock b.wait) (fun () ->
                 Ok
                   (Framing.read_some b.reader ~max:max_int ~reserve:(fun _ ->
                        true)))
           with
-          | Error `Timeout -> failed (Timeout b.wait_s)
+          | Error `Timeout -> failed (Timeout b.wait)
           | Ok (Ok (`Data s)) -> Ok (`Data s)
           | Ok (Ok `End) ->
               b.state <- Ended;
@@ -720,11 +724,11 @@ let open_answer t ~headers ~body meth target =
   attempt ~fresh:false
 
 (* The span includes the reading: a stream's length is its cost. *)
-let stream t ?timeout_s ?read_timeout_s ?(headers = []) ?body meth url f =
+let stream t ?timeout ?read_timeout ?(headers = []) ?body meth url f =
   let uri = Uri.of_string url in
   within_client_span meth uri @@ fun ~answered ~failed ->
-  let deadline = Option.value timeout_s ~default:t.timeout_s in
-  let wait_s = Option.value read_timeout_s ~default:deadline in
+  let deadline = Option.value timeout ~default:t.timeout in
+  let wait = Option.value read_timeout ~default:deadline in
   let caller_closes = Field.has_element headers "connection" "close" in
   (* Rather than [Timeout.run], which keeps the first of two fibers that
      finish in one step: an answer that arrived as the deadline passed
@@ -737,7 +741,7 @@ let stream t ?timeout_s ?read_timeout_s ?(headers = []) ?body meth url f =
   match
     Eio.Fiber.first ~combine:answer_if_any
       (fun () ->
-        Eio.Time.Mono.sleep t.clock deadline;
+        Eio.Time.Mono.sleep_span t.clock deadline;
         Error `Timeout)
       (fun () ->
         let target = target_of uri in
@@ -765,7 +769,7 @@ let stream t ?timeout_s ?read_timeout_s ?(headers = []) ?body meth url f =
               Body.reader =
                 Framing.reader framing c.reader ~max_trailer:max_head;
               clock = t.clock;
-              wait_s;
+              wait;
               state = Reading;
               function_returned = false;
             }
@@ -803,8 +807,8 @@ let is_event_stream headers =
   | Some (Ok { type_ = "text"; subtype = "event-stream"; _ }) -> true
   | Some (Ok _ | Error _) | None -> false
 
-let events t ?timeout_s ?read_timeout_s ?(headers = []) ?last_event_id url
-    on_event =
+let events t ?timeout ?read_timeout ?(headers = []) ?last_event_id url on_event
+    =
   let headers =
     [ ("Accept", "text/event-stream"); ("Cache-Control", "no-cache") ]
     @ (match last_event_id with
@@ -813,7 +817,7 @@ let events t ?timeout_s ?read_timeout_s ?(headers = []) ?last_event_id url
     @ headers
   in
   Result.join
-    (stream t ?timeout_s ?read_timeout_s ~headers `GET url (fun a ->
+    (stream t ?timeout ?read_timeout ~headers `GET url (fun a ->
          if not (a.status = 200 && is_event_stream a.headers) then
            (* Not a stream: the answer, read whole as a call's is. *)
            let b = Buffer.create 256 in
@@ -931,11 +935,11 @@ let refusal_body t c (head : Head.Response.t) =
 
 (* A socket's own writer rather than [Buf_write.with_flow], which waits for
    everything written to go: to a server that stopped reading, a wait with
-   no end. What is left once [f] returns has [send_timeout_s] for the server
+   no end. What is left once [f] returns has [send_timeout] for the server
    to take anything, again after every byte it takes, and is then dropped
    with the connection. A write the socket refuses aborts the buffer, so the
    send waiting on it answers rather than raising. *)
-let with_socket_writer t ~send_timeout_s c f =
+let with_socket_writer t ~send_timeout c f =
   Eio.Switch.run @@ fun sw ->
   let writer = Eio.Buf_write.create ~sw 4096 in
   let taken = ref 0 in
@@ -960,8 +964,8 @@ let with_socket_writer t ~send_timeout_s c f =
   let rec drain () =
     let before = !taken in
     match
-      Eio.Time.Timeout.run (Eio.Time.Timeout.seconds t.clock send_timeout_s)
-        (fun () -> Ok (Eio.Promise.await copied))
+      Eio.Time.Timeout.run (Eio.Time.Timeout.v t.clock send_timeout) (fun () ->
+          Ok (Eio.Promise.await copied))
     with
     | Ok () -> ()
     | Error `Timeout -> if !taken > before then drain ()
@@ -969,15 +973,14 @@ let with_socket_writer t ~send_timeout_s c f =
   drain ();
   v
 
-let open_websocket t ?timeout_s ?(headers = []) ?keep_alive_s ?max_message
-    protocol url f =
-  let deadline = Option.value timeout_s ~default:t.timeout_s in
+let open_websocket t ?timeout ?(headers = []) ?keep_alive ?max_message protocol
+    url f =
+  let deadline = Option.value timeout ~default:t.timeout in
   let key = Base64.encode_string (Mirage_crypto_rng.generate 16) in
   Eio.Switch.run @@ fun sw ->
   let opened =
     match
-      Eio.Time.Timeout.run (Eio.Time.Timeout.seconds t.clock deadline)
-        (fun () ->
+      Eio.Time.Timeout.run (Eio.Time.Timeout.v t.clock deadline) (fun () ->
           (match
              List.find_opt
                (fun (n, _) ->
@@ -1042,15 +1045,15 @@ let open_websocket t ?timeout_s ?(headers = []) ?keep_alive_s ?max_message
           Error (Failed (Unreachable m))
       | Ok () ->
           let ended =
-            with_socket_writer t ~send_timeout_s:deadline c (fun writer ->
-                Websocket.run_client ?keep_alive_s ?max_message
+            with_socket_writer t ~send_timeout:deadline c (fun writer ->
+                Websocket.run_client ?keep_alive ?max_message
                   ~mask:(fun () -> Mirage_crypto_rng.generate 4)
                   protocol
                   {
                     Spindle_http.Connection.reader = c.reader;
                     writer;
                     clock = t.clock;
-                    send_timeout_s = deadline;
+                    send_timeout = deadline;
                     stopping = fst (Eio.Promise.create ());
                   }
                   f)
@@ -1060,11 +1063,10 @@ let open_websocket t ?timeout_s ?(headers = []) ?keep_alive_s ?max_message
 
 (* One line when it ends: a warning when it never opened or did not end
    cleanly. Never the query, which may carry a credential. *)
-let websocket t ?timeout_s ?headers ?keep_alive_s ?max_message protocol url f =
+let websocket t ?timeout ?headers ?keep_alive ?max_message protocol url f =
   let started = Eio.Time.Mono.now t.clock in
   let result =
-    open_websocket t ?timeout_s ?headers ?keep_alive_s ?max_message protocol url
-      f
+    open_websocket t ?timeout ?headers ?keep_alive ?max_message protocol url f
   in
   let uri = Uri.of_string url in
   let host = Option.value (Uri.host uri) ~default:"?" in
@@ -1107,7 +1109,7 @@ module Otlp = struct
 
   let batch_size = 512
   let queue_limit = 2048
-  let send_interval_s = 5.
+  let send_interval = Mtime.Span.(5 * s)
 
   (* Filled from every domain, so behind a lock held only for a push or a
      take. [full] wakes the sender when a batch is waiting. *)
@@ -1161,6 +1163,14 @@ module Otlp = struct
   let attribute (k, v) =
     V.Object [ ("key", V.String k); ("value", attribute_value v) ]
 
+  (* Nanoseconds since 1970, which 64 bits hold to the year 2262. *)
+  let unix_nano t =
+    let d, ps = Ptime.Span.to_d_ps (Ptime.to_span t) in
+    Int64.to_string
+      (Int64.add
+         (Int64.mul (Int64.of_int d) 86_400_000_000_000L)
+         (Int64.div ps 1_000L))
+
   let span (s : Trace.span) =
     V.Object
       ([ ("traceId", V.String s.trace_id); ("spanId", V.String s.span_id) ]
@@ -1175,8 +1185,10 @@ module Otlp = struct
               | Trace.Internal -> 1.
               | Trace.Server -> 2.
               | Trace.Client -> 3.) );
-          ("startTimeUnixNano", V.String (string_of_int s.start_ns));
-          ("endTimeUnixNano", V.String (string_of_int s.end_ns));
+          ("startTimeUnixNano", V.String (unix_nano s.start));
+          ( "endTimeUnixNano",
+            V.String (unix_nano (Spindle_http.Instant.add s.start s.duration))
+          );
           ("attributes", V.Array (List.map attribute s.attributes));
           ( "status",
             V.Object
@@ -1274,7 +1286,7 @@ module Otlp = struct
         Eio.Fiber.any
           [
             (fun () ->
-              Eio.Time.Mono.sleep client.clock send_interval_s;
+              Eio.Time.Mono.sleep_span client.clock send_interval;
               false);
             (fun () ->
               (* Asked again after each wake, and registered before it is

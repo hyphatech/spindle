@@ -55,7 +55,7 @@ let certificate =
     let authenticator : X509.Authenticator.t =
      fun ?ip ~host chain ->
       X509.Validation.trust_key_fingerprint ?ip ~host
-        ~time:(fun () -> Ptime.of_float_s (Unix.gettimeofday ()))
+        ~time:(fun () -> Some (Ptime_clock.now ()))
         ~hash:`SHA256 ~fingerprint chain
     in
     (config, authenticator)

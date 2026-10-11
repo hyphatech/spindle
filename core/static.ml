@@ -153,7 +153,7 @@ let choose_representation t req f =
    and is answered as it is. *)
 let answer_file t req f =
   let f, coding_headers = choose_representation t req f in
-  let v = { Conditional.tag = f.tag; modified_ms = None }
+  let v = { Conditional.tag = f.tag; modified = None }
   and headers =
     ("cache-control", f.cache) :: File_types.nosniff :: coding_headers
   and length = String.length f.body in

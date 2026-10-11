@@ -28,9 +28,9 @@ let empty_response ~statuses : (Status.t, Refusal.t) result t =
 
 let response : (Response.t, Refusal.t) result t = Response
 
-let events ?keep_alive_s declared : (_ Event.stream, Refusal.t) result t =
-  Events { declared; keep_alive_s }
+let events ?keep_alive declared : (_ Event.stream, Refusal.t) result t =
+  Events { declared; keep_alive }
 
-let websocket ?keep_alive_s ?max_message protocol :
+let websocket ?keep_alive ?max_message protocol :
     ((_, _) Websocket.t -> (unit, Websocket.error) result, Refusal.t) result t =
-  Websocket { protocol; keep_alive_s; max_message }
+  Websocket { protocol; keep_alive; max_message }

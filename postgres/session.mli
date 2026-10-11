@@ -7,7 +7,9 @@
     let sessions =
       Spindle.Session.create
         ~store:(Spindle_postgres.Session.store pool ~table:"sessions")
-        ~idle_s:(14 * 86400) ~absolute_s:(90 * 86400) visit_json
+        ~idle:Mtime.Span.(14 * day)
+        ~absolute:Mtime.Span.(90 * day)
+        visit_json
     ]}
 
     The table is the application's, made by a migration of its own, since

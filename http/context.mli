@@ -13,8 +13,8 @@ type span = {
   parent_id : string option;
   name : string;
   kind : kind;
-  start_ns : int;
-  end_ns : int;
+  start : Ptime.t;
+  duration : Mtime.Span.t;
   attributes : (string * value) list;
   status : status;
 }
@@ -22,13 +22,13 @@ type span = {
 type exporter = {
   record : span -> unit;
   ratio : float;
-  wall_ns : unit -> int;
-  mono_ns : unit -> int;
+  wall : unit -> Ptime.t;
+  mono : unit -> Mtime.t;
 }
 
 type recording = {
   exporter : exporter;
-  started_mono : int;
+  started_mono : Mtime.t;
   mutable span : span;
 }
 (** A span begun and not yet ended, written only by the fiber that began it. *)

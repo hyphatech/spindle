@@ -135,7 +135,7 @@ val accept_key : string -> string
 (** [Sec-WebSocket-Accept] for a [Sec-WebSocket-Key] (§4.2.2). *)
 
 val run_server :
-  ?keep_alive_s:float ->
+  ?keep_alive:Mtime.Span.t ->
   ?max_message:int ->
   ('c, 's) protocol ->
   Connection.t ->
@@ -143,7 +143,7 @@ val run_server :
   ('a, error) result
 
 val run_client :
-  ?keep_alive_s:float ->
+  ?keep_alive:Mtime.Span.t ->
   ?max_message:int ->
   mask:(unit -> string) ->
   ('c, 's) protocol ->
@@ -154,7 +154,7 @@ val run_client :
     [Ok] is [Normal], an [Unreadable] is [Invalid_data], and a socket already
     closed or lost has nothing left to close; a close sent waits a second for
     the peer's. [f] raising closes it with [Internal], and the raise goes on. A
-    ping goes when nothing has been heard for [keep_alive_s] (15), and a peer
+    ping goes when nothing has been heard for [keep_alive] (15 s), and a peer
     silent for twice that is [Lost]; a message longer than [max_message] (1 MiB)
     closes it with [Too_big]. [mask] makes each frame's four bytes of masking,
     which must be unpredictable (§5.3); a mask of another length is our bug:

@@ -37,6 +37,8 @@
   eio
   eio_main
   wiretype
+  mtime
+  ptime
   logs)
  (preprocess
   (pps ppx_wiretype)))

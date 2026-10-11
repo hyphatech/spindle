@@ -58,8 +58,8 @@ let answer_checked app req ~body =
 (* What the server reads at once. *)
 let part_bytes = 65_536
 
-let call ?(now = 0) ?(peer = "127.0.0.1") ?proxied ?proxy_header ?version
-    ?(headers = []) ?body app meth target =
+let call ?(now = Ptime.epoch) ?(peer = "127.0.0.1") ?proxied ?proxy_header
+    ?version ?(headers = []) ?body app meth target =
   let req =
     Request.make ~peer ?proxied ?proxy_header ?version ~headers
       ~now:(fun () -> now)
@@ -131,7 +131,7 @@ module Browser = struct
     name : string;
     value : string;
     path : string;
-    expires : int option;  (** the call's [now] past which it is dropped *)
+    expires : Ptime.t option;  (** the call's [now] past which it is dropped *)
   }
 
   type t = { app : App.t; mutable jar : cookie list }
@@ -204,14 +204,23 @@ module Browser = struct
                     name;
                     value;
                     path;
-                    expires = Option.map (fun n -> now + (n * 1000)) max_age;
+                    expires =
+                      Option.map
+                        (fun n ->
+                          Option.value
+                            (Ptime.add_span now (Ptime.Span.of_int_s n))
+                            ~default:Ptime.max)
+                        max_age;
                   };
                 ])
 
-  let call ?(now = 0) ?peer ?(headers = []) ?body b meth target =
+  let call ?(now = Ptime.epoch) ?peer ?(headers = []) ?body b meth target =
     b.jar <-
       List.filter
-        (fun c -> match c.expires with Some e -> e > now | None -> true)
+        (fun c ->
+          match c.expires with
+          | Some e -> Ptime.is_later e ~than:now
+          | None -> true)
         b.jar;
     let path = path_of target in
     (* Longer paths first, as RFC 6265 §5.4 has a browser order them. *)
@@ -247,7 +256,7 @@ let browser app = { Browser.app; jar = [] }
 (* ------------------------------------------------------------------ *)
 (* An events route, read an event at a time *)
 
-let events ?(now = 0) ?(headers = []) app target f =
+let events ?(now = Ptime.epoch) ?(headers = []) app target f =
   let req =
     Request.make ~peer:"127.0.0.1"
       ~headers:(("accept", "text/event-stream") :: headers)
@@ -296,7 +305,7 @@ type websocket_error = Refused of response | Ended of Websocket.error
 
 (* Over a socket pair, on a clock that never moves, so a keep-alive or a
    limit fires only in a test that moves it. *)
-let websocket ?(now = 0) ?(headers = []) app protocol target f =
+let websocket ?(now = Ptime.epoch) ?(headers = []) app protocol target f =
   let offered =
     match Websocket.subprotocol protocol with
     | Some n -> [ ("sec-websocket-protocol", n) ]
@@ -332,7 +341,7 @@ let websocket ?(now = 0) ?(headers = []) app protocol target f =
                 Response.reader = Eio.Buf_read.of_flow flow ~max_size:part_bytes;
                 writer;
                 clock;
-                send_timeout_s = 10.;
+                send_timeout = Mtime.Span.(10 * s);
                 stopping = fst (Eio.Promise.create ());
               })
         |> fun result ->

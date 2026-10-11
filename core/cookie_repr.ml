@@ -10,7 +10,7 @@ type t = {
   max_age : int option;
   http_only : bool;
   same_site : same_site;
-  seal : (now:int -> string -> string) option;
+  seal : (now:Ptime.t -> string -> string) option;
       (** a signed or encrypted cookie's value as written at that instant *)
 }
 
@@ -51,8 +51,8 @@ let is_valid_path p =
 
 (* Stamped with the instant it was made; reading holds it to its age. *)
 type sealer = {
-  seal : now:int -> string -> string;
-  unseal : now:int -> string -> string option;
+  seal : now:Ptime.t -> string -> string;
+  unseal : now:Ptime.t -> string -> string option;
 }
 
 (* Declared once and used both ways, so the name has one spelling and the
@@ -128,14 +128,21 @@ let make ?path ?max_age_s ?http_only ?same_site n v =
 (* Signed: stamp, value and a MAC over the name, stamp and value, joined by
    dots, so a value cannot move to another cookie or change its stamp.
    Encrypted: stamp and value sealed with the name as associated data. *)
-let seconds_of_ms now = now / 1000
-let is_expired ~age_s ~now stamp = seconds_of_ms now - stamp > age_s
+let stamp_of now =
+  let d, ps = Ptime.Span.to_d_ps (Ptime.to_span now) in
+  string_of_int ((d * 86_400) + Int64.to_int (Int64.div ps 1_000_000_000_000L))
+
+(* The stamp is to the second, and so is its age read. *)
+let is_expired ~age_s ~now stamp =
+  match Ptime.of_span (Ptime.Span.of_int_s (stamp + age_s)) with
+  | Some last -> Ptime.is_later (Ptime.truncate ~frac_s:0 now) ~than:last
+  | None -> true
 
 let signed ring ~max_age_s name codec =
   let cookie = checked_name name in
   let signed_payload stamp v = String.concat "\000" [ cookie; stamp; v ] in
   let seal ~now v =
-    let stamp = string_of_int (seconds_of_ms now) in
+    let stamp = stamp_of now in
     String.concat "."
       [ stamp; encode v; encode (Key.sign ring (signed_payload stamp v)) ]
   in
@@ -155,9 +162,7 @@ let signed ring ~max_age_s name codec =
 let encrypted ring ~max_age_s name codec =
   let cookie = checked_name name in
   let seal ~now v =
-    encode
-      (Key.seal ring ~adata:cookie
-         (string_of_int (seconds_of_ms now) ^ "." ^ v))
+    encode (Key.seal ring ~adata:cookie (stamp_of now ^ "." ^ v))
   in
   let unseal ~now raw =
     match Option.bind (decode raw) (Key.unseal ring ~adata:cookie) with

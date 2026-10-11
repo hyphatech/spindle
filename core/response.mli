@@ -22,10 +22,10 @@ type gone =
           time after. *)
 
 type keep_alive = {
-  quiet_s : float;
+  quiet : Mtime.Span.t;
   filler : string;
-      (** written whenever nothing else has been for [quiet_s] seconds, so a
-          quiet stream is not closed as idle by something in between *)
+      (** written whenever nothing else has been for [quiet], so a quiet stream
+          is not closed as idle by something in between *)
 }
 
 type stream = {
@@ -39,7 +39,7 @@ type connection = Spindle_http.Connection.t = {
   reader : Eio.Buf_read.t;
   writer : Eio.Buf_write.t;
   clock : Eio.Time.Mono.ty Eio.Resource.t;
-  send_timeout_s : float;
+  send_timeout : Mtime.Span.t;
   stopping : unit Eio.Promise.t;
 }
 (** A connection once a protocol spoken after HTTP has it: see {!takeover}. The
@@ -120,14 +120,14 @@ val stream :
 
 val events :
   ?headers:(string * string) list ->
-  ?keep_alive_s:float ->
+  ?keep_alive:Mtime.Span.t ->
   ((string -> (unit, gone) result) -> (unit, gone) result) ->
   t
 (** {!val-stream}, as Server-Sent Events: [text/event-stream], and nothing
     between here and the browser allowed to hold on to it. What is sent is the
     events, already spelled; the framework writes the framing, and a
-    [: keep-alive] comment whenever nothing has been sent for [keep_alive_s]
-    (15) seconds. *)
+    [: keep-alive] comment whenever nothing has been sent for [keep_alive] (15
+    s). *)
 
 val takeover :
   protocol:string ->

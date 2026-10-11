@@ -9,16 +9,16 @@ val create :
   net:_ Eio.Net.t ->
   mono_clock:_ Eio.Time.Mono.t ->
   ?size:int ->
-  ?wait_s:float ->
-  ?statement_timeout_ms:int ->
-  ?idle_in_transaction_timeout_ms:int ->
-  ?connect_timeout_s:float ->
+  ?wait:Mtime.Span.t ->
+  ?statement_timeout:Mtime.Span.t ->
+  ?idle_in_transaction_timeout:Mtime.Span.t ->
+  ?connect_timeout:Mtime.Span.t ->
   ?parameters:(string * string) list ->
-  ?timeout_s:float ->
+  ?timeout:Mtime.Span.t ->
   ?statement_cache:int ->
   ?reset:bool ->
-  ?max_lifetime_s:float ->
-  ?idle_check_s:float ->
+  ?max_lifetime:Mtime.Span.t ->
+  ?idle_check:Mtime.Span.t ->
   string ->
   (t, [> Rowtype.error ]) result
 (** The pool [Rowtype_postgres.Pool.create] makes, to the database the
@@ -26,7 +26,7 @@ val create :
     bounds and [parameters] are {!Spindle_postgres.connect}'s. *)
 
 val use :
-  ?wait_s:float ->
+  ?wait:Mtime.Span.t ->
   t ->
   (Rowtype_postgres.conn ->
   ('a, ([> `Pool of [ `Busy | `Closed ] ] as 'e)) result) ->
@@ -39,7 +39,7 @@ val use :
     {!Spindle_postgres.refusal} words both. *)
 
 val query :
-  ?wait_s:float ->
+  ?wait:Mtime.Span.t ->
   t ->
   ('p, 'r) Rowtype.statement ->
   'p ->
@@ -53,7 +53,7 @@ val query :
     ]} *)
 
 val transaction :
-  ?wait_s:float ->
+  ?wait:Mtime.Span.t ->
   ?keep:('e -> bool) ->
   ?isolation:Rowtype_postgres.Transaction.isolation ->
   ?retries:int ->
@@ -114,16 +114,16 @@ val close : t -> unit
 
 val run :
   ?size:int ->
-  ?wait_s:float ->
-  ?statement_timeout_ms:int ->
-  ?idle_in_transaction_timeout_ms:int ->
-  ?connect_timeout_s:float ->
+  ?wait:Mtime.Span.t ->
+  ?statement_timeout:Mtime.Span.t ->
+  ?idle_in_transaction_timeout:Mtime.Span.t ->
+  ?connect_timeout:Mtime.Span.t ->
   ?parameters:(string * string) list ->
-  ?timeout_s:float ->
+  ?timeout:Mtime.Span.t ->
   ?statement_cache:int ->
   ?reset:bool ->
-  ?max_lifetime_s:float ->
-  ?idle_check_s:float ->
+  ?max_lifetime:Mtime.Span.t ->
+  ?idle_check:Mtime.Span.t ->
   < net : _ Eio.Net.t ; mono_clock : _ Eio.Time.Mono.t ; .. > ->
   string ->
   (t -> 'a) ->

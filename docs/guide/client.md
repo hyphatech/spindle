@@ -30,7 +30,7 @@ answer) or `Timeout`. Send a body with `~body` and `~headers`:
 
 ```ocaml
 match
-  Spindle_client.call client ~timeout_s:10.
+  Spindle_client.call client ~timeout:Mtime.Span.(10 * s)
     ~headers:[ ("content-type", "application/json") ] ~body
     `POST "https://api.example.com/v1/things"
 with
@@ -59,11 +59,13 @@ let () =
 
 | Option | Default | |
 |---|---|---|
-| `~timeout_s` | 30 | each call's deadline, over the whole call; a call can name its own |
+| `~timeout` | 30 s | each call's deadline, over the whole call; a call can name its own |
 | `~max_body` | 16 MiB | the longest answer read |
 | `~per_host` | 4 | idle connections kept per scheme, host and port, on each domain |
-| `~idle_s` | 15 | how long an unused connection is kept |
+| `~idle_timeout` | 15 s | how long an unused connection is kept |
 | `~authenticator` | system trust store | what a server's certificate is checked against |
+
+Each wait is an `Mtime.Span.t`: `~timeout:Mtime.Span.(10 * s)`.
 
 Good to know:
 
@@ -94,9 +96,9 @@ Spindle_client.stream client `GET url (fun answer ->
     copy ())
 ```
 
-`~timeout_s` bounds the head, and `~read_timeout_s` each wait for more of the
+`~timeout` bounds the head, and `~read_timeout` each wait for more of the
 body. A read that fails is the body's end: every read after it answers the
-same error, so waiting longer means a longer `~read_timeout_s`, not a second
+same error, so waiting longer means a longer `~read_timeout`, not a second
 read. To stop early, return: the connection is then closed.
 
 ## Server-Sent Events

@@ -44,32 +44,32 @@ val create :
   sw:Eio.Switch.t ->
   net:_ Eio.Net.t ->
   mono_clock:_ Eio.Time.Mono.t ->
-  ?timeout_s:float ->
+  ?timeout:Mtime.Span.t ->
   ?max_body:int ->
   ?per_host:int ->
-  ?idle_s:float ->
+  ?idle_timeout:Mtime.Span.t ->
   ?authenticator:X509.Authenticator.t ->
   unit ->
   t
 (** [sw] is the application's and never a request's: where the domain that made
-    the client keeps its connections outside any server. [timeout_s] (30) is
+    the client keeps its connections outside any server. [timeout] (30 s) is
     every call's deadline unless the call names its own, measured on
     [mono_clock], which is monotonic so that a wall clock that jumps moves no
     deadline; [max_body] (16 MiB) is the longest answer read. [per_host] (4)
     bounds the idle connections each domain keeps for one scheme, host and port
-    -- never how many calls run at once -- and [idle_s] (15) retires one unused
-    that long, or a second before the server's [Keep-Alive: timeout=] where it
-    said less, and keeps none where it said a second or less: well inside common
-    servers' own idle limits, so a server closing in the instant a request is
-    written is rare. [authenticator] is what a server's certificate is checked
-    against, the system's trust store unless given: a test gives one that trusts
-    a certificate it made. *)
+    -- never how many calls run at once -- and [idle_timeout] (15 s) retires one
+    unused that long, or a second before the server's [Keep-Alive: timeout=]
+    where it said less, and keeps none where it said a second or less: well
+    inside common servers' own idle limits, so a server closing in the instant a
+    request is written is rare. [authenticator] is what a server's certificate
+    is checked against, the system's trust store unless given: a test gives one
+    that trusts a certificate it made. *)
 
 val run :
-  ?timeout_s:float ->
+  ?timeout:Mtime.Span.t ->
   ?max_body:int ->
   ?per_host:int ->
-  ?idle_s:float ->
+  ?idle_timeout:Mtime.Span.t ->
   ?authenticator:X509.Authenticator.t ->
   Eio_unix.Stdenv.base ->
   (t -> 'a) ->
@@ -105,13 +105,13 @@ type error =
           that cannot be read, whose length cannot be told, that is cut short or
           is longer than [max_body], or an event longer than it; and the
           connection failing or closing under the call *)
-  | Timeout of float  (** the deadline, in seconds, that passed *)
+  | Timeout of Mtime.Span.t  (** the deadline that passed *)
 
 val error_to_string : error -> string
 
 val call :
   t ->
-  ?timeout_s:float ->
+  ?timeout:Mtime.Span.t ->
   ?headers:(string * string) list ->
   ?body:string ->
   Spindle_http.Meth.t ->
@@ -131,7 +131,7 @@ module Body : sig
 
   val read : t -> ([ `Data of string | `End ], error) result
   (** The next piece as it arrived, or its end. Each read waits at most the
-      call's [read_timeout_s]; a read after one that failed answers that failure
+      call's [read_timeout]; a read after one that failed answers that failure
       again, since a read cut off leaves a TLS connection unreadable; and a read
       after the function it was handed to has returned is [`End]. *)
 end
@@ -141,8 +141,8 @@ type answer = { status : int; headers : (string * string) list; body : Body.t }
 
 val stream :
   t ->
-  ?timeout_s:float ->
-  ?read_timeout_s:float ->
+  ?timeout:Mtime.Span.t ->
+  ?read_timeout:Mtime.Span.t ->
   ?headers:(string * string) list ->
   ?body:string ->
   Spindle_http.Meth.t ->
@@ -151,8 +151,8 @@ val stream :
   ('a, error) result
 (** [stream t meth url f]: [f] handed the answer as its head arrives, its body
     to read as it comes -- a model's streamed answer, a download too large to
-    hold. [timeout_s] (the client's) bounds the head, and [read_timeout_s]
-    ([timeout_s]) each wait for more of the body, never the whole, since a
+    hold. [timeout] (the client's) bounds the head, and [read_timeout]
+    ([timeout]) each wait for more of the body, never the whole, since a
     stream's length is its own. The connection is kept after [f] only when it
     read the body to its end and neither side said [close]; otherwise it is
     closed, which is how [f] stops a stream early. A request is sent again where
@@ -168,8 +168,8 @@ type events_end =
 
 val events :
   t ->
-  ?timeout_s:float ->
-  ?read_timeout_s:float ->
+  ?timeout:Mtime.Span.t ->
+  ?read_timeout:Mtime.Span.t ->
   ?headers:(string * string) list ->
   ?last_event_id:string ->
   string ->
@@ -193,9 +193,9 @@ val websocket_error_to_string : websocket_error -> string
 
 val websocket :
   t ->
-  ?timeout_s:float ->
+  ?timeout:Mtime.Span.t ->
   ?headers:(string * string) list ->
-  ?keep_alive_s:float ->
+  ?keep_alive:Mtime.Span.t ->
   ?max_message:int ->
   ('c, 's) Spindle_http.Websocket.protocol ->
   string ->
@@ -204,7 +204,7 @@ val websocket :
   ('a, websocket_error) result
 (** [websocket t protocol url f] opens a socket to a [ws://] or [wss://] URL and
     runs [f] on it: the connection is [f]'s alone, never kept and never lent,
-    opened for it and closed after it. [timeout_s] (the client's) bounds the
+    opened for it and closed after it. [timeout] (the client's) bounds the
     handshake, and then how long a write may wait for the server to take
     anything; the handshake offers the protocol's name and insists on it, and
     checks that the answer proves it read this key. [headers] go beside the
@@ -213,7 +213,7 @@ val websocket :
     when it ends -- where it went, how long it lived and how, at [warn] when it
     never opened or did not end cleanly -- and never its query, where a
     credential travels. What [f] returns is
-    {!Spindle_http.Websocket.run_client}'s, and so are [keep_alive_s] and
+    {!Spindle_http.Websocket.run_client}'s, and so are [keep_alive] and
     [max_message]. *)
 
 (** {1 Spans, sent to a collector} *)

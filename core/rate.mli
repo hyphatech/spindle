@@ -2,7 +2,7 @@
     request to it.
 
     {[
-    let sign_ins = Spindle.Rate.create ~mono_clock ~limit:10 ~per_s:1. ()
+    let sign_ins = Spindle.Rate.create ~mono_clock ~limit:10 ~per:Mtime.Span.s ()
 
     (let+ () = Spindle.Rate.limit sign_ins ~key:Spindle.client and+ ... in ...)
     ]}
@@ -26,14 +26,14 @@ type t
 val create :
   mono_clock:_ Eio.Time.Mono.t ->
   limit:int ->
-  per_s:float ->
+  per:Mtime.Span.t ->
   ?burst:int ->
   unit ->
   t
-(** [limit] calls every [per_s] seconds, up to [burst] ([limit]) of them at
-    once. Raises [Invalid_argument] for a [limit] or a [burst] below one, or a
-    [per_s] that is not a positive number of seconds, which would limit nothing
-    or everything: each is a constant written in source. *)
+(** [limit] calls every [per], up to [burst] ([limit]) of them at once. Raises
+    [Invalid_argument] for a [limit] or a [burst] below one, or a [per] of zero,
+    which would limit nothing or everything: each is a constant written in
+    source. *)
 
 val limit : t -> key:string Dep.t -> unit Dep.t
 (** The request counted against its key -- the client's address, a session, a

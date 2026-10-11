@@ -4,5 +4,5 @@
 (library
  (name spindle_postgres)
  (public_name spindle_postgres)
- (private_modules bounds instant source traced)
- (libraries rowtype rowtype-postgres ptime spindle eio logs))
+ (private_modules bounds source traced)
+ (libraries rowtype rowtype-postgres ptime mtime spindle eio logs))

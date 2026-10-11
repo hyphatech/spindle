@@ -18,7 +18,7 @@ let sign_up =
     (let+ email = Spindle.body in
      Spindle.Background.fork background ~what:"welcome email" (fun () ->
          send_welcome_email email);
-     Spindle.Alarm.set alarms ~key:("reminder:" ^ email) ~in_ms:86_400_000
+     Spindle.Alarm.set alarms ~key:("reminder:" ^ email) ~after:Mtime.Span.day
        ~what:"reminder" (fun () -> send_reminder email);
      Ok ())
 in
@@ -38,8 +38,11 @@ in
 ## Running a job later
 
 - `Alarm.create ~background ~mono_clock ()`, then
-  `Alarm.set t ~key ~in_ms ~what f`: run `f` in `in_ms` milliseconds (plus
-  `?slack_ms`, 50 by default).
+  `Alarm.set t ~key ~after ~what f`: run `f` once the span `after` has gone
+  by (plus `?slack`, 50 ms by default).
+- A wake-up at an instant -- a deadline kept as a `Ptime.t` -- is set for the
+  wait until it, `~after:(Spindle.until ~now deadline)`: the span from now,
+  and zero once the deadline has passed, so a late one fires at once.
 - One wake-up per key: setting a key again replaces the earlier one, and
   `Alarm.cancel t ~key` drops it.
 - Timing uses the monotonic clock, so changing the system time moves nothing.

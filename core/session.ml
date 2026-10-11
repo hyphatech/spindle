@@ -2,16 +2,16 @@ module L = (val Logs.src_log Log.http : Logs.LOG)
 
 type entry = {
   data : string;
-  created_ms : int;
-  seen_ms : int;
-  expires_ms : int;
+  created : Ptime.t;
+  seen : Ptime.t;
+  expires : Ptime.t;
 }
 
 type store = {
   find : string -> (entry option, string) result;
   save : string -> entry -> (unit, string) result;
   delete : string -> (unit, string) result;
-  sweep : now:int -> (int, string) result;
+  sweep : now:Ptime.t -> (int, string) result;
 }
 
 (* 128 bits, which nobody guesses. *)
@@ -33,7 +33,8 @@ let memory () =
                let expired =
                  Hashtbl.fold
                    (fun k e acc ->
-                     if e.expires_ms <= now then k :: acc else acc)
+                     if Ptime.is_later e.expires ~than:now then acc
+                     else k :: acc)
                    table []
                in
                List.iter (Hashtbl.remove table) expired;
@@ -43,19 +44,17 @@ let memory () =
 type 'a t = {
   store : store;
   named : string Cookie.named;
-  idle_ms : int;
-  absolute_ms : int;
-  absolute_s : int;
+  idle : Mtime.Span.t;
+  absolute : Mtime.Span.t;
   description : 'a Wiretype.t;
 }
 
-let create ?(cookie = "session") ~store ~idle_s ~absolute_s description =
+let create ?(cookie = "session") ~store ~idle ~absolute description =
   {
     store;
     named = Cookie.named cookie Codec.string;
-    idle_ms = idle_s * 1000;
-    absolute_ms = absolute_s * 1000;
-    absolute_s;
+    idle;
+    absolute;
     description;
   }
 
@@ -67,7 +66,7 @@ let cookie t =
     ~doc:"A session the server keeps, by the id its cookie holds."
     (Input.optional Input.cookie (Cookie.Named.name t.named) Codec.string)
 
-type 'a session = { digest : string; data : 'a; created_ms : int }
+type 'a session = { digest : string; data : 'a; created : Ptime.t }
 
 let data s = s.data
 
@@ -83,7 +82,12 @@ let refusal = function
 let digest_of_id id = Digestif.SHA256.(to_hex (digest_string id))
 let of_store r = Result.map_error (fun m -> Store m) r
 let ( let* ) = Result.bind
-let expiry_ms t ~created ~now = min (now + t.idle_ms) (created + t.absolute_ms)
+
+let expiry t ~created ~now =
+  let idle_ends = Spindle_http.Instant.add now t.idle
+  and absolute_ends = Spindle_http.Instant.add created t.absolute in
+  if Ptime.is_later idle_ends ~than:absolute_ends then absolute_ends
+  else idle_ends
 
 let save t ~digest ~created ~now data =
   match Wiretype.encode t.description data with
@@ -94,12 +98,12 @@ let save t ~digest ~created ~now data =
           (t.store.save digest
              {
                data = text;
-               created_ms = created;
-               seen_ms = now;
-               expires_ms = expiry_ms t ~created ~now;
+               created;
+               seen = now;
+               expires = expiry t ~created ~now;
              })
       in
-      Ok { digest; data; created_ms = created }
+      Ok { digest; data; created }
 
 let find t id ~now =
   match id with
@@ -109,7 +113,7 @@ let find t id ~now =
       let* found = of_store (t.store.find digest) in
       match found with
       | None -> Ok None
-      | Some e when e.expires_ms <= now ->
+      | Some e when not (Ptime.is_later e.expires ~than:now) ->
           let* () = of_store (t.store.delete digest) in
           Ok None
       | Some e -> (
@@ -122,23 +126,36 @@ let find t id ~now =
           | Ok data ->
               (* Renewed after a tenth of the idle limit, so a busy session
                  is not a write per request. *)
-              if now - e.seen_ms > t.idle_ms / 10 then
+              let tenth =
+                Mtime.Span.of_uint64_ns
+                  (Int64.unsigned_div (Mtime.Span.to_uint64_ns t.idle) 10L)
+              in
+              if
+                Ptime.is_later now ~than:(Spindle_http.Instant.add e.seen tenth)
+              then
                 Result.map Option.some
-                  (save t ~digest ~created:e.created_ms ~now data)
-              else Ok (Some { digest; data; created_ms = e.created_ms })))
+                  (save t ~digest ~created:e.created ~now data)
+              else Ok (Some { digest; data; created = e.created })))
+
+(* [Max-Age] counts whole seconds: rounded up, so the cookie outlives the
+   session rather than the session its cookie. *)
+let whole_seconds span =
+  Int64.to_int
+    (Int64.unsigned_div
+       (Int64.add (Mtime.Span.to_uint64_ns span) 999_999_999L)
+       1_000_000_000L)
 
 let start t ~set_cookie ~now data =
   let id = Cookie_repr.encode (Mirage_crypto_rng_unix.getrandom id_bytes) in
   let* session = save t ~digest:(digest_of_id id) ~created:now ~now data in
-  set_cookie (Cookie.make ~max_age_s:t.absolute_s t.named id);
+  set_cookie (Cookie.make ~max_age_s:(whole_seconds t.absolute) t.named id);
   Ok session
 
 let renew t old ~set_cookie ~now data =
   let* () = of_store (t.store.delete old.digest) in
   start t ~set_cookie ~now data
 
-let update t s ~now data =
-  save t ~digest:s.digest ~created:s.created_ms ~now data
+let update t s ~now data = save t ~digest:s.digest ~created:s.created ~now data
 
 let close t s ~set_cookie =
   let* () = of_store (t.store.delete s.digest) in

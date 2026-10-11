@@ -5,24 +5,24 @@ module Pg = Rowtype_postgres
    none, and its stats do not say which. *)
 type t = { pool : Pg.Pool.t; closed : bool Atomic.t }
 
-let create ~sw ~net ~mono_clock:clock ?size ?wait_s ?statement_timeout_ms
-    ?idle_in_transaction_timeout_ms ?connect_timeout_s ?parameters ?timeout_s
-    ?statement_cache ?reset ?max_lifetime_s ?idle_check_s target =
+let create ~sw ~net ~mono_clock:clock ?size ?wait ?statement_timeout
+    ?idle_in_transaction_timeout ?connect_timeout ?parameters ?timeout
+    ?statement_cache ?reset ?max_lifetime ?idle_check target =
   Result.bind
-    (Bounds.apply ?statement_timeout_ms ?idle_in_transaction_timeout_ms
-       ?connect_timeout_s ?parameters target) (fun (c, parameters) ->
+    (Bounds.apply ?statement_timeout ?idle_in_transaction_timeout
+       ?connect_timeout ?parameters target) (fun (c, parameters) ->
       Result.map
         (fun pool -> { pool; closed = Atomic.make false })
         (Pg.Pool.create ~sw ~net ~mono_clock:clock ~parameters
-           ~observe:Traced.observer ?timeout_s ?statement_cache ?size ?wait_s
-           ?reset ?max_lifetime_s ?idle_check_s c))
+           ~observe:Traced.observer ?timeout ?statement_cache ?size ?wait ?reset
+           ?max_lifetime ?idle_check c))
 
 module L = (val Logs.src_log Source.src : Logs.LOG)
 
-let use ?wait_s t work = Result.join (Pg.Pool.use ?wait_s t.pool work)
+let use ?wait t work = Result.join (Pg.Pool.use ?wait t.pool work)
 
-let query ?wait_s t statement args =
-  use ?wait_s t (fun db -> Pg.run db statement args)
+let query ?wait t statement args =
+  use ?wait t (fun db -> Pg.run db statement args)
 
 type stats = Pg.Pool.stats = {
   size : int;
@@ -62,8 +62,8 @@ let check ?(name = "postgres") t =
         | Error (`Pool `Closed as e) -> Error (Pg.Pool.error_to_string e)
         | Error (#Rowtype.error as e) -> Error (Rowtype.error_to_string e))
 
-let transaction ?wait_s ?keep ?isolation ?retries t work =
-  use ?wait_s t (fun db ->
+let transaction ?wait ?keep ?isolation ?retries t work =
+  use ?wait t (fun db ->
       Rowtype_postgres.Transaction.within ?keep ?isolation ?retries db work)
 
 let close t =
@@ -75,16 +75,16 @@ let close t =
    a cancelled fiber cannot, and would raise its cancellation as
    [Fun.Finally_raised]. Its connections end with the switch. A database that
    refuses ends the program, saying why. *)
-let run ?size ?wait_s ?statement_timeout_ms ?idle_in_transaction_timeout_ms
-    ?connect_timeout_s ?parameters ?timeout_s ?statement_cache ?reset
-    ?max_lifetime_s ?idle_check_s env target f =
+let run ?size ?wait ?statement_timeout ?idle_in_transaction_timeout
+    ?connect_timeout ?parameters ?timeout ?statement_cache ?reset ?max_lifetime
+    ?idle_check env target f =
   Eio.Switch.run @@ fun sw ->
   match
     create ~sw ~net:(Eio.Stdenv.net env)
       ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ?size ?wait_s ?statement_timeout_ms ?idle_in_transaction_timeout_ms
-      ?connect_timeout_s ?parameters ?timeout_s ?statement_cache ?reset
-      ?max_lifetime_s ?idle_check_s target
+      ?size ?wait ?statement_timeout ?idle_in_transaction_timeout
+      ?connect_timeout ?parameters ?timeout ?statement_cache ?reset
+      ?max_lifetime ?idle_check target
   with
   | Ok pool -> (
       match f pool with

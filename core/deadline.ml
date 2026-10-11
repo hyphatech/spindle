@@ -9,7 +9,7 @@ exception Passed
 
 (* A body keeps up a rate, each byte buying time; a write keeps going, each
    byte restarting the allowance. *)
-type pace = Per_byte of float | Since_last of float
+type pace = Per_byte of Mtime.Span.t | Since_last of Mtime.Span.t
 
 type t = {
   clock : Eio.Time.Mono.ty Eio.Resource.t;
@@ -21,34 +21,32 @@ type t = {
 
 type sweep = {
   sweep_clock : Eio.Time.Mono.ty Eio.Resource.t;
-  tick : float;
+  tick : Mtime.Span.t;
   deadlines : (int, t) Hashtbl.t;
   mutable next_id : int;
 }
 
 (* Past what the clock counts to is never. *)
-let add_seconds ~by at =
-  let ns = Mtime.Span.of_uint64_ns (Int64.of_float (Float.max 0. by *. 1e9)) in
-  Option.value (Mtime.add_span at ns) ~default:Mtime.max_stamp
+let later ~by at = Option.value (Mtime.add_span at by) ~default:Mtime.max_stamp
 
 (* Arming starts afresh: the answer to a passed deadline, a 408 say, is a
    wait of its own. *)
-let arm_with t pace s =
-  t.due_at <- Some (add_seconds ~by:s (Eio.Time.Mono.now t.clock));
+let arm_with t pace span =
+  t.due_at <- Some (later ~by:span (Eio.Time.Mono.now t.clock));
   t.pace <- pace;
   t.passed <- false
 
-let arm ?(per_byte = 0.) t s = arm_with t (Per_byte per_byte) s
-let arm_since_last t s = arm_with t (Since_last s) s
+let arm ?(per_byte = Mtime.Span.zero) t span =
+  arm_with t (Per_byte per_byte) span
+
+let arm_since_last t span = arm_with t (Since_last span) span
 let clear t = t.due_at <- None
 
 let remaining t =
   Option.map
     (fun at ->
       let now = Eio.Time.Mono.now t.clock in
-      if Mtime.is_later at ~than:now then
-        Mtime.Span.to_float_ns (Mtime.span now at) /. 1e9
-      else -.(Mtime.Span.to_float_ns (Mtime.span now at) /. 1e9))
+      if Mtime.is_later at ~than:now then Mtime.span now at else Mtime.Span.zero)
     t.due_at
 
 let passed t = t.passed
@@ -56,11 +54,10 @@ let passed t = t.passed
 let progress t n =
   match (t.due_at, t.pace) with
   | None, _ -> ()
-  | Some at, Per_byte p ->
-      t.due_at <- Some (add_seconds ~by:(float_of_int n *. p) at)
-  | Some _, Since_last s ->
+  | Some at, Per_byte p -> t.due_at <- Some (later ~by:Mtime.Span.(n * p) at)
+  | Some _, Since_last span ->
       if n > 0 then
-        t.due_at <- Some (add_seconds ~by:s (Eio.Time.Mono.now t.clock))
+        t.due_at <- Some (later ~by:span (Eio.Time.Mono.now t.clock))
 
 (* Each wait in a cancellation context of its own, so the sweep interrupts
    the wait and nothing else. *)
@@ -86,7 +83,7 @@ let sweep ~mono_clock:clock ~tick =
 (* Cancelling only schedules the waiting fiber, so nothing leaves the table
    during the walk. *)
 let rec watch s =
-  Eio.Time.Mono.sleep s.sweep_clock s.tick;
+  Eio.Time.Mono.sleep_span s.sweep_clock s.tick;
   let now = Eio.Time.Mono.now s.sweep_clock in
   Hashtbl.iter
     (fun _ t ->
@@ -104,7 +101,7 @@ let run s f =
     {
       clock = s.sweep_clock;
       due_at = None;
-      pace = Per_byte 0.;
+      pace = Per_byte Mtime.Span.zero;
       waiting = None;
       passed = false;
     }

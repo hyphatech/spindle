@@ -14,7 +14,7 @@ module Pg = Rowtype_postgres
 let ( let* ) = Result.bind
 let database = "postgres://postgres:postgres@localhost:5432/postgres"
 
-type claim = { name : string; claimed_at : int } [@@deriving wiretype]
+type claim = { name : string; claimed_at : Ptime.t } [@@deriving wiretype]
 
 let create_names =
   S.exec ~params:S.unit
@@ -24,13 +24,12 @@ let create_names =
 (* The database says whether this request made the row: an insert that meets
    one already there changes nothing, and counts none. *)
 let insert_name =
-  S.exec_count
-    ~params:(S.t2 S.text Spindle_postgres.instant)
+  S.exec_count ~params:(S.t2 S.text S.instant)
     "insert into names (name, claimed_at) values ($1, $2) on conflict (name) \
      do nothing"
 
 let when_claimed =
-  S.find ~params:S.text ~row:Spindle_postgres.instant
+  S.find ~params:S.text ~row:S.instant
     "select claimed_at from names where name = $1"
 
 (* --8<-- [start:claim] *)

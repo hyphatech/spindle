@@ -73,7 +73,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   down), `Spindle.Broadcast.create` (for a depth below one),
   `Spindle.Compress.make` (for a level deflate has not, or a negative
   size), `Spindle.Rate.create` (for a limit or a burst below one, or a
-  period that is no positive number of seconds),
+  period of zero),
   `Spindle.Server.run`, `serve_on` and `Spindle.serve` (for a limit out of
   its range, or a trusted proxy that is no address), `Spindle.serve` and
   `Spindle.Test.app`, for a route table `App.make` refuses -- and `Test.app`
@@ -197,10 +197,10 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   and every read of it runs against it (`Deadline`), with one sweep per
   domain looking at all of that domain's, so moving one is a field and never
   a timer:
-  `idle_timeout_s`
-  between requests, `head_timeout_s` from a head's first byte, and
-  `body_timeout_s` from a body's first read moved a second on for every
-  `min_body_rate` bytes; and while an answer is written, `send_timeout_s`
+  `idle_timeout`
+  between requests, `head_timeout` from a head's first byte, and
+  `body_timeout` from a body's first read moved a second on for every
+  `min_body_rate` bytes; and while an answer is written, `send_timeout`
   from the last byte the client took, so a client still reading slowly is
   never cut off and one that stops is. A deadline passes up to a tick late,
   and a tick is a tenth of the shortest limit.

@@ -1,5 +1,5 @@
 pin-depends: [
-  [ "postgres-eio.0.2.0" "git+https://github.com/hyphatech/postgres-eio.git#0.2.0" ]
-  [ "rowtype.0.3.0" "git+https://github.com/hyphatech/rowtype.git#0.3.0" ]
-  [ "rowtype-postgres.0.3.0" "git+https://github.com/hyphatech/rowtype.git#0.3.0" ]
+  [ "postgres-eio.0.3.0" "git+https://github.com/hyphatech/postgres-eio.git#0.3.0" ]
+  [ "rowtype.0.4.0" "git+https://github.com/hyphatech/rowtype.git#0.4.0" ]
+  [ "rowtype-postgres.0.4.0" "git+https://github.com/hyphatech/rowtype.git#0.4.0" ]
 ]

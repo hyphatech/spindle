@@ -4,7 +4,7 @@ Limit how often a client may call a route. A limit is a dependency: you list
 it in the route, and the route's API document shows its `429`.
 
 ```ocaml
-let sign_ins = Spindle.Rate.create ~mono_clock ~limit:10 ~per_s:60. ()
+let sign_ins = Spindle.Rate.create ~mono_clock ~limit:10 ~per:Mtime.Span.min ()
 
 let sign_in =
   Spindle.post
@@ -29,11 +29,11 @@ retry-after: 6
 {"error":"rate_limited","message":"That was asked too often. Please try again in a moment."}
 ```
 
-- `Rate.create ~mono_clock ~limit ~per_s ?burst ()` allows `limit` calls
-  every `per_s` seconds, and up to `burst` (default: `limit`) at once.
-  Make it once, at startup, and share it between requests. A `limit` or
-  `burst` below one, or a `per_s` that is not a positive number of seconds,
-  raises `Invalid_argument` there.
+- `Rate.create ~mono_clock ~limit ~per ?burst ()` allows `limit` calls
+  every `per`, an `Mtime.Span.t`, and up to `burst` (default: `limit`) at
+  once. Make it once, at startup, and share it between requests. A `limit`
+  or `burst` below one, or a `per` of zero, raises `Invalid_argument`
+  there.
 - `~key` is what is counted: `Spindle.client` (the client's address), or any
   `string Dep.t` -- a session, a token, a path parameter. An IPv6 address is
   counted by its /64, since a client may change its address within one at

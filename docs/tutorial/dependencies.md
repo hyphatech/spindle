@@ -168,7 +168,7 @@ Spindle.Header.optional "x-count" Codec.int      (* name matched without case *)
 ```
 
 - **Codecs**: `string`, `int`, `int64`, `float`, `bool`, `uuid`, `date`,
-  `instant`, `enum ~kind to_string values`, and `custom` for a type of your
+  `instant` (a `Ptime.t`), `enum ~kind to_string values`, and `custom` for a type of your
   own.
 - **Structured headers** have codecs that parse them: `media_type`,
   `accept`, `weighted`, `credentials`, `cache_control`, `forwarded`, and
@@ -195,7 +195,7 @@ calling it. For a cookie holding arbitrary text, use the
 `Spindle.Cookie.encoded` codec. Signed and encrypted cookies and sessions
 are on [their own page](../guide/cookies.md).
 
-**Other built-ins**: `Spindle.param`, `Spindle.now` (epoch milliseconds),
+**Other built-ins**: `Spindle.param`, `Spindle.now` (the instant, a `Ptime.t`),
 `Spindle.request`, `Spindle.request_id`, `Spindle.peer`, `Spindle.client`,
 `Spindle.body`, `Spindle.json`, `Spindle.body_stream` and
 `Spindle.multipart`.

@@ -25,7 +25,7 @@ module Named : sig
   val codec : 'a named -> 'a Codec.t
   val sealed : 'a named -> bool
 
-  val unseal : 'a named -> now:int -> string -> string option
+  val unseal : 'a named -> now:Ptime.t -> string -> string option
   (** The value a request carried, if its signature, seal and age hold at [now];
       the value itself for a plain cookie. *)
 end
@@ -50,7 +50,7 @@ val encode : string -> string
 val decode : string -> string option
 (** What {!encode} wrote, and only that spelling of it. *)
 
-val to_header : secure:bool -> now:int -> t -> string
+val to_header : secure:bool -> now:Ptime.t -> t -> string
 (** The [Set-Cookie] value, a sealed one sealed at [now]; [SameSite] always
     written, [Secure] where [secure]. *)
 
