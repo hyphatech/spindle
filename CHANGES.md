@@ -26,6 +26,11 @@
   closing, where `/readyz` answered `200`: a closed pool has no connection
   idle, which the check read as every connection lent.
 
+- In `spindle_postgres`, `Session.schema` for a table whose name is longer
+  than 52 bytes leaves its index for Postgres to name, where it named it
+  after the table and Postgres cut that name to 63 bytes: at 63, the
+  table's own name, and the schema failed with `42P07`.
+
 - `Spindle_client.error`'s deadline that passed is `Timeout`, where it was
   `Timed_out`: the word postgres-eio and Eio's own `Timeout.run` give the
   same failure. Breaking: a match on a call's error names `Timeout`.

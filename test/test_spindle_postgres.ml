@@ -801,6 +801,27 @@ let test_a_reserved_word_is_a_table's_name () =
                (fun (e : Spindle.Session.entry) -> e.data)
                (got (store.find "d1")))))
 
+(* A name as long as Postgres keeps one is a table's name too: its index,
+   named after it, would be cut to the same 63 bytes and collide. *)
+let test_the_longest_name_is_a_table's_name () =
+  Db_target.with_postgres (fun target ->
+      let db = Db_target.connect target in
+      Fun.protect
+        ~finally:(fun () -> Pg.close db)
+        (fun () ->
+          List.iter
+            (fun n ->
+              let table = String.make n 's' in
+              ok (Pg.exec_raw db (Spindle_postgres.Session.schema ~table));
+              match
+                Pg.verify db (Spindle_postgres.Session.statements ~table)
+              with
+              | Ok () -> ()
+              | Error (`Disagreements ms) ->
+                  Alcotest.fail (String.concat "; " ms)
+              | Error (#S.error as e) -> Alcotest.fail (S.error_to_string e))
+            [ 52; 53; 63 ]))
+
 let () =
   Db_target.required ~suite:"spindle_postgres";
   Eio_main.run @@ fun env ->
@@ -865,6 +886,8 @@ let () =
             test_sessions_are_kept_in_a_table;
           Alcotest.test_case "a reserved word is a table's name" `Quick
             test_a_reserved_word_is_a_table's_name;
+          Alcotest.test_case "the longest name is a table's name" `Quick
+            test_the_longest_name_is_a_table's_name;
         ] );
       ( "errors",
         [
