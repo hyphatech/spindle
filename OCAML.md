@@ -208,24 +208,78 @@ the next where they expect it.
   its way to the field would hide the rounding.
 
   A time is one of these four in every library and every application,
-  with no exception. A library's `test/test_style.ml` refuses
-  `Unix.gettimeofday`, `Unix.time`, `Eio.Time.sleep`,
-  `Eio.Time.with_timeout` and `Eio.Time.Timeout.seconds`, which count time
-  in a bare float, and a `float` labelled with a unit (`_s : float`,
-  `_ms : float`).
+  with no exception. **Time in a bare number is refused**: every function
+  that reads a clock, sleeps or bounds work in a bare number is in the
+  list below, and `Eio.Time.now` is written only as
+  `Ptime.of_float_s (Eio.Time.now clock)`, the one place a clock becomes
+  an instant. A `float` labelled with a unit (`_s`, `_ms`, `_us`, `_ns`)
+  is refused as well.
 - **Tests are Alcotest, and a property is QCheck** through
   `qcheck-alcotest`. A library's `test/test_style.ml` checks what a reader
-  of its source can: it refuses at least `failwith`, `invalid_arg`,
-  `Option.get`, `Result.get_ok`, `Result.get_error`, `List.hd`, `List.tl`,
-  `List.nth`, `Obj.magic`, `compare`, `Stdlib.compare`, `Sys.getenv`,
-  `Sys.getenv_opt`, `Unix.getenv`, `Unix.environment`, `exit`, and every
-  printing call: `print_string`, `print_endline`, `print_bytes`,
-  `print_char`, `print_int`, `print_float`, `print_newline` and their
-  `prerr_` twins, `stdout`, `stderr`, `Printf.printf`, `Printf.eprintf`,
-  `Format.printf`, `Format.eprintf`, `Format.print_string`,
-  `Format.std_formatter` and `Format.err_formatter`, outside the places its
-  rules name. A name is read with a leading `Stdlib.` taken off, so
-  `Stdlib.exit` is `exit`.
+  of its source can. It refuses every name in the list below, which it
+  reads from this file, `OCAML.md`, at its root, so no repository keeps a
+  list of its own and a change here holds everywhere at the next sync. A
+  name is read with a leading `Stdlib.` taken off, so `Stdlib.exit` is
+  `exit`. A name is refused outside the places the repository's own rules
+  name, such as a command's printing. Unsafe calls first, then the
+  environment, printing, and time in a bare number:
+
+  ```refused
+  failwith
+  invalid_arg
+  Option.get
+  Result.get_ok
+  Result.get_error
+  List.hd
+  List.tl
+  List.nth
+  Obj.magic
+  compare
+  Stdlib.compare
+  Sys.getenv
+  Sys.getenv_opt
+  Unix.getenv
+  Unix.environment
+  exit
+  print_string
+  print_endline
+  print_bytes
+  print_char
+  print_int
+  print_float
+  print_newline
+  prerr_string
+  prerr_endline
+  prerr_bytes
+  prerr_char
+  prerr_int
+  prerr_float
+  prerr_newline
+  stdout
+  stderr
+  Printf.printf
+  Printf.eprintf
+  Format.printf
+  Format.eprintf
+  Format.print_string
+  Format.std_formatter
+  Format.err_formatter
+  Unix.time
+  Unix.gettimeofday
+  Unix.sleep
+  Unix.sleepf
+  Unix.alarm
+  Unix.setitimer
+  Unix.getitimer
+  Sys.time
+  Eio_unix.sleep
+  Eio.Time.sleep
+  Eio.Time.sleep_until
+  Eio.Time.with_timeout
+  Eio.Time.with_timeout_exn
+  Eio.Time.Timeout.seconds
+  Eio.Time.Mono.sleep
+  ```
 
 ## OCaml tools
 
