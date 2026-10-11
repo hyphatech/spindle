@@ -2722,6 +2722,55 @@ let test_posted_work_keeps_the_trace () =
   Alcotest.(check (option string)) "its request" (Some "r-2") id;
   Alcotest.(check (option string)) "and its trace" (Some sent_trace) trace
 
+(* A server that will close an idle connection within a second is not
+   lent one again, whether its [Keep-Alive] timeout is written as a token or
+   as a quoted string, which the field's grammar allows alike. *)
+let test_a_quoted_keep_alive_timeout_is_read () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  let socket =
+    Eio.Net.listen net ~sw ~backlog:4 ~reuse_addr:true
+      (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
+  in
+  let port =
+    match Eio.Net.listening_addr socket with
+    | `Tcp (_, p) -> p
+    | `Unix _ -> Alcotest.fail "expected a TCP socket"
+  in
+  let connections = ref 0 in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      Eio.Net.run_server socket ~on_error:raise (fun flow _ ->
+          incr connections;
+          let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
+          let rec next () =
+            match Spindle_http.Head.Request.read ~max:65536 r with
+            | Error _ -> ()
+            | Ok _ ->
+                Eio.Flow.copy_string
+                  "HTTP/1.1 200 OK\r\n\
+                   Keep-Alive: timeout=\"1\"\r\n\
+                   Content-Length: 0\r\n\
+                   \r\n"
+                  flow;
+                next ()
+          in
+          next ()));
+  let client =
+    Spindle_client.create ~sw ~net ~mono_clock:(Eio.Stdenv.mono_clock env) ()
+  in
+  let call () =
+    match
+      Spindle_client.call client `GET
+        (Printf.sprintf "http://127.0.0.1:%d/" port)
+    with
+    | Ok _ -> ()
+    | Error e -> Alcotest.fail (Spindle_client.error_to_string e)
+  in
+  call ();
+  call ();
+  check_int "each call on a connection of its own" 2 !connections
+
 (* A call made for a request sends its trace, unless the caller named one. *)
 let test_a_call_carries_the_trace () =
   Eio_main.run @@ fun env ->
@@ -8119,6 +8168,8 @@ let () =
             test_a_failed_handshake_leaves_no_socket;
           Alcotest.test_case "a refused address leaves no socket" `Quick
             test_a_refused_address_leaves_no_socket;
+          Alcotest.test_case "a quoted keep-alive timeout is read" `Quick
+            test_a_quoted_keep_alive_timeout_is_read;
         ] );
       ( "the edges",
         [

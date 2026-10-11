@@ -459,14 +459,18 @@ let rec read_final_head ?(switching = false) c ~first =
       read_final_head ~switching c ~first:false
   | Ok head -> head
 
+(* Keep-Alive's elements are [token [ "=" ( token / quoted-string ) ]], as
+   Cache-Control's directives are, and its timeout delta-seconds, so it is
+   read by that reader. A value it cannot read says no timeout. *)
 let keep_alive_timeout headers =
-  List.concat_map Field.elements (Field.all headers "keep-alive")
-  |> List.find_map (fun e ->
-      match String.split_on_char '=' e with
-      | [ k; v ]
-        when String.equal (String.lowercase_ascii (String.trim k)) "timeout" ->
-          Option.map float_of_int (int_of_string_opt (String.trim v))
-      | _ -> None)
+  match Field.all headers "keep-alive" with
+  | [] -> None
+  | values -> (
+      match Spindle_http.Cache_control.parse (String.concat ", " values) with
+      | Ok elements ->
+          Option.map float_of_int
+            (Spindle_http.Cache_control.delta_seconds elements "timeout")
+      | Error _ -> None)
 
 (* [None] where either side said close or the body ended with the connection
    (RFC 9112 §9.3). A second short of the server's timeout, and not at all

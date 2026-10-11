@@ -35,6 +35,10 @@
   included, as both loopback addresses; another case went to the
   resolver, which may name only one.
 
+- `Spindle_client` reads a server's `Keep-Alive: timeout="5"`, quoted, as
+  it does `timeout=5`, where it read no timeout and kept the connection
+  idle for its own `idle_s` beside a server that closes it sooner.
+
 - `Spindle_client.error`'s deadline that passed is `Timeout`, where it was
   `Timed_out`: the word postgres-eio and Eio's own `Timeout.run` give the
   same failure. Breaking: a match on a call's error names `Timeout`.
