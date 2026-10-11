@@ -34,8 +34,9 @@ val use :
 (** Borrow a connection for [work], as [Rowtype_postgres.Pool.use] lends one,
     and give it back when [work] returns. [`Pool `Busy] -- no connection within
     the wait -- joins the work's own failures, so that an overloaded server says
-    so instead of answering late, and so does [`Pool `Closed], the pool closed
-    or closing; {!Spindle_postgres.refusal} words both. *)
+    so instead of answering late, and so does [`Pool `Closed], at once, for a
+    pool closed or closing under the borrow, which will never lend again;
+    {!Spindle_postgres.refusal} words both. *)
 
 val query :
   ?wait_s:float ->

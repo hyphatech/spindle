@@ -129,7 +129,7 @@ A failure is a variant, and `Spindle_postgres.refusal` turns any you do not
 handle into a status, with the detail in the log:
 
 - `` `Pool `Busy `` (no connection within the wait), `` `Pool `Closed ``
-  (the pool is closed) and `` `Not_serializable ``
+  (the pool is closed, answered at once) and `` `Not_serializable ``
   (a concurrent transaction won, past its retries): `503 busy` with
   `Retry-After: 1`, since asking again may succeed. The two `` `Pool ``
   states are logged as warnings, not errors: a server under load or

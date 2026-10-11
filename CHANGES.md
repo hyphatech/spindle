@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `spindle_postgres` asks for rowtype 0.3.0 and postgres-eio 0.2.0, and
+  pins both at those tags, so what changed there reaches a program through
+  it. Breaking: a statement on a closed connection is
+  `` `Connection `Closed `` in `Spindle_postgres.error`, where it was
+  `` `Closed ``; a fiber cancelled while `Pool.use`, `query` or
+  `transaction` runs its work stops at once, its connection closed and made
+  again at the next lend, where the work ran to its end; and a program
+  that uses rowtype itself moves to 0.3.0 with it.
+
+- In `spindle_postgres`, `Session`'s store tells a busy pool in the pool's
+  own words, "no connection came free within the pool's wait", as
+  `error_to_string` and the libraries under it do, where it said "no
+  connection within the wait".
+
 - A connection's last bytes -- what a WebSocket handler wrote before it
   returned, a stream's last chunk -- have `send_timeout_s` from the last
   byte the client took, as every answer has, and the connection is closed
@@ -68,8 +82,8 @@
 - In `spindle_postgres`, a pool's failures are its states under `` `Pool ``:
   `` `Pool `Busy `` where `Spindle_postgres.error`, `Pool.use`, `query` and
   `transaction` answered `` `Busy ``, and `` `Pool `Closed `` for a pool
-  closed, or closing under a borrow waiting, where rowtype tells it apart;
-  its 0.2.0 answers it `` `Pool `Busy ``. `refusal` answers both
+  closed, or closing under a borrow waiting, at once, where a closed pool
+  waited out `wait_s` and answered `` `Busy ``. `refusal` answers both
   `503 busy`, logged as a warning with no detail, and `error_to_string`
   words the closed one "the pool is closed". A closed connection stays
   rowtype's, a `500`. Breaking: a match on what a pool answers names

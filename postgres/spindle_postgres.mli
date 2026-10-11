@@ -14,7 +14,7 @@ type error =
   | Rowtype_postgres.Transaction.failure
   | `Pool of
     [ `Busy  (** no connection within the wait *)
-    | `Closed  (** the pool is closed *) ]
+    | `Closed  (** the pool is closed, answered at once *) ]
     (** what a borrow met in the pool, a state of the pool's own *) ]
 (** Every failure this library answers: a statement's, and a pool's or a
     transaction's own. *)

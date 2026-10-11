@@ -6,15 +6,10 @@ type error =
   | Rowtype_postgres.Transaction.failure
   | `Pool of [ `Busy | `Closed ] ]
 
-(* [`Not_committed] and [`Pool] are worded as rowtype's own printers word
-   them, sentence for sentence, so one failure reads the same whichever
-   library logs it; the rowtype this builds against prints a statement's
-   failure and no transaction's. *)
 let error_to_string : [< error ] -> string = function
-  | `Pool `Busy -> "no connection came free within the pool's wait"
-  | `Pool `Closed -> "the pool is closed"
-  | `Not_committed m -> "the transaction was not committed: " ^ m
-  | #Rowtype.error as e -> Rowtype.error_to_string e
+  | `Pool _ as e -> Rowtype_postgres.Pool.error_to_string e
+  | (#Rowtype_postgres.Transaction.failure | #Rowtype.error) as e ->
+      Rowtype_postgres.Transaction.error_to_string e
 
 let instant = Instant.ms
 

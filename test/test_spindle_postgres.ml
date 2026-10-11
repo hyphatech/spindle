@@ -192,6 +192,21 @@ let test_a_held_pool_is_busy_then_serves () =
       | Error _ -> Alcotest.fail "not served once the pool was free");
       Spindle_postgres.Pool.close pool)
 
+(* A closed pool will never lend again, so a borrow is told so at once
+   rather than waiting out the wait for nothing. The wait is ten minutes:
+   a borrow that waited would hold the suite far past any runner's
+   patience, however fast the machine. *)
+let test_a_closed_pool_answers_closed_at_once () =
+  Db_target.with_postgres (fun target ->
+      let pool = pool ~wait_s:600. target in
+      Spindle_postgres.Pool.close pool;
+      match
+        Spindle_postgres.Pool.query pool (S.exec ~params:S.unit "select 1") ()
+      with
+      | Error (`Pool `Closed) -> ()
+      | Error (`Pool `Busy) -> Alcotest.fail "a closed pool answered busy"
+      | Error _ | Ok () -> Alcotest.fail "a closed pool lent a connection")
+
 (* A program's pool is lent for as long as its body runs, and closed after:
    nothing idle is left holding a connection to the server. *)
 let test_a_run_pool_is_closed_after () =
@@ -712,6 +727,27 @@ let test_a_refused_bracket_keeps_nothing_unless_it_says () =
       Alcotest.(check int) "kept, where the work says" 1 (counted pool);
       Alcotest.(check bool) "still nothing after a refusal" false !after)
 
+(* A store's failure is the pool's own words, as every library tells it, so
+   one failure reads the same in the store's log as anywhere else. Its one
+   connection is held while the store asks, so the store's borrow finds none
+   whatever the machine's speed. *)
+let test_a_stores_busy_pool_reads_as_the_pools_words () =
+  Db_target.with_postgres (fun target ->
+      let pool = pool ~wait_s:0.05 target in
+      let store = Spindle_postgres.Session.store pool ~table:"sessions" in
+      let answer =
+        Spindle_postgres.Pool.use pool (fun _ -> Ok (store.find "d1"))
+      in
+      Spindle_postgres.Pool.close pool;
+      match answer with
+      | Ok (Error m) ->
+          Alcotest.(check string)
+            "the pool's words"
+            (Pg.Pool.error_to_string (`Pool `Busy))
+            m
+      | Ok (Ok _) -> Alcotest.fail "the store found a connection"
+      | Error _ -> Alcotest.fail "the test's own borrow failed")
+
 (* The table is the application's to make, from the schema it is given, and
    every statement the store runs is one the database agrees with. *)
 let test_sessions_are_kept_in_a_table () =
@@ -843,6 +879,8 @@ let () =
             test_an_exhausted_pool_is_a_warning;
           Alcotest.test_case "a held pool is busy, then serves" `Quick
             test_a_held_pool_is_busy_then_serves;
+          Alcotest.test_case "a closed pool answers closed at once" `Quick
+            test_a_closed_pool_answers_closed_at_once;
           Alcotest.test_case "a pool takes the driver's options" `Quick
             test_a_pool_takes_the_drivers_options;
           Alcotest.test_case "a run pool is closed after" `Quick
@@ -888,6 +926,8 @@ let () =
             test_a_reserved_word_is_a_table's_name;
           Alcotest.test_case "the longest name is a table's name" `Quick
             test_the_longest_name_is_a_table's_name;
+          Alcotest.test_case "a store's busy pool reads as the pool's words"
+            `Quick test_a_stores_busy_pool_reads_as_the_pools_words;
         ] );
       ( "errors",
         [

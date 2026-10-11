@@ -87,8 +87,7 @@ let statements ~table =
   S.[ Any s.find; Any s.save; Any s.delete; Any s.sweep ]
 
 let error_to_string = function
-  | `Pool `Busy -> "no connection within the wait"
-  | `Pool `Closed -> "the pool is closed"
+  | `Pool _ as e -> Rowtype_postgres.Pool.error_to_string e
   | #S.error as e -> S.error_to_string e
 
 let store pool ~table =

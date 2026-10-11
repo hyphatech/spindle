@@ -133,13 +133,13 @@
   (spindle
    (= :version))
   (rowtype
-   (>= 0.2.0))
+   (>= 0.3.0))
   (rowtype-postgres
-   (>= 0.2.0))
+   (>= 0.3.0))
   ; Linked through rowtype-postgres alone, and named so that its pin is
   ; one of this package's dependencies.
   (postgres-eio
-   (>= 0.1.0))
+   (>= 0.2.0))
   (ptime
    (>= 1.2.0))
   (eio

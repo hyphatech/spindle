@@ -1,8 +1,8 @@
 module Pg = Rowtype_postgres
 
-(* Whether it was closed is kept here: rowtype's pool answers a borrow
-   from a closed pool as it does a busy one, and has nothing idle in
-   either. *)
+(* Whether it was closed is kept here for [check], which borrows only
+   while a connection is idle: a closed pool has none, as a busy one has
+   none, and its stats do not say which. *)
 type t = { pool : Pg.Pool.t; closed : bool Atomic.t }
 
 let create ~sw ~net ~mono_clock:clock ?size ?wait_s ?statement_timeout_ms
@@ -19,16 +19,7 @@ let create ~sw ~net ~mono_clock:clock ?size ?wait_s ?statement_timeout_ms
 
 module L = (val Logs.src_log Source.src : Logs.LOG)
 
-let use ?wait_s t work =
-  match Pg.Pool.use ?wait_s t.pool work with
-  | Ok answer -> answer
-  | Error e -> (
-      (* rowtype 0.2.0 answers a flat [`Busy], and a later one the pool's
-         states under [`Pool]. Its answer is an open variant, so an arm for
-         each builds against both. *)
-      match e with
-      | `Busy -> Error (`Pool `Busy)
-      | `Pool p -> Error (`Pool p))
+let use ?wait_s t work = Result.join (Pg.Pool.use ?wait_s t.pool work)
 
 let query ?wait_s t statement args =
   use ?wait_s t (fun db -> Pg.run db statement args)
@@ -68,7 +59,7 @@ let check ?(name = "postgres") t =
         match use t (fun db -> Pg.exec_raw db "select 1") with
         | Ok () -> Ok ()
         | Error (`Pool `Busy) -> Ok ()
-        | Error (`Pool `Closed) -> Error "the pool is closed"
+        | Error (`Pool `Closed as e) -> Error (Pg.Pool.error_to_string e)
         | Error (#Rowtype.error as e) -> Error (Rowtype.error_to_string e))
 
 let transaction ?wait_s ?keep ?isolation ?retries t work =
