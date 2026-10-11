@@ -216,13 +216,18 @@ the next where they expect it.
   is refused as well.
 - **Tests are Alcotest, and a property is QCheck** through
   `qcheck-alcotest`. A library's `test/test_style.ml` checks what a reader
-  of its source can. It refuses every name in the list below, which it
-  reads from this file, `OCAML.md`, at its root, so no repository keeps a
-  list of its own and a change here holds everywhere at the next sync. A
-  name is read with a leading `Stdlib.` taken off, so `Stdlib.exit` is
-  `exit`. A name is refused outside the places the repository's own rules
-  name, such as a command's printing. Unsafe calls first, then the
-  environment, printing, and time in a bare number:
+  of its source can, in every `.ml` and `.mli` the repository builds. It
+  reads its names from this file, `OCAML.md`, at its root, so no
+  repository keeps a list of its own and a change here holds everywhere at
+  the next sync. Every file refuses the names in `refused`: calls that can
+  fail without a value, and time in a bare number. A library's files --
+  each directory whose `dune` declares a `library` -- also refuse the names
+  in `refused-in-a-library`: reading the environment, printing and exiting,
+  which an executable (a command, a test, an example) does where it starts
+  and a library never. A name a repository's own rules allow in a place
+  they name -- `invalid_arg` where a description is built and can mean
+  nothing -- is allowed there alone, and its test names that place. A name
+  is read with a leading `Stdlib.` taken off, so `Stdlib.exit` is `exit`.
 
   ```refused
   failwith
@@ -236,6 +241,24 @@ the next where they expect it.
   Obj.magic
   compare
   Stdlib.compare
+  Unix.time
+  Unix.gettimeofday
+  Unix.sleep
+  Unix.sleepf
+  Unix.alarm
+  Unix.setitimer
+  Unix.getitimer
+  Sys.time
+  Eio_unix.sleep
+  Eio.Time.sleep
+  Eio.Time.sleep_until
+  Eio.Time.with_timeout
+  Eio.Time.with_timeout_exn
+  Eio.Time.Timeout.seconds
+  Eio.Time.Mono.sleep
+  ```
+
+  ```refused-in-a-library
   Sys.getenv
   Sys.getenv_opt
   Unix.getenv
@@ -264,21 +287,6 @@ the next where they expect it.
   Format.print_string
   Format.std_formatter
   Format.err_formatter
-  Unix.time
-  Unix.gettimeofday
-  Unix.sleep
-  Unix.sleepf
-  Unix.alarm
-  Unix.setitimer
-  Unix.getitimer
-  Sys.time
-  Eio_unix.sleep
-  Eio.Time.sleep
-  Eio.Time.sleep_until
-  Eio.Time.with_timeout
-  Eio.Time.with_timeout_exn
-  Eio.Time.Timeout.seconds
-  Eio.Time.Mono.sleep
   ```
 
 ## OCaml tools
