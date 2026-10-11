@@ -181,8 +181,10 @@ the next where they expect it.
   is.** `_s` is seconds and `_ms` milliseconds, and no duration goes
   without one. A wait the program counts on a clock is a float of seconds,
   as Eio's clocks count (`?timeout_s`); a value an outside format defines
-  in whole units is an int of that unit, as the format has it. Two waits
-  in one signature never differ in type.
+  in whole units is an int of that unit, as the format has it; and a wait
+  worked out from two instants is in the instants' unit, an int of
+  milliseconds where they are (`~in_ms`), so its caller converts nothing.
+  Two waits in one signature never differ in type.
 - **Tests are Alcotest, and a property is QCheck** through
   `qcheck-alcotest`. A library's `test/test_style.ml` checks what a reader
   of its source can: it refuses at least `failwith`, `invalid_arg`,
