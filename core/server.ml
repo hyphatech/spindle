@@ -1157,11 +1157,11 @@ let run ~sw ~net ~mono_clock:clock ~now ~domain_mgr ?domains ~port
     |> List.rev
   in
   (* [localhost] is both loopback addresses whatever the resolver says: a
-     browser asks for [::1] first, and a hosts file may name only one. A
-     wildcard is every interface of both families, since a container's port
-     is forwarded over either. *)
+     browser asks for [::1] first, and a hosts file may name only one. It is
+     a host's name, so in any case (RFC 4343). A wildcard is every interface
+     of both families, since a container's port is forwarded over either. *)
   let sockets, bound_to =
-    if String.equal host "localhost" then
+    if String.equal (String.lowercase_ascii host) "localhost" then
       let v4 = bind Eio.Net.Ipaddr.V4.loopback in
       match bind_if_supported Eio.Net.Ipaddr.V6.loopback with
       | Some v6 -> ([ v4; v6 ], "127.0.0.1 and [::1]")

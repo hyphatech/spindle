@@ -31,6 +31,10 @@
   after the table and Postgres cut that name to 63 bytes: at 63, the
   table's own name, and the schema failed with `42P07`.
 
+- `Spindle.Server.run ~host` reads `localhost` in any case, `LocalHost`
+  included, as both loopback addresses; another case went to the
+  resolver, which may name only one.
+
 - `Spindle_client.error`'s deadline that passed is `Timeout`, where it was
   `Timed_out`: the word postgres-eio and Eio's own `Timeout.run` give the
   same failure. Breaking: a match on a call's error names `Timeout`.

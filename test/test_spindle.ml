@@ -4748,6 +4748,20 @@ let test_localhost_is_both_loopbacks domains () =
     "IPv6" true
     (answers ~net Eio.Net.Ipaddr.V6.loopback port)
 
+(* A host's name has no case (RFC 4343), so [LocalHost] is localhost, both
+   loopback addresses, and never what the resolver says of it: what the
+   server says it bound is the localhost rule's words, which name both or
+   IPv4 alone. *)
+let test_localhost_is_localhost_in_any_case () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  let _, where = served_on ~sw ~net ~env ~domains:1 (Some "LocalHost") in
+  Alcotest.(check bool)
+    ("bound as localhost: " ^ where)
+    true
+    (List.mem where [ "127.0.0.1 and [::1]"; "127.0.0.1" ])
+
 (* Every interface, of both families, whichever wildcard is written: the
    IPv6 one answers IPv4 too on a host where it takes it, and the IPv4 one
    beside it where not -- either way both loopback addresses are served,
@@ -8162,6 +8176,8 @@ let () =
             (test_an_address_is_exactly_that_one 1);
           Alcotest.test_case "localhost held on one loopback is refused" `Quick
             test_localhost_held_on_one_loopback_is_refused;
+          Alcotest.test_case "localhost is localhost in any case" `Quick
+            test_localhost_is_localhost_in_any_case;
           Alcotest.test_case "a stream ends when its client goes" `Quick
             (test_a_stream_ends_when_its_client_goes 1);
           Alcotest.test_case "https is never spoken as plain http" `Quick
