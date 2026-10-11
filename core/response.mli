@@ -115,7 +115,8 @@ val stream :
     writes past it: a stream that sends more is cut at [length], its [send]
     answering [Error Gone], and one that sends more or fewer has its connection
     closed after it, with an error in the log, since a length the body disagrees
-    with is the next request's first bytes. *)
+    with is the next request's first bytes. A [length] below zero is the route's
+    bug, answered [500] and its [produce] never run. *)
 
 val events :
   ?headers:(string * string) list ->

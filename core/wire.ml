@@ -148,6 +148,8 @@ let rec render ?gzip req r =
           refuse_with_500
             (Printf.sprintf "%d, which is not a final status"
                (Status.to_int status))
+      | Response.Stream { length = Some n; _ } when n < 0 ->
+          refuse_with_500 (Printf.sprintf "a stream of length %d" n)
       | (Response.Buffered _ | Response.Stream _) when is_bodiless status ->
           wire headers Nothing
       | Response.Buffered s -> (

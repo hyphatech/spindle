@@ -171,6 +171,33 @@ let test_a_trailing_slash_is_another_path () =
     (Spindle.Test.call redirecting `GET "/\\elsewhere.example/hello/kim/")
       .status
 
+(* A length below zero is no length at all: written, it would be a
+   [Content-Length] no client can read, so it is the route's bug, as a
+   header that frames the answer is, and its producer is never run. *)
+let test_a_stream_of_negative_length_is_the_routes_bug () =
+  let ran = ref false in
+  let r =
+    Spindle.Test.call
+      (Spindle.Test.app
+         [
+           Spindle.get
+             Spindle.Path.(s "less")
+             Spindle.Returns.response
+             (Spindle.Dep.return
+                (Ok
+                   (Spindle.Response.stream ~length:(-1) (fun send ->
+                        ran := true;
+                        send "x"))));
+         ])
+      `GET "/less"
+  in
+  check_status "a 500" 500 r.status;
+  Alcotest.(check bool)
+    "with no length below zero" false
+    (Option.equal String.equal (Some "-1")
+       (Spindle.Test.header r "content-length"));
+  Alcotest.(check bool) "and nothing produced" false !ran
+
 (* The fields the framework writes from what an answer carries are no
    headers for a route to write beside them: a second content type is two
    answers to one question, and a cookie written as a header would miss
@@ -7774,6 +7801,8 @@ let () =
             test_a_trailing_slash_is_another_path;
           Alcotest.test_case "a header the framework writes is the route's bug"
             `Quick test_a_header_the_framework_writes_is_the_routes_bug;
+          Alcotest.test_case "a stream of negative length is the route's bug"
+            `Quick test_a_stream_of_negative_length_is_the_routes_bug;
           Alcotest.test_case "the root answers /" `Quick
             test_the_root_answers_slash;
           Alcotest.test_case "a segment is decoded" `Quick

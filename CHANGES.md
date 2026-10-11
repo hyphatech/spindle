@@ -17,6 +17,11 @@
   its deadline passed, where it answered `Timeout` and left the answer's
   connection open until the client's switch ended.
 
+- `Response.stream ~length` below zero is the route's bug, answered `500`
+  with an error in the log, as a header that frames the answer is. The
+  server wrote `Content-Length: -1` and raised `Invalid_argument` into the
+  producer at its first send.
+
 - `Spindle_client.error`'s deadline that passed is `Timeout`, where it was
   `Timed_out`: the word postgres-eio and Eio's own `Timeout.run` give the
   same failure. Breaking: a match on a call's error names `Timeout`.
