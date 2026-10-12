@@ -58,24 +58,18 @@ let client_has_current req v =
           not_after (to_seconds m) (to_seconds since)
       | (Some _ | None), (Some _ | None) -> false)
 
-(* §13.1.5: by a strong tag or the exact date; a weak tag never matches. A
-   tag is told from a date by its quote, never its first letter: Wednesday
-   begins with W. *)
+(* §13.1.5: by a strong tag or the exact date; a weak tag never matches.
+   What is no tag is read as a date. *)
 let if_range_passes req v =
-  let looks_like_tag value =
-    String.starts_with ~prefix:"\"" value
-    || String.starts_with ~prefix:"W/\"" value
-  in
   match joined_field req "if-range" with
   | None -> true
-  | Some value when looks_like_tag value -> (
+  | Some value -> (
       match Etag.parse value with
       | Ok tag -> Etag.strong_equal v.tag tag
-      | Error _ -> false)
-  | Some value -> (
-      match (Date.parse ~now:(Request.now req) value, v.modified) with
-      | Some d, Some m -> Ptime.equal (to_seconds m) (to_seconds d)
-      | (Some _ | None), (Some _ | None) -> false)
+      | Error _ -> (
+          match (Date.parse ~now:(Request.now req) value, v.modified) with
+          | Some d, Some m -> Ptime.equal (to_seconds m) (to_seconds d)
+          | (Some _ | None), (Some _ | None) -> false))
 
 (* §14.2: only a GET, and only one range, in part; an empty representation
    has no part to describe. *)

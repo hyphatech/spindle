@@ -10,6 +10,11 @@
   `Spindle_http.Websocket.run_server` and `run_client` log nothing of a
   raise they pass on.
 
+- A request whose `Expect` lists `100-continue` among other elements, or
+  in a second `Expect` field, is sent `100 Continue`, where only a field
+  that was `100-continue` alone was: `Expect` is a list (RFC 9110
+  §10.1.1), and is read as one.
+
 ## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop

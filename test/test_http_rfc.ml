@@ -961,6 +961,14 @@ let server =
              answer ~body:"a=hello" 200;
            ],
            Open ));
+    row "9110 §10.1.1" "Expect is a list, read as one"
+      (post ~fields:[ "Expect: , 100-continue" ] "/read/a" "hello")
+      (Answers ([ answer 100; answer ~body:"a=hello" 200 ], Open));
+    row "9110 §10.1.1" "an expectation in either of two Expect fields"
+      (post
+         ~fields:[ "Expect: x-other"; "Expect: 100-Continue" ]
+         "/read/a" "hello")
+      (Answers ([ answer 100; answer ~body:"a=hello" 200 ], Open));
     row "9110 §9.3.2" "HEAD answers GET's length and no content"
       (request ~line:"HEAD /id/abc HTTP/1.1" [ "Host: t" ])
       (Answers
@@ -4203,9 +4211,18 @@ let representation_rows =
     representation_row "9110 §13.1.5" "If-Range compares strongly"
       [ ("range", "bytes=0-1"); ("if-range", "W/" ^ tag) ]
       200;
+    representation_row "9110 §13.1.5" "If-Range by a strong tag that matches"
+      [ ("range", "bytes=0-1"); ("if-range", tag) ]
+      206;
+    representation_row "9110 §13.1.5" "If-Range by a strong tag that does not"
+      [ ("range", "bytes=0-1"); ("if-range", {|"other"|}) ]
+      200;
     representation_row "9110 §13.1.5" "If-Range by exactly the date"
       [ ("range", "bytes=0-1"); ("if-range", date) ]
       206;
+    representation_row "9110 §13.1.5" "If-Range by a date that is not exact"
+      [ ("range", "bytes=0-1"); ("if-range", "Thu, 01 Jan 1970 00:00:00 GMT") ]
+      200;
     representation_row "9110 §14.2" "a range past the end is 416"
       [ ("range", "bytes=100-") ]
       416;

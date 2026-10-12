@@ -659,11 +659,7 @@ let exchange ~clock ~now ~limits ~trace ~instruments ~state ~deadline app ic oc
       in
       let expects_continue =
         (not is_http_1_0) && has_body
-        &&
-        match Field.find head.headers "expect" with
-        | Some v ->
-            String.equal (String.lowercase_ascii (String.trim v)) "100-continue"
-        | None -> false
+        && Field.has_element head.headers "expect" "100-continue"
       in
       let progress =
         {
