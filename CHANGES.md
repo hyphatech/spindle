@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop
   runs for an `Mtime.Span.t`, where `Unix.sleepf` takes a float of
