@@ -1062,44 +1062,54 @@ let open_websocket t ?timeout ?(headers = []) ?keep_alive ?max_message protocol
           Result.map_error (fun e -> Ended e) ended)
 
 (* One line when it ends: a warning when it never opened or did not end
-   cleanly. Never the query, which may carry a credential. *)
+   cleanly, and an error, with what was raised, when its handler raised.
+   Never the query, which may carry a credential. *)
 let websocket t ?timeout ?headers ?keep_alive ?max_message protocol url f =
   let started = Eio.Time.Mono.now t.clock in
-  let result =
-    open_websocket t ?timeout ?headers ?keep_alive ?max_message protocol url f
-  in
   let uri = Uri.of_string url in
   let host = Option.value (Uri.host uri) ~default:"?" in
-  let clean =
-    match result with
-    | Ok _
-    | Error
-        (Ended
-           (Websocket.Closed
-              { code = Websocket.Normal | Websocket.Going_away; _ })) ->
-        true
-    | Error (Failed _ | Refused _ | Ended _) -> false
+  let log_end level ?(raised = []) how =
+    L.msg level (fun m ->
+        m "socket to %s%s ended: %s" host (Uri.path uri) how
+          ~tags:
+            (Spindle_http.Log.tags
+               ([
+                  ("server.address", `String host);
+                  ("url.path", `String (Uri.path uri));
+                  ( "duration",
+                    `Int
+                      (Int64.to_int
+                         (Mtime.Span.to_uint64_ns
+                            (Mtime.span started (Eio.Time.Mono.now t.clock))))
+                  );
+                  ("spindle.websocket.ended", `String how);
+                ]
+               @ raised)))
   in
-  let how =
-    match result with
-    | Ok _ -> "closed"
-    | Error e -> websocket_error_to_string e
-  in
-  (if clean then L.info else L.warn) (fun m ->
-      m "socket to %s%s ended: %s" host (Uri.path uri) how
-        ~tags:
-          (Spindle_http.Log.tags
-             [
-               ("server.address", `String host);
-               ("url.path", `String (Uri.path uri));
-               ( "duration",
-                 `Int
-                   (Int64.to_int
-                      (Mtime.Span.to_uint64_ns
-                         (Mtime.span started (Eio.Time.Mono.now t.clock)))) );
-               ("spindle.websocket.ended", `String how);
-             ]));
-  result
+  match
+    open_websocket t ?timeout ?headers ?keep_alive ?max_message protocol url f
+  with
+  | Ok _ as result ->
+      log_end Logs.Info "closed";
+      result
+  | Error e as result ->
+      let level =
+        match e with
+        | Ended
+            (Websocket.Closed
+               { code = Websocket.Normal | Websocket.Going_away; _ }) ->
+            Logs.Info
+        | Failed _ | Refused _ | Ended _ -> Logs.Warning
+      in
+      log_end level (websocket_error_to_string e);
+      result
+  | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
+  | exception ex ->
+      let bt = Printexc.get_raw_backtrace () in
+      log_end Logs.Error
+        ~raised:(Spindle_http.Log.raised ex bt)
+        "its handler raised";
+      Printexc.raise_with_backtrace ex bt
 
 (* ------------------------------------------------------------------ *)
 (* Spans, sent to a collector *)

@@ -1,5 +1,15 @@
 # Changes
 
+## Unreleased
+
+- A WebSocket handler that raises is logged once, at `error`, with what
+  was raised and where: a server's socket on its line saying how it
+  ended, where `spindle.http` also logged a line of its own, and a
+  client's on the line `Spindle_client.websocket` writes when its socket
+  ends, which now says where it went and how long it lived.
+  `Spindle_http.Websocket.run_server` and `run_client` log nothing of a
+  raise they pass on.
+
 ## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop

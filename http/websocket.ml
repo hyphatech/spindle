@@ -490,9 +490,6 @@ let run ~side ~mask ?(keep_alive = default_keep_alive)
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
   | exception ex ->
       let bt = Printexc.get_raw_backtrace () in
-      L.err (fun m ->
-          m "a socket's handler raised: %s" (Printexc.to_string ex)
-            ~tags:(Log.tags (Log.raised ex bt)));
       close_and_wait (Some (Internal, "Something went wrong at our end."));
       Printexc.raise_with_backtrace ex bt
 

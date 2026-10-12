@@ -117,15 +117,16 @@ let test_a_handler_that_raises_is_logged_as_an_error () =
     in
     at 0
   in
-  match List.filter (has "socket on /raises ended") !lines with
+  match List.filter (has {|"level":"error"|}) !lines with
   | [ line ] ->
       Alcotest.(check bool)
-        ("at error: " ^ line) true
-        (has {|"level":"error"|} line);
+        ("the socket's end: " ^ line)
+        true
+        (has "socket on /raises ended" line);
       Alcotest.(check bool)
         "with what was raised" true
         (has {|a bug|} line && has {|"error.stack":"|} line)
-  | lines -> Alcotest.failf "%d lines for the socket's end" (List.length lines)
+  | lines -> Alcotest.failf "%d error lines for one raise" (List.length lines)
 
 let test_another_sites_page_cannot_open_one () =
   let got =
@@ -267,6 +268,43 @@ let test_a_client_socket_says_how_it_ended env () =
     (said
        {|"level":"warn","logger.name":"spindle.client","message":"socket to 127.0.0.1/closed ended: answered 403|});
   Alcotest.(check bool) "and never the query" false (said "hush")
+
+(* A client's handler that raises is our bug too: one line at error, the
+   socket's end, with what was raised and where. *)
+let test_a_client_handler_that_raises_is_logged_once env () =
+  let lines = ref [] in
+  Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
+    ~out:(fun l -> lines := l :: !lines)
+    ();
+  let exception Bug in
+  Eio.Switch.run @@ fun sw ->
+  let port = serve ~sw env routes in
+  (match
+     Spindle_client.websocket (client ~sw env ()) chat
+       (Printf.sprintf "ws://127.0.0.1:%d/echo" port) (fun _ -> raise Bug)
+   with
+  | exception Bug -> ()
+  | (_ : (unit, Spindle_client.websocket_error) result) ->
+      Alcotest.fail "the raise did not go on");
+  let has sub l =
+    let n = String.length sub in
+    let rec at i =
+      i + n <= String.length l
+      && (String.equal (String.sub l i n) sub || at (i + 1))
+    in
+    at 0
+  in
+  match List.filter (has {|"level":"error"|}) !lines with
+  | [ line ] ->
+      Alcotest.(check bool)
+        ("the socket's end: " ^ line)
+        true
+        (has {|"message":"socket to 127.0.0.1/echo ended: its handler raised"|}
+           line);
+      Alcotest.(check bool)
+        "with what was raised" true
+        (has "Bug" line && has {|"error.stack":"|} line)
+  | lines -> Alcotest.failf "%d error lines for one raise" (List.length lines)
 
 let test_a_refusal_reaches_the_client env () =
   Eio.Switch.run @@ fun sw ->
@@ -642,6 +680,9 @@ let () =
             (test_a_refusal_reaches_the_client env);
           Alcotest.test_case "a client socket says how it ended" `Quick
             (test_a_client_socket_says_how_it_ended env);
+          Alcotest.test_case "a client handler that raises is logged once"
+            `Quick
+            (test_a_client_handler_that_raises_is_logged_once env);
           Alcotest.test_case "the client speaks wss" `Quick
             (test_the_client_speaks_wss env);
           Alcotest.test_case "a socket whose TLS breaks is lost" `Quick

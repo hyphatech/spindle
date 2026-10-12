@@ -211,7 +211,8 @@ val websocket :
     handshake's, which are the client's own. Masking keys come from the
     generator the TLS stack is seeded with. The socket gets one line in the log
     when it ends -- where it went, how long it lived and how, at [warn] when it
-    never opened or did not end cleanly -- and never its query, where a
+    never opened or did not end cleanly, and at [error] with what was raised and
+    where when [f] raised, which goes on -- and never its query, where a
     credential travels. What [f] returns is
     {!Spindle_http.Websocket.run_client}'s, and so are [keep_alive] and
     [max_message]. *)
