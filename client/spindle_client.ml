@@ -32,13 +32,15 @@ module Filled = struct
     n
 end
 
+type flow = [ Eio.Flow.two_way_ty | Eio.Resource.close_ty ] Eio.Resource.t
+
 (* A connection kept for the next call. [flow] is [socket] itself or TLS
    over it, and [tls_reads] what its reader reads through when it is TLS.
    Borrowing it resolves [stop_watch], which ends its watch without retiring
    it. *)
 type connection = {
-  socket : Eio_unix.Net.stream_socket_ty Eio.Resource.t;
-  flow : [ Eio.Flow.two_way_ty | Eio.Resource.close_ty ] Eio.Resource.t;
+  socket : flow;
+  flow : flow;
   secure : bool;
   tls_reads : Filled.t option;
   reader : Eio.Buf_read.t;
@@ -47,7 +49,7 @@ type connection = {
 
 type t = {
   sw : Eio.Switch.t;
-  net : [ `Generic ] Eio.Net.ty Eio.Resource.t;
+  connect : sw:Eio.Switch.t -> host:string -> port:int -> flow;
   tls : (Tls.Config.client, string) result;
       (** [Error] without a usable trust store; carried rather than raised, so
           {!create} is total and the failure arrives from {!call} like any other
@@ -92,12 +94,73 @@ let tls ~authenticator =
       | Error (`Msg m) -> Error ("cannot configure TLS: " ^ m)
       | Ok config -> Ok config)
 
+exception Failed of string
+
+let fail fmt = Printf.ksprintf (fun m -> raise (Failed m)) fmt
+
+(* Rather than [Eio.Net.connect], which attaches a socket to the switch
+   before connecting and keeps a failed one there until the switch ends: here
+   that is the server's lifetime. The socket joins [sw] only connected; a
+   failure is the [Eio.Io] [Net.connect] would raise. *)
+let connect_socket ~sw addr =
+  let unix_addr = Eio_unix.Net.sockaddr_to_unix addr in
+  let as_eio = function
+    | Unix.Unix_error (code, name, arg) -> Eio_unix.Err.v code name arg
+    | ex -> ex
+  in
+  let connect fd =
+    Unix.set_nonblock fd;
+    match Unix.connect fd unix_addr with
+    | () -> ()
+    | exception
+        Unix.Unix_error ((EINPROGRESS | EINTR | EAGAIN | EWOULDBLOCK), _, _)
+      -> (
+        Eio_unix.await_writable fd;
+        match Unix.getsockopt_error fd with
+        | None -> ()
+        | Some code -> raise (Unix.Unix_error (code, "connect", "")))
+  in
+  match
+    Unix.socket ~cloexec:true
+      (Unix.domain_of_sockaddr unix_addr)
+      Unix.SOCK_STREAM 0
+  with
+  | exception ex -> raise (as_eio ex)
+  | fd -> (
+      match connect fd with
+      | () -> Eio_unix.Net.import_socket_stream ~sw ~close_unix:true fd
+      | exception ex ->
+          (try Unix.close fd with Unix.Unix_error _ -> ());
+          raise (as_eio ex))
+
+(* Each address the resolver gives, in its order, the last failure being the
+   call's: the first may be unreachable, an IPv6 one without a route (RFC
+   1123 §2.3). *)
+let connect_by_address net ~sw ~host ~port =
+  let rec connect_first = function
+    | [] -> fail "no address for %s" host
+    | [ addr ] -> connect_socket ~sw addr
+    | addr :: rest -> (
+        match connect_socket ~sw addr with
+        | socket -> socket
+        | exception (Eio.Io _ as ex) ->
+            L.debug (fun m ->
+                m "%a: %s" Eio.Net.Sockaddr.pp addr (Printexc.to_string ex));
+            connect_first rest)
+  in
+  (connect_first
+     (Eio.Net.getaddrinfo_stream net host ~service:(string_of_int port))
+    :> flow)
+
 let create ~sw ~net ~mono_clock:clock ?(timeout = Mtime.Span.(30 * s))
     ?(max_body = 16_777_216) ?(per_host = 4)
-    ?(idle_timeout = Mtime.Span.(15 * s)) ?authenticator () =
+    ?(idle_timeout = Mtime.Span.(15 * s)) ?authenticator ?connect () =
   {
     sw;
-    net :> [ `Generic ] Eio.Net.ty Eio.Resource.t;
+    connect =
+      (match connect with
+      | Some connect -> fun ~sw ~host ~port -> (connect ~sw ~host ~port :> flow)
+      | None -> connect_by_address net);
     tls = tls ~authenticator;
     clock :> Eio.Time.Mono.ty Eio.Resource.t;
     timeout;
@@ -110,12 +173,13 @@ let create ~sw ~net ~mono_clock:clock ?(timeout = Mtime.Span.(30 * s))
 
 (* Watches are daemons, so nothing idle holds the switch open; ending it
    closes what was kept. *)
-let run ?timeout ?max_body ?per_host ?idle_timeout ?authenticator env f =
+let run ?timeout ?max_body ?per_host ?idle_timeout ?authenticator ?connect env f
+    =
   Eio.Switch.run @@ fun sw ->
   f
     (create ~sw ~net:(Eio.Stdenv.net env)
        ~mono_clock:(Eio.Stdenv.mono_clock env)
-       ?timeout ?max_body ?per_host ?idle_timeout ?authenticator ())
+       ?timeout ?max_body ?per_host ?idle_timeout ?authenticator ?connect ())
 
 let idle_connections t = Domain.DLS.get t.idle
 
@@ -128,14 +192,10 @@ let local_switch t =
   | None when Int.equal (t.domain :> int) (Domain.self () :> int) -> Some t.sw
   | None -> None
 
-exception Failed of string
-
 (* A request on a reused connection may be sent again if it never left, or,
    for an idempotent method, if no byte of an answer arrived. *)
 exception Unsent of string
 exception Unanswered
-
-let fail fmt = Printf.ksprintf (fun m -> raise (Failed m)) fmt
 
 (* [authority] is without userinfo (RFC 9110 §7.2); an empty path is "/"
    (RFC 9112 §3.2.1). *)
@@ -206,41 +266,6 @@ let tls_identity t target =
                 fail "a host that is neither a name nor an address: %s"
                   target.host))
 
-(* Rather than [Eio.Net.connect], which attaches a socket to the switch
-   before connecting and keeps a failed one there until the switch ends: here
-   that is the server's lifetime. The socket joins [sw] only connected; a
-   failure is the [Eio.Io] [Net.connect] would raise. *)
-let connect_socket ~sw addr =
-  let unix_addr = Eio_unix.Net.sockaddr_to_unix addr in
-  let as_eio = function
-    | Unix.Unix_error (code, name, arg) -> Eio_unix.Err.v code name arg
-    | ex -> ex
-  in
-  let connect fd =
-    Unix.set_nonblock fd;
-    match Unix.connect fd unix_addr with
-    | () -> ()
-    | exception
-        Unix.Unix_error ((EINPROGRESS | EINTR | EAGAIN | EWOULDBLOCK), _, _)
-      -> (
-        Eio_unix.await_writable fd;
-        match Unix.getsockopt_error fd with
-        | None -> ()
-        | Some code -> raise (Unix.Unix_error (code, "connect", "")))
-  in
-  match
-    Unix.socket ~cloexec:true
-      (Unix.domain_of_sockaddr unix_addr)
-      Unix.SOCK_STREAM 0
-  with
-  | exception ex -> raise (as_eio ex)
-  | fd -> (
-      match connect fd with
-      | () -> Eio_unix.Net.import_socket_stream ~sw ~close_unix:true fd
-      | exception ex ->
-          (try Unix.close fd with Unix.Unix_error _ -> ());
-          raise (as_eio ex))
-
 (* Never on a caller's switch, since a kept connection outlives its call. A
    WebSocket's is given its bracket's switch: it is never kept. *)
 let connect ?sw t target =
@@ -250,40 +275,16 @@ let connect ?sw t target =
     | Some sw -> sw
     | None -> Option.value (local_switch t) ~default:t.sw
   in
-  (* Each address in turn, the last failure being the call's: the first may
-     be unreachable, an IPv6 one without a route (RFC 1123 §2.3). *)
-  let rec connect_first = function
-    | [] -> fail "no address for %s" target.host
-    | [ addr ] -> connect_socket ~sw addr
-    | addr :: rest -> (
-        match connect_socket ~sw addr with
-        | socket -> socket
-        | exception (Eio.Io _ as ex) ->
-            L.debug (fun m ->
-                m "%a: %s" Eio.Net.Sockaddr.pp addr (Printexc.to_string ex));
-            connect_first rest)
-  in
-  let socket =
-    connect_first
-      (Eio.Net.getaddrinfo_stream t.net target.host
-         ~service:(string_of_int target.port))
-  in
+  let socket = t.connect ~sw ~host:target.host ~port:target.port in
   let flow, secure =
     match identity with
-    | None ->
-        ( (socket
-            :> [ Eio.Flow.two_way_ty | Eio.Resource.close_ty ] Eio.Resource.t),
-          false )
+    | None -> (socket, false)
     | Some (config, who) -> (
         let host, ip =
           match who with `Host h -> (Some h, None) | `Ip ip -> (None, Some ip)
         in
         match Tls_eio.client_of_flow config ?host ?ip socket with
-        | tls ->
-            ( (tls
-                :> [ Eio.Flow.two_way_ty | Eio.Resource.close_ty ]
-                   Eio.Resource.t),
-              true )
+        | tls -> ((tls :> flow), true)
         | exception ex ->
             (* Nothing else would close it before the switch ends. *)
             Eio.Cancel.protect (fun () ->
@@ -320,24 +321,23 @@ let remove_idle t k c =
 
 (* Returns once the server closes or sends anything. It only asks whether
    the socket is readable: a TLS flow keeps a cancelled read's exception and
-   raises it at the next use. Without a descriptor only the idle limit
-   retires a connection. *)
-let await_server_activity c =
-  match Eio_unix.Resource.fd_opt c.socket with
-  | Some fd -> Eio_unix.Fd.use fd Eio_unix.await_readable ~if_closed:Fun.id
-  | None -> Eio.Fiber.await_cancel ()
+   raises it at the next use. *)
+let await_server_activity fd =
+  Eio_unix.Fd.use fd Eio_unix.await_readable ~if_closed:Fun.id
 
 (* Watched while idle (RFC 9112 §9.5): the server closing it or sending
    anything retires it, so one the server gave up on is never lent, and so
    does waiting past [idle_for]. The watch is a daemon, so an idle connection
-   never holds its switch open. *)
+   never holds its switch open. One with no descriptor to watch -- a
+   supplied connection may have none -- is closed instead: nothing would
+   tell the client the server had left it. *)
 let keep_idle t k c ~idle_for =
   let idle = idle_connections t in
   let kept = Option.value (Hashtbl.find_opt idle k) ~default:[] in
-  match local_switch t with
-  | None -> close_connection c
-  | Some _ when List.length kept >= t.per_host -> close_connection c
-  | Some sw ->
+  match (local_switch t, Eio_unix.Resource.fd_opt c.socket) with
+  | None, _ | _, None -> close_connection c
+  | Some _, Some _ when List.length kept >= t.per_host -> close_connection c
+  | Some sw, Some fd ->
       Hashtbl.replace idle k (c :: kept);
       let stopped, stop_watch = Eio.Promise.create () in
       c.stop_watch <- Some stop_watch;
@@ -345,7 +345,7 @@ let keep_idle t k c ~idle_for =
           let retire =
             Eio.Fiber.first
               (fun () ->
-                await_server_activity c;
+                await_server_activity fd;
                 true)
               (fun () ->
                 Eio.Fiber.first
@@ -373,13 +373,14 @@ let keep_idle t k c ~idle_for =
    runs, and a call made before that would be sent on a connection the
    server had already left, or read what it said as the answer. poll(2)
    rather than select(2), which no descriptor past FD_SETSIZE can be given
-   to. *)
+   to. A connection with no descriptor is never kept, and would be one the
+   server may have left. *)
 let server_spoke c =
   Eio.Buf_read.buffered_bytes c.reader > 0
   || (match c.tls_reads with Some reads -> reads.last_full | None -> false)
   ||
   match Eio_unix.Resource.fd_opt c.socket with
-  | None -> false
+  | None -> true
   | Some fd ->
       Eio_unix.Fd.use fd
         ~if_closed:(fun () -> true)

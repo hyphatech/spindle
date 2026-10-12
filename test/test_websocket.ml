@@ -385,20 +385,16 @@ let test_a_socket_whose_tls_breaks_is_lost env () =
 (* A server that opens the socket and then never reads: the send that
    cannot go answers [Lost] once the client's limit passes, and the call
    returns with it rather than waiting for the server to take what is still
-   held. The message is many times what both ends' buffers hold. *)
-let test_a_socket_whose_server_stopped_reading_is_lost env () =
+   held. The message is three times what the connection holds. In memory,
+   where what the server has not read is held for good, which a kernel
+   need not do; and on virtual time, where a call that waits for ever is
+   failed an hour on rather than hanging the suite. *)
+let test_a_socket_whose_server_stopped_reading_is_lost () =
+  In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  let socket =
-    Eio.Net.listen (Eio.Stdenv.net env) ~sw ~backlog:1 ~reuse_addr:true
-      (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
-  in
-  let port =
-    match Eio.Net.listening_addr socket with
-    | `Tcp (_, p) -> p
-    | _ -> Alcotest.fail "expected a TCP socket"
-  in
+  let listening, connect = In_memory.listen () in
   Eio.Fiber.fork_daemon ~sw (fun () ->
-      let flow, _ = Eio.Net.accept ~sw socket in
+      let flow, _ = Eio.Net.accept ~sw listening in
       let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
       (match Spindle_http.Head.Request.read ~max:65536 r with
       | Error _ -> Alcotest.fail "the upgrade could not be read"
@@ -414,12 +410,18 @@ let test_a_socket_whose_server_stopped_reading_is_lost env () =
               Sec-WebSocket-Accept: " ^ Ws.accept_key key ^ "\r\n\r\n")
             flow);
       Eio.Fiber.await_cancel ());
+  let client =
+    Spindle_client.create ~sw
+      ~net:(Eio_mock.Net.make "no network")
+      ~mono_clock:(Eio.Stdenv.mono_clock env)
+      ~connect:(fun ~sw ~host:_ ~port:_ -> connect ~sw)
+      ()
+  in
   match
-    Spindle_client.websocket (client ~sw env ())
+    Spindle_client.websocket client
       ~timeout:Mtime.Span.(500 * ms)
-      chat
-      (Printf.sprintf "ws://127.0.0.1:%d/flood" port)
-      (fun ws -> Ws.send ws { text = String.make (16 * 1024 * 1024) 'x' })
+      chat "ws://t/flood"
+      (fun ws -> Ws.send ws { text = String.make 200_000 'x' })
   with
   | Error (Spindle_client.Ended (Ws.Lost _)) -> ()
   | got ->
@@ -690,8 +692,7 @@ let () =
           Alcotest.test_case "a socket whose TLS breaks is lost" `Quick
             (test_a_socket_whose_tls_breaks_is_lost env);
           Alcotest.test_case "a socket whose server stopped reading is lost"
-            `Quick
-            (test_a_socket_whose_server_stopped_reading_is_lost env);
+            `Quick test_a_socket_whose_server_stopped_reading_is_lost;
           Alcotest.test_case "a room is a broadcast of frames" `Quick
             (test_a_room_is_a_broadcast_of_frames env);
           Alcotest.test_case "a silent peer is pinged, then dropped" `Quick

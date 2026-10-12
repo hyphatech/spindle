@@ -3688,6 +3688,108 @@ let test_a_refused_address_leaves_no_socket () =
   done;
   check_int "no descriptor left behind" before (open_descriptors ())
 
+(* A client given its connections makes each through them, to the host and
+   port its URL names, and speaks TLS over one where the URL says https, as
+   it does over a socket. *)
+let test_a_client_calls_through_the_connections_it_is_given () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let config, authenticator = Tls_front.certificate Name_only in
+  let answer flow body =
+    let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
+    match Spindle_http.Head.Request.read ~max:65536 r with
+    | Error _ -> Alcotest.fail "a request that could not be read"
+    | Ok _ ->
+        Eio.Flow.copy_string
+          (Printf.sprintf
+             "HTTP/1.1 200 OK\r\n\
+              Content-Length: %d\r\n\
+              Connection: close\r\n\
+              \r\n\
+              %s"
+             (String.length body) body)
+          flow
+  in
+  let serve ~secure (listening, _) =
+    Eio.Fiber.fork_daemon ~sw (fun () ->
+        let rec next () =
+          let socket, _ = Eio.Net.accept ~sw listening in
+          if secure then answer (Tls_eio.server_of_flow config socket) "secure"
+          else answer socket "plain";
+          next ()
+        in
+        next ())
+  in
+  let plain = In_memory.listen () and secure = In_memory.listen () in
+  serve ~secure:false plain;
+  serve ~secure:true secure;
+  let asked = ref [] in
+  let client =
+    Spindle_client.create ~sw
+      ~net:(Eio_mock.Net.make "no network")
+      ~mono_clock:(Eio.Stdenv.mono_clock env)
+      ~authenticator
+      ~connect:(fun ~sw ~host ~port ->
+        asked := !asked @ [ Printf.sprintf "%s %d" host port ];
+        let _, connect = if port = 443 then secure else plain in
+        connect ~sw)
+      ()
+  in
+  let body url =
+    match Spindle_client.call client `GET url with
+    | Ok r -> r.body
+    | Error e -> Alcotest.fail (Spindle_client.error_to_string e)
+  in
+  check_string "over the connection given" "plain"
+    (body "http://example.com:8080/");
+  check_string "and TLS over it" "secure" (body "https://localhost/");
+  Alcotest.(check (list string))
+    "each to the host and port its URL names"
+    [ "example.com 8080"; "localhost 443" ]
+    !asked
+
+(* A supplied connection with no descriptor cannot be watched while kept,
+   so the client cannot tell whether the server closed it: it is closed
+   after its call rather than lent to the next, though the server would
+   keep it. *)
+let test_a_connection_that_cannot_be_watched_is_not_kept () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let listening, connect = In_memory.listen () in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      let rec accept () =
+        let flow, _ = Eio.Net.accept ~sw listening in
+        Eio.Fiber.fork ~sw (fun () ->
+            let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
+            let rec next () =
+              match Spindle_http.Head.Request.read ~max:65536 r with
+              | Error _ -> ()
+              | Ok _ ->
+                  Eio.Flow.copy_string
+                    "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok" flow;
+                  next ()
+            in
+            next ());
+        accept ()
+      in
+      accept ());
+  let connections = ref 0 in
+  let client =
+    Spindle_client.create ~sw
+      ~net:(Eio_mock.Net.make "no network")
+      ~mono_clock:(Eio.Stdenv.mono_clock env)
+      ~connect:(fun ~sw ~host:_ ~port:_ ->
+        incr connections;
+        connect ~sw)
+      ()
+  in
+  for _ = 1 to 2 do
+    match Spindle_client.call client `GET "http://t/" with
+    | Ok r -> check_string "answered" "ok" r.body
+    | Error e -> Alcotest.fail (Spindle_client.error_to_string e)
+  done;
+  check_int "each call on a connection of its own" 2 !connections
+
 (* ------------------------------------------------------------------ *)
 (* The edges, over a real socket *)
 
@@ -8337,6 +8439,11 @@ let () =
             test_a_refused_address_leaves_no_socket;
           Alcotest.test_case "a quoted keep-alive timeout is read" `Quick
             test_a_quoted_keep_alive_timeout_is_read;
+          Alcotest.test_case
+            "a client calls through the connections it is given" `Quick
+            test_a_client_calls_through_the_connections_it_is_given;
+          Alcotest.test_case "a connection that cannot be watched is not kept"
+            `Quick test_a_connection_that_cannot_be_watched_is_not_kept;
         ] );
       ( "the edges",
         [

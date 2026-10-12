@@ -15,6 +15,14 @@
   that was `100-continue` alone was: `Expect` is a list (RFC 9110
   §10.1.1), and is read as one.
 
+- `Spindle_client.create` and `run` take `?connect`, the way the client
+  opens a connection to a host and port, which TLS goes over where the
+  URL asks for it: a test can call a server in memory. A connection with
+  no descriptor beneath it, as one in memory, is closed after its call
+  and never kept, since the client could not tell that the server closed
+  it. Without `?connect` the client resolves the host and connects as
+  before.
+
 ## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop

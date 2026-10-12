@@ -64,6 +64,7 @@ let () =
 | `~per_host` | 4 | idle connections kept per scheme, host and port, on each domain |
 | `~idle_timeout` | 15 s | how long an unused connection is kept |
 | `~authenticator` | system trust store | what a server's certificate is checked against |
+| `~connect` | each address the host resolves to | how a connection to a host and port is opened -- a test's in memory; TLS goes over it for `https`, and one with no descriptor is never kept |
 
 Each wait is an `Mtime.Span.t`: `~timeout:Mtime.Span.(10 * s)`.
 
