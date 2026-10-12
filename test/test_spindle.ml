@@ -3086,7 +3086,7 @@ let test_a_request_and_its_call_are_one_trace () =
     Spindle.get
       Spindle.Path.(s "broken")
       Spindle.Returns.text
-      (Spindle.Dep.of_request (fun _ -> raise (Failure "a bug")))
+      (Spindle.Dep.of_request (fun _ -> raise (Boom "a bug")))
   in
   let socket =
     Eio.Net.listen net ~sw ~backlog:8 ~reuse_addr:true

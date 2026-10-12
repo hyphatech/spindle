@@ -9,6 +9,8 @@ open Spindle.Syntax
 
 let ( let* ) = Result.bind
 
+exception Boom of string
+
 type said = { text : string }
 
 let said_json =
@@ -45,7 +47,7 @@ let routes =
       Spindle.Path.(s "raises")
       (Spindle.Returns.websocket chat)
       (let+ () = Spindle.Dep.return () in
-       Ok (fun _ -> raise (Failure "a bug")));
+       Ok (fun _ -> raise (Boom "a bug")));
   ]
 
 let app = Spindle.Test.app routes
