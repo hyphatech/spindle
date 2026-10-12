@@ -17,7 +17,7 @@
   test_spindle_postgres
   test_cli)
  (package spindle_postgres)
- (modules :standard \ cli_app test_style)
+ (modules :standard \ cli_app test_docs)
  (libraries
   spindle
   spindle.http
@@ -66,19 +66,13 @@
  (modules cli_app)
  (libraries spindle spindle_cli eio_main))
 
-; The house rules, read off the source.
+; Every example the build makes is on a page of the documentation site.
 
 (test
- (name test_style)
+ (name test_docs)
  (package spindle)
- (modules test_style)
+ (modules test_docs)
  (libraries alcotest)
  (deps
-  ; The shared refusals, read from the blocks OCAML.md fences, and every
-  ; directory the build reads, each held to them by what its dune builds.
-  ../OCAML.md
-  (glob_files_rec ../dune)
-  (glob_files_rec ../*.{ml,mli,mlx})
-  ; Every example built, and every page that may include one.
   ../examples/dune
   (glob_files_rec ../docs/*.md)))

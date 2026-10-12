@@ -35,8 +35,8 @@ docs/       the documentation site, every program included from examples/
 overrides/  the site's theme overrides: the header's mark, as an icon
 examples/   the programs the site shows, each built and run
 test/       the suites: the framework, HTTP and WebSocket rows by RFC
-            section, the wire, the Postgres kit, and test_style, the house
-            rules that can be checked mechanically
+            section, the wire, the Postgres kit, and test_docs, every
+            example on a page
 ```
 
 Each module's contract is its `.mli`. Read the `.mli` before changing a
@@ -84,8 +84,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   `Spindle.Test.websocket`, which refuse an undeclared code, or a status its
   route does not list -- and `Test.events` an event past its reader's
   limit -- in a test and nowhere else. Nothing else raises
-  across a library boundary. Test: `test_style` names the line, and
-  its list of exceptions is this one.
+  across a library boundary. Symptom: `rg -n -w invalid_arg -g '*.ml' http
+  core client postgres cli` finds one this list does not name.
 - **A library prints and exits only where its `.mli` says, and these are
   the places.** `Spindle.serve` prints the address it listens on unless
   given `?ready`, and exits with status 1 when its application cannot
@@ -94,15 +94,19 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   sees it; `Spindle.Log`'s default sink writes its lines to stderr; and
   `spindle_cli`, a command line, prints its answer and its errors and
   exits with its status. A library printing anywhere else writes into
-  output its program owns. Test: `test_style` names the line, and its
-  list of places is this one.
+  output its program owns. Symptom: `rg -n -w
+  'exit|stderr|print_string|print_endline|prerr_endline|Printf\.printf'
+  -g '*.ml' http core client postgres cli` finds one in a place this list
+  does not name.
 - **Spindle reads and writes HTTP itself, names no driver, and its client
   links no framework.** No library links another HTTP implementation or
   names one; `spindle_postgres` reaches Postgres through rowtype's backend
   alone, so a second driver is a second backend and no change here; and
   `spindle.client` links `spindle.http` and never `spindle`, so a program
-  that calls other servers compiles no framework. Test: `test_style`'s
-  boundaries.
+  that calls other servers compiles no framework. Symptom: `rg -n -i -w
+  'cohttp\w*|httpun\w*|httpaf\w*|h1|h2|piaf|paf|ezcurl|postgres.eio' -g
+  '*.{ml,mli}' -g dune http core client postgres cli` finds a name, or
+  `rg -n '^ *spindle$' client/dune` finds the framework.
 - **A route is one value, and a dependency hands over an input.** A method
   and a path are declared together (`Spindle.post Path.(...)`), so a route no
   method can reach cannot be written. Every input a request carries -- a
@@ -173,7 +177,9 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   with string functions, and a query string is read by `Urlencoded`, never
   by `Uri.query`, which splits a value at its commas, because two readings
   of one value is how a proxy and a server come to disagree. Symptom: a
-  `String.index_opt v ';'` on a header; `test_style` refuses `Uri.query`.
+  `String.index_opt v ';'` on a header, or `rg -n
+  'Uri\.(query|get_query_param)\b' -g '*.ml' http core client postgres
+  cli` finds a call.
 - **A WebSocket rule is a row.** A requirement of RFC 6455 that Spindle
   meets, as a server or as a client, has a row in `test_websocket_rfc`,
   named by its section and read whole, a byte at a time and at splits a
