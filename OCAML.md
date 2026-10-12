@@ -251,7 +251,11 @@ the next where they expect it.
   `refused-in-a-library`, reading the environment, printing and exiting,
   which an executable (a command, a test, an example) does where it starts
   and a library never; and the names in `only-in-the-clock-module` are
-  refused in every file but a library's `instant.ml`. A name a
+  refused in every file but a library's `instant.ml`. `Failure` is
+  refused where it is raised by hand, `failwith` by another name; a test
+  that raises on purpose declares an exception of its own. `Eio_main.run`
+  is a program's (*A library runs no event loop of its own*), and
+  `Uri.query` a value with structure read without its parser. A name a
   repository's own rules allow in a place they name -- `invalid_arg` where
   a description is built and can mean nothing -- is allowed there alone. A
   name is read with a leading `Stdlib.` taken off, so `Stdlib.exit` is
@@ -269,6 +273,7 @@ the next where they expect it.
   List.tl
   List.nth
   Obj.magic
+  Failure
   compare
   Stdlib.compare
   Unix.time
@@ -321,6 +326,9 @@ the next where they expect it.
   Format.print_string
   Format.std_formatter
   Format.err_formatter
+  Eio_main.run
+  Uri.query
+  Uri.get_query_param
   ```
 
 ## OCaml tools
