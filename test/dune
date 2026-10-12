@@ -31,6 +31,7 @@
   eio
   eio_main
   eio.mock
+  eio.unix
   mtime
   mtime.clock
   ptime
@@ -52,6 +53,7 @@
   tls
   tls-eio
   x509
+  ipaddr
   mirage-crypto-rng.unix
   base64
   unix)

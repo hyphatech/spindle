@@ -1,6 +1,8 @@
 (lang dune 3.18)
 (name spindle)
 
+(implicit_transitive_deps false)
+
 ; Generated opam files: each package's dependencies are stated here and
 ; nowhere else.
 
@@ -67,6 +69,8 @@
    (>= 5.6.2))
   (domain-name
    (>= 0.5.0))
+  (tls
+   (>= 2.1.2))
   (tls-eio
    (>= 2.1.2))
   (iomux
@@ -83,6 +87,10 @@
    (>= 0.5.3))
   (mirage-crypto-rng
    (>= 2.4.1))
+  (alcotest
+   (and
+    :with-test
+    (>= 1.9.1)))
   (odoc
    (and
     :with-dev-setup
@@ -144,6 +152,8 @@
    (>= 0.3.0))
   (ptime
    (>= 1.2.0))
+  (mtime
+   (>= 2.1.0))
   (eio
    (>= 1.6))
   (logs
@@ -165,6 +175,42 @@
    (and
     :with-test
     (>= 0.91)))
+  (eio_main
+   (and
+    :with-test
+    (>= 1.6)))
+  (wiretype
+   (and
+    :with-test
+    (>= 0.3.0)))
+  (uri
+   (and
+    :with-test
+    (>= 4.4.0)))
+  (angstrom
+   (and
+    :with-test
+    (>= 0.16.1)))
+  (ipaddr
+   (and
+    :with-test
+    (>= 5.6.2)))
+  (cstruct
+   (and
+    :with-test
+    (>= 6.3.0)))
+  (base64
+   (and
+    :with-test
+    (>= 3.5.2)))
+  (decompress
+   (and
+    :with-test
+    (>= 1.6.0)))
+  (mirage-crypto-rng
+   (and
+    :with-test
+    (>= 2.4.1)))
   (fmt
    (and
     :with-test
@@ -180,6 +226,10 @@
     :with-test
     (>= 0.2.0)))
   (tls
+   (and
+    :with-test
+    (>= 2.1.2)))
+  (tls-eio
    (and
     :with-test
     (>= 2.1.2)))
