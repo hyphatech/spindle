@@ -3688,10 +3688,11 @@ let test_a_refused_address_leaves_no_socket () =
   done;
   check_int "no descriptor left behind" before (open_descriptors ())
 
-(* A client given its connections makes each through them, to the host and
-   port its URL names, and speaks TLS over one where the URL says https, as
-   it does over a socket. *)
-let test_a_client_calls_through_the_connections_it_is_given () =
+(* A client connects through the network it is given: it resolves the host
+   its URL names at the URL's port, connects to the address that answered,
+   and speaks TLS over the socket where the URL says https. The mock network
+   traces each step, as Eio's mocks are checked. *)
+let test_a_client_calls_through_the_network_it_is_given () =
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let config, authenticator = Tls_front.certificate Name_only in
@@ -3723,35 +3724,50 @@ let test_a_client_calls_through_the_connections_it_is_given () =
   let plain = In_memory.listen () and secure = In_memory.listen () in
   serve ~secure:false plain;
   serve ~secure:true secure;
-  let asked = ref [] in
+  let net = Eio_mock.Net.make "net" in
+  Eio_mock.Net.on_getaddrinfo net
+    [
+      `Return [ `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080) ];
+      `Return [ `Tcp (Eio.Net.Ipaddr.V4.loopback, 443) ];
+    ];
+  Eio_mock.Net.on_connect net
+    [ `Run (fun () -> snd plain ~sw); `Run (fun () -> snd secure ~sw) ];
   let client =
-    Spindle_client.create ~sw
-      ~net:(Eio_mock.Net.make "no network")
+    Spindle_client.create ~sw ~net
       ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ~authenticator
-      ~connect:(fun ~sw ~host ~port ->
-        asked := !asked @ [ Printf.sprintf "%s %d" host port ];
-        let _, connect = if port = 443 then secure else plain in
-        connect ~sw)
-      ()
+      ~authenticator ()
   in
+  let traced = ref [] in
+  let trace =
+    {
+      Eio.Debug.traceln =
+        (fun ?__POS__:_ fmt ->
+          Format.kasprintf (fun line -> traced := !traced @ [ line ]) fmt);
+    }
+  in
+  Eio.Fiber.with_binding (Eio.Stdenv.debug env)#traceln trace @@ fun () ->
   let body url =
     match Spindle_client.call client `GET url with
     | Ok r -> r.body
     | Error e -> Alcotest.fail (Spindle_client.error_to_string e)
   in
-  check_string "over the connection given" "plain"
+  check_string "over the network given" "plain"
     (body "http://example.com:8080/");
   check_string "and TLS over it" "secure" (body "https://localhost/");
   Alcotest.(check (list string))
     "each to the host and port its URL names"
-    [ "example.com 8080"; "localhost 443" ]
-    !asked
+    [
+      "net: getaddrinfo ~service:8080 example.com";
+      "net: connect to tcp:127.0.0.1:8080";
+      "net: getaddrinfo ~service:443 localhost";
+      "net: connect to tcp:127.0.0.1:443";
+    ]
+    !traced
 
-(* A supplied connection with no descriptor cannot be watched while kept,
-   so the client cannot tell whether the server closed it: it is closed
-   after its call rather than lent to the next, though the server would
-   keep it. *)
+(* A socket with no descriptor, as a mock network's, cannot be watched
+   while kept, so the client cannot tell whether the server closed it: it
+   is closed after its call rather than lent to the next, though the server
+   would keep it. *)
 let test_a_connection_that_cannot_be_watched_is_not_kept () =
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
@@ -3774,14 +3790,18 @@ let test_a_connection_that_cannot_be_watched_is_not_kept () =
       in
       accept ());
   let connections = ref 0 in
-  let client =
-    Spindle_client.create ~sw
-      ~net:(Eio_mock.Net.make "no network")
-      ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ~connect:(fun ~sw ~host:_ ~port:_ ->
+  let net = Eio_mock.Net.make "net" in
+  let connection =
+    `Run
+      (fun () ->
         incr connections;
         connect ~sw)
-      ()
+  in
+  Eio_mock.Net.on_getaddrinfo net
+    (List.init 2 (fun _ -> `Return [ `Tcp (Eio.Net.Ipaddr.V4.loopback, 80) ]));
+  Eio_mock.Net.on_connect net [ connection; connection ];
+  let client =
+    Spindle_client.create ~sw ~net ~mono_clock:(Eio.Stdenv.mono_clock env) ()
   in
   for _ = 1 to 2 do
     match Spindle_client.call client `GET "http://t/" with
@@ -8439,9 +8459,8 @@ let () =
             test_a_refused_address_leaves_no_socket;
           Alcotest.test_case "a quoted keep-alive timeout is read" `Quick
             test_a_quoted_keep_alive_timeout_is_read;
-          Alcotest.test_case
-            "a client calls through the connections it is given" `Quick
-            test_a_client_calls_through_the_connections_it_is_given;
+          Alcotest.test_case "a client calls through the network it is given"
+            `Quick test_a_client_calls_through_the_network_it_is_given;
           Alcotest.test_case "a connection that cannot be watched is not kept"
             `Quick test_a_connection_that_cannot_be_watched_is_not_kept;
         ] );

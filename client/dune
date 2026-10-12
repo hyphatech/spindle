@@ -24,5 +24,4 @@
   mirage-crypto-rng.unix
   base64
   domain-name
-  logs
-  unix))
+  logs))

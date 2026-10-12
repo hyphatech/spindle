@@ -2293,30 +2293,36 @@ let plain_server () =
   in
   (path, connection, stop)
 
-(* A network that resolves every name to one Unix-domain socket's path: all
-   a client asks of a network is where a name is, and the rest of it is the
-   client's own. *)
+(* A network that resolves every name to one Unix-domain socket's path, and
+   connects there through the machine's own. *)
 module Only_path = struct
-  type t = string
+  type t = { net : [ `Generic ] Eio.Net.ty Eio.Resource.t; path : string }
   type tag = [ `Generic ]
 
   let listen _ ~reuse_addr:_ ~reuse_port:_ ~backlog:_ ~sw:_ _ =
     Alcotest.fail "a client listens on nothing"
 
-  let connect _ ~bind_to:_ ~options:_ ~sw:_ _ =
-    Alcotest.fail "the client connects its own sockets"
+  let connect t ~bind_to:_ ~options:_ ~sw addr =
+    (Eio.Net.connect ~sw t.net addr
+      :> [ `Generic ] Eio.Net.stream_socket_ty Eio.Resource.t)
 
   let datagram_socket _ ~reuse_addr:_ ~reuse_port:_ ~sw:_ _ =
     Alcotest.fail "a client sends no datagrams"
 
-  let getaddrinfo path ~service:_ _ = [ `Unix path ]
+  let getaddrinfo t ~service:_ _ = [ `Unix t.path ]
   let getnameinfo _ _ = Alcotest.fail "a client names no address"
 end
 
 (* A client of [plain_server] at [path]. *)
 let plain_client ~sw env path =
+  let only_path : Only_path.t =
+    {
+      net = (Eio.Stdenv.net env :> [ `Generic ] Eio.Net.ty Eio.Resource.t);
+      path;
+    }
+  in
   Spindle_client.create ~sw
-    ~net:(Eio.Resource.T (path, Eio.Net.Pi.network (module Only_path)))
+    ~net:(Eio.Resource.T (only_path, Eio.Net.Pi.network (module Only_path)))
     ~mono_clock:(Eio.Stdenv.mono_clock env)
     ()
 

@@ -15,13 +15,13 @@
   that was `100-continue` alone was: `Expect` is a list (RFC 9110
   §10.1.1), and is read as one.
 
-- `Spindle_client.create` and `run` take `?connect`, the way the client
-  opens a connection to a host and port, which TLS goes over where the
-  URL asks for it: a test can call a server in memory. A connection with
-  no descriptor beneath it, as one in memory, is closed after its call
-  and never kept, since the client could not tell that the server closed
-  it. Without `?connect` the client resolves the host and connects as
-  before.
+- `Spindle_client` opens every connection through the `net` it is
+  given, with `Eio.Net.connect`, where it opened its sockets with `Unix`
+  itself, so a test can give it `Eio_mock.Net`. Each connection lives on
+  a switch of its own, so one that fails to connect still leaves no
+  socket behind. A socket with no descriptor beneath it, as a mock
+  network's, is closed after its call and never kept, since the client
+  could not tell that the server closed it.
 
 ## 0.3.1 (2026-10-12)
 

@@ -16,13 +16,13 @@
     opens one, and gives it back only when the answer was read to its end and
     neither side said [close]; a kept one is watched while it waits, so a
     connection the server closed, or sent anything on, is retired rather than
-    lent; a supplied connection with no descriptor beneath it, such as one in
-    memory, cannot be watched and is closed after its call instead. A call never
-    waits for a connection -- past the ones kept it opens its own -- because
-    waiting would make one call's latency another's, and how many calls run at
-    once is the caller's to limit. A new connection tries each address the
-    host's name has, in the order the resolver gives them, until one connects,
-    unless the client was given its own way to connect.
+    lent; a socket with no descriptor beneath it, such as a mock network's,
+    cannot be watched and is closed after its call instead. A call never waits
+    for a connection -- past the ones kept it opens its own -- because waiting
+    would make one call's latency another's, and how many calls run at once is
+    the caller's to limit. A new connection is opened through [net]: it tries
+    each address the host's name resolves to there, in the order the resolver
+    gives them, until one connects.
 
     A call has a deadline, which covers all of it, and one whose deadline passes
     closes its connection rather than give it back. A request is sent a second
@@ -51,11 +51,6 @@ val create :
   ?per_host:int ->
   ?idle_timeout:Mtime.Span.t ->
   ?authenticator:X509.Authenticator.t ->
-  ?connect:
-    (sw:Eio.Switch.t ->
-    host:string ->
-    port:int ->
-    [> Eio.Flow.two_way_ty | Eio.Resource.close_ty ] Eio.Resource.t) ->
   unit ->
   t
 (** [sw] is the application's and never a request's: where the domain that made
@@ -70,17 +65,7 @@ val create :
     inside common servers' own idle limits, so a server closing in the instant a
     request is written is rare. [authenticator] is what a server's certificate
     is checked against, the system's trust store unless given: a test gives one
-    that trusts a certificate it made.
-
-    [connect ~sw ~host ~port] opens each connection: a flow to the URL's [host]
-    -- a name, or an address without an IPv6 address's brackets -- and [port],
-    attached to [sw], raising [Eio.Io] as [Eio.Net.connect] does where it
-    cannot, which a call answers {!Unreachable}. Where the URL says [https] or
-    [wss], TLS goes over it. One with no descriptor beneath it is never kept,
-    since the client could not tell that the server closed it. Unless given, it
-    resolves [host] on [net] and tries each address in turn; a test gives one
-    that connects in memory, to a server that misbehaves as no kernel reliably
-    would. *)
+    that trusts a certificate it made. *)
 
 val run :
   ?timeout:Mtime.Span.t ->
@@ -88,11 +73,6 @@ val run :
   ?per_host:int ->
   ?idle_timeout:Mtime.Span.t ->
   ?authenticator:X509.Authenticator.t ->
-  ?connect:
-    (sw:Eio.Switch.t ->
-    host:string ->
-    port:int ->
-    [> Eio.Flow.two_way_ty | Eio.Resource.close_ty ] Eio.Resource.t) ->
   Eio_unix.Stdenv.base ->
   (t -> 'a) ->
   'a

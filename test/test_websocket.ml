@@ -386,9 +386,10 @@ let test_a_socket_whose_tls_breaks_is_lost env () =
    cannot go answers [Lost] once the client's limit passes, and the call
    returns with it rather than waiting for the server to take what is still
    held. The message is three times what the connection holds. In memory,
-   where what the server has not read is held for good, which a kernel
-   need not do; and on virtual time, where a call that waits for ever is
-   failed an hour on rather than hanging the suite. *)
+   through Eio's mock network, where what the server has not read is held
+   for good, which a kernel need not do; and on virtual time, where a call
+   that waits for ever is failed an hour on rather than hanging the
+   suite. *)
 let test_a_socket_whose_server_stopped_reading_is_lost () =
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
@@ -410,12 +411,12 @@ let test_a_socket_whose_server_stopped_reading_is_lost () =
               Sec-WebSocket-Accept: " ^ Ws.accept_key key ^ "\r\n\r\n")
             flow);
       Eio.Fiber.await_cancel ());
+  let net = Eio_mock.Net.make "net" in
+  Eio_mock.Net.on_getaddrinfo net
+    [ `Return [ `Tcp (Eio.Net.Ipaddr.V4.loopback, 80) ] ];
+  Eio_mock.Net.on_connect net [ `Run (fun () -> connect ~sw) ];
   let client =
-    Spindle_client.create ~sw
-      ~net:(Eio_mock.Net.make "no network")
-      ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ~connect:(fun ~sw ~host:_ ~port:_ -> connect ~sw)
-      ()
+    Spindle_client.create ~sw ~net ~mono_clock:(Eio.Stdenv.mono_clock env) ()
   in
   match
     Spindle_client.websocket client

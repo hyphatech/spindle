@@ -195,6 +195,7 @@ let run f =
       method clock = mock#clock
       method mono_clock = mock#mono_clock
       method domain_mgr = Eio_mock.Domain_manager.create ()
+      method debug = mock#debug
     end
   in
   Eio.Fiber.first
