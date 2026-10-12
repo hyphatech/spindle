@@ -165,6 +165,11 @@ the next where they expect it.
   for the same, every switch is that OCaml, and CI builds on it with the
   oldest versions the opam files allow. They move together, never one
   repository alone.
+- **A library reaches only what it lists.** Every `dune-project` sets
+  `(implicit_transitive_deps false)`, so a `dune` file's `libraries` are
+  all its code can name, never a library it gets through another. Why: a
+  boundary a repository declares -- what a package may link, which driver
+  it never names -- is then held by the compiler, not by a reader.
 - **A `Logs` source is named after its library's public name**
   (`rowtype-postgres`, `spindle.http`), and a part of it after a dot
   (`postgres-eio.pool`), so a user filters a library by the name they
@@ -231,21 +236,21 @@ the next where they expect it.
 - **A `float` labelled with a unit is refused** (`_s`, `_ms`, `_us`,
   `_ns`), in every file: a time is typed.
 - **Tests are Alcotest, and a property is QCheck** through
-  `qcheck-alcotest`. A library's `test/test_style.ml` checks what a reader
-  of its source can, in every `.ml` and `.mli` the repository builds. It
-  reads its names from this file, `OCAML.md`, at its root, so no
-  repository keeps a list of its own and a change here holds everywhere at
-  the next sync. Every file refuses the names in `refused`: calls that can
-  fail without a value, and time in a bare number. A library's files --
-  each directory whose `dune` declares a `library` -- also refuse the names
-  in `refused-in-a-library`: reading the environment, printing and exiting,
+  `qcheck-alcotest`.
+- **The refused names are three lists**, below, held in review: every
+  file refuses the names in `refused`, calls that can fail without a value
+  and time in a bare number; a library's files -- each directory whose
+  `dune` declares a `library` -- also refuse the names in
+  `refused-in-a-library`, reading the environment, printing and exiting,
   which an executable (a command, a test, an example) does where it starts
-  and a library never. The names in `only-in-the-clock-module` are
+  and a library never; and the names in `only-in-the-clock-module` are
   refused in every file but a library's `instant.ml`. A name a
-  repository's own rules allow in a place
-  they name -- `invalid_arg` where a description is built and can mean
-  nothing -- is allowed there alone, and its test names that place. A name
-  is read with a leading `Stdlib.` taken off, so `Stdlib.exit` is `exit`.
+  repository's own rules allow in a place they name -- `invalid_arg` where
+  a description is built and can mean nothing -- is allowed there alone. A
+  name is read with a leading `Stdlib.` taken off, so `Stdlib.exit` is
+  `exit`, and an alias hides nothing: `module L = List` then `L.hd` is
+  `List.hd`. A search finds most of them in a change:
+  `rg -n -w 'List\.hd|failwith|Unix\.sleepf' src`.
 
   ```refused
   failwith
