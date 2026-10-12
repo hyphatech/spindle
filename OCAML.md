@@ -170,6 +170,12 @@ the next where they expect it.
   all its code can name, never a library it gets through another. Why: a
   boundary a repository declares -- what a package may link, which driver
   it never names -- is then held by the compiler, not by a reader.
+- **A package declares what its code names.** Every package whose library
+  a package's code names is in that package's `depends`, `:with-test`
+  where only its tests name it, with a lower bound no older than the
+  oldest that works. Why: explicit is better than implicit; a library
+  reached because another dependency brings it breaks the build the day
+  that dependency stops.
 - **A `Logs` source is named after its library's public name**
   (`rowtype-postgres`, `spindle.http`), and a part of it after a dot
   (`postgres-eio.pool`), so a user filters a library by the name they
