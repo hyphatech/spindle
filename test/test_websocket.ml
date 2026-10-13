@@ -543,6 +543,55 @@ let test_a_silent_peer_is_pinged_then_dropped () =
   in
   Alcotest.(check bool) "thirty, and the connection is ended" true gone
 
+(* A peer still sending is heard, however slowly its message comes: one
+   byte every ten seconds, over ten minutes for the whole, is never silence,
+   and the message arrives whole. Masked with four zero bytes, so the
+   payload is written as it reads. *)
+let test_a_peer_sending_slowly_is_heard () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let clock = Eio.Stdenv.mono_clock env in
+  let listening, connect = In_memory.listen () in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      Spindle.Server.serve_on ~mono_clock:clock
+        ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+        ~domains:1
+        ~now:(fun () -> Ptime.epoch)
+        [ listening ] (Spindle.Test.app routes);
+      `Stop_daemon);
+  let flow = connect ~sw in
+  let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
+  Eio.Flow.copy_string
+    "GET /echo HTTP/1.1\r\n\
+     Host: t\r\n\
+     Upgrade: websocket\r\n\
+     Connection: Upgrade\r\n\
+     Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+     Sec-WebSocket-Version: 13\r\n\
+     \r\n"
+    flow;
+  let rec head () = match Eio.Buf_read.line r with "" -> () | _ -> head () in
+  head ();
+  let message = {|{"text":"|} ^ String.make 53 'x' ^ {|"}|} in
+  Eio.Flow.copy_string "\x81\xc0\x00\x00\x00\x00" flow;
+  let rec send i =
+    if i = String.length message then "sent whole"
+    else (
+      Eio.Time.Mono.sleep_until clock
+        (Mtime.of_uint64_ns (Int64.of_int ((i + 1) * 10_000_000_000)));
+      match Eio.Flow.copy_string (String.make 1 message.[i]) flow with
+      | () -> send (i + 1)
+      | exception Eio.Io _ -> Printf.sprintf "cut off %d s in" ((i + 1) * 10))
+  in
+  Alcotest.(check string) "every byte taken" "sent whole" (send 0);
+  let answer =
+    match Eio.Buf_read.take 2 r with
+    | header when String.equal header "\x81\x40" -> Eio.Buf_read.take 64 r
+    | header -> Printf.sprintf "a frame beginning %S" header
+    | exception End_of_file -> "the connection ended"
+  in
+  Alcotest.(check string) "the whole message, echoed" message answer
+
 (* A handler whose send to a peer that stopped reading is lost returns,
    and what it had written is given [send_timeout] to go, as any answer
    is: the connection then closes and its slot is the next client's. *)
@@ -698,6 +747,8 @@ let () =
             (test_a_room_is_a_broadcast_of_frames env);
           Alcotest.test_case "a silent peer is pinged, then dropped" `Quick
             test_a_silent_peer_is_pinged_then_dropped;
+          Alcotest.test_case "a peer sending slowly is heard" `Quick
+            test_a_peer_sending_slowly_is_heard;
           Alcotest.test_case
             "a socket whose peer stopped reading gives back its slot" `Quick
             test_a_socket_whose_peer_stopped_reading_gives_back_its_slot;

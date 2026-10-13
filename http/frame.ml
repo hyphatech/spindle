@@ -66,7 +66,7 @@ let apply_mask m ~at s =
     (fun i c -> Char.chr (Char.code c lxor Char.code m.[(at + i) land 3]))
     s
 
-let read_payload r h buf =
+let read_payload r h ~on_piece buf =
   let rec go at =
     if at < h.length then (
       R.ensure r 1;
@@ -74,6 +74,7 @@ let read_payload r h buf =
       let piece = R.take n r in
       Buffer.add_string buf
         (match h.mask with None -> piece | Some m -> apply_mask m ~at piece);
+      on_piece ();
       go (at + n))
   in
   go 0

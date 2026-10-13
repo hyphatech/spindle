@@ -311,13 +311,13 @@ let hand_over t r =
    otherwise hold [max_message]. *)
 let first_buffer_bytes = 4096
 
-let read_frames t ~side ~max_message ~on_frame reader =
+let read_frames t ~side ~max_message ~heard reader =
   (* [partial] is a fragmented message still arriving, with its kind. *)
   let rec next partial =
     match Frame.read_header reader with
     | Error m -> fail t Protocol_error m
     | Ok h -> (
-        on_frame ();
+        heard ();
         let masked = Option.is_some h.mask in
         match (side, masked) with
         | Server_side, false -> fail t Protocol_error "an unmasked frame"
@@ -335,7 +335,7 @@ let read_frames t ~side ~max_message ~on_frame reader =
                   (Printf.sprintf "a message longer than %d bytes" max_message)
             | Frame.Ping | Frame.Pong | Frame.Close ->
                 let b = Buffer.create h.length in
-                Frame.read_payload reader h b;
+                Frame.read_payload reader h ~on_piece:heard b;
                 control partial h.opcode (Buffer.contents b)
             | Frame.Text | Frame.Binary -> (
                 match partial with
@@ -344,14 +344,14 @@ let read_frames t ~side ~max_message ~on_frame reader =
                       "a new message before the last one ended"
                 | None ->
                     let b = Buffer.create (min h.length first_buffer_bytes) in
-                    Frame.read_payload reader h b;
+                    Frame.read_payload reader h ~on_piece:heard b;
                     if h.fin then deliver h.opcode b
                     else next (Some (h.opcode, b)))
             | Frame.Continuation -> (
                 match partial with
                 | None -> fail t Protocol_error "a continuation of nothing"
                 | Some (kind, b) ->
-                    Frame.read_payload reader h b;
+                    Frame.read_payload reader h ~on_piece:heard b;
                     if h.fin then deliver kind b else next partial)))
   and control partial opcode payload =
     match opcode with
@@ -406,15 +406,16 @@ let read_frames t ~side ~max_message ~on_frame reader =
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
   | exception ex -> Lost (Printexc.to_string ex)
 
-(* Pings after [keep_alive] without a frame, and gives up at twice that.
-   Time spent waiting for the handler is not the peer's silence. *)
-let ping_while_silent t ~keep_alive ~last_frame_at =
+(* Pings after [keep_alive] without a byte of a frame, and gives up at
+   twice that. A peer still sending a large message slowly is heard, and
+   time spent waiting for the handler is not the peer's silence. *)
+let ping_while_silent t ~keep_alive ~last_heard_at =
   let give_up = Mtime.Span.(2 * keep_alive) in
   let rec watch () =
     if Atomic.get t.awaiting_handler then
-      Atomic.set last_frame_at (Eio.Time.Mono.now t.clock);
+      Atomic.set last_heard_at (Eio.Time.Mono.now t.clock);
     let silent =
-      Mtime.span (Atomic.get last_frame_at) (Eio.Time.Mono.now t.clock)
+      Mtime.span (Atomic.get last_heard_at) (Eio.Time.Mono.now t.clock)
     in
     if not (Mtime.Span.is_shorter silent ~than:give_up) then
       Lost (Format.asprintf "nothing heard for %a" Mtime.Span.pp silent)
@@ -460,8 +461,8 @@ let run ~side ~mask ?(keep_alive = default_keep_alive)
       resolve_close_begun;
     }
   in
-  let last_frame_at = Atomic.make (Eio.Time.Mono.now c.clock) in
-  let on_frame () = Atomic.set last_frame_at (Eio.Time.Mono.now c.clock) in
+  let last_heard_at = Atomic.make (Eio.Time.Mono.now c.clock) in
+  let heard () = Atomic.set last_heard_at (Eio.Time.Mono.now c.clock) in
   let close_and_wait close_with =
     Option.iter (fun (code, reason) -> close ~code ~reason t) close_with;
     ignore
@@ -474,8 +475,8 @@ let run ~side ~mask ?(keep_alive = default_keep_alive)
   Eio.Fiber.fork_daemon ~sw (fun () ->
       end_with t
         (Eio.Fiber.first
-           (fun () -> read_frames t ~side ~max_message ~on_frame c.reader)
-           (fun () -> ping_while_silent t ~keep_alive ~last_frame_at));
+           (fun () -> read_frames t ~side ~max_message ~heard c.reader)
+           (fun () -> ping_while_silent t ~keep_alive ~last_heard_at));
       `Stop_daemon);
   Eio.Fiber.fork_daemon ~sw (fun () ->
       Eio.Promise.await c.stopping;

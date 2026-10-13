@@ -20,8 +20,10 @@ val read_header : Eio.Buf_read.t -> (header, string) result
     fragmented or longer than 125 bytes (§5.5), or a 64-bit length with its high
     bit set. [End_of_file] where the connection ends, as any read. *)
 
-val read_payload : Eio.Buf_read.t -> header -> Buffer.t -> unit
-(** Appends the frame's payload, unmasked, to the buffer. *)
+val read_payload :
+  Eio.Buf_read.t -> header -> on_piece:(unit -> unit) -> Buffer.t -> unit
+(** Appends the frame's payload, unmasked, to the buffer, calling [on_piece]
+    after each piece of it arrives. *)
 
 val write :
   Eio.Buf_write.t ->
