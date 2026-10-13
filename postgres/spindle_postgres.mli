@@ -32,9 +32,10 @@ val refusal : [< error ] -> Spindle.Refusal.t
     a warning, since a pool with nothing free is a server under load, not a bug.
     [`Pool `Closed] is the same [503 busy], logged as a warning with no detail,
     since a pool closed under a request is a server shutting down; the rest is
-    {!Spindle.Refusal.internal}, the detail in the log. A [`Conflict] included
-    -- a route that expects one matches it first, by its constraint, and answers
-    a code it declares:
+    {!Spindle.Refusal.internal}, the detail in the log. A [`Conflict] included,
+    whether a statement found it or a [DEFERRABLE] constraint refused a
+    transaction's [COMMIT] -- a route that expects one matches it first, by its
+    constraint, and answers a code it declares:
 
     {[
     match Spindle_postgres.Pool.query pool add_user (name, email) with

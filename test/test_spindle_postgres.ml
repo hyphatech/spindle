@@ -763,6 +763,70 @@ let test_a_refused_bracket_keeps_nothing_unless_it_says () =
       Alcotest.(check int) "kept, where the work says" 1 (counted pool);
       Alcotest.(check bool) "still nothing after a refusal" false !after)
 
+let taken = Spindle.Refusal.Code.make "taken" ~status:`Conflict ~doc:"A test's."
+
+(* A route that claims one name twice in one transaction, and answers the
+   unique key's conflict with a code it declares, as a route expecting one
+   does. *)
+let claim_twice pool =
+  let open Spindle.Syntax in
+  Spindle.post ~refuses:[ taken ]
+    Spindle.Path.(s "claim")
+    (Spindle.Returns.empty ())
+    (let+ () = Spindle.Dep.return () in
+     let claim db =
+       Pg.run db (S.exec ~params:S.text "insert into names values ($1)") "a"
+     in
+     match
+       Spindle_postgres.Pool.transaction pool (fun db ->
+           let ( let* ) = Result.bind in
+           let* () = claim db in
+           claim db)
+     with
+     | Ok () -> Ok ()
+     | Error (`Conflict (Some "names_name_key")) ->
+         Error (Spindle.Refusal.make taken "That name is taken.")
+     | Error e -> Error (Spindle_postgres.refusal e))
+
+(* A unique key checked at [COMMIT] refuses the same write as one checked at
+   the statement, and the route that handles the one handles the other. *)
+let test_a_deferred_conflict_answers_as_a_statement's_does () =
+  List.iter
+    (fun (checked, constraint_) ->
+      Db_target.with_postgres (fun target ->
+          let pool = pool target in
+          Fun.protect
+            ~finally:(fun () -> Spindle_postgres.Pool.close pool)
+            (fun () ->
+              (match
+                 Spindle_postgres.Pool.use pool (fun db ->
+                     Pg.exec_raw db
+                       ("create table names (name text, constraint \
+                         names_name_key unique (name) " ^ constraint_ ^ ")"))
+               with
+              | Ok () -> ()
+              | Error (`Pool _) -> Alcotest.fail "no connection"
+              | Error (#S.error as e) -> Alcotest.fail (S.error_to_string e));
+              match Spindle.App.make [ claim_twice pool ] with
+              | Error m -> Alcotest.fail m
+              | Ok app -> (
+                  let r = Spindle.Test.call app `POST "/claim" in
+                  Alcotest.(check int)
+                    checked 409
+                    (Spindle_http.Status.to_int r.status);
+                  match
+                    Spindle_postgres.Pool.query pool
+                      (S.find ~params:S.unit ~row:S.int
+                         "select count(*)::int from names")
+                      ()
+                  with
+                  | Ok n -> Alcotest.(check int) "rolled back" 0 n
+                  | Error _ -> Alcotest.fail "no count"))))
+    [
+      ("checked at the statement", "");
+      ("checked at commit", "deferrable initially deferred");
+    ]
+
 (* A store's failure is the pool's own words, as every library tells it, so
    one failure reads the same in the store's log as anywhere else. Its one
    connection is held while the store asks, so the store's borrow finds none
@@ -959,6 +1023,8 @@ let () =
             test_a_read_and_a_write_are_one_transaction;
           Alcotest.test_case "a refused bracket keeps nothing unless it says"
             `Quick test_a_refused_bracket_keeps_nothing_unless_it_says;
+          Alcotest.test_case "a deferred conflict answers as a statement's does"
+            `Quick test_a_deferred_conflict_answers_as_a_statement's_does;
         ] );
       ( "sessions",
         [

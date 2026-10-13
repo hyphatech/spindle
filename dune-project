@@ -37,12 +37,12 @@
   (ocaml
    (>= 5.5))
   (wiretype
-   (>= 0.3.0))
+   (>= 0.4.0))
   ; The deriver every application describes its JSON with, installed with
   ; the framework so one package is the whole of starting; no library here
   ; links it.
   (ppx_wiretype
-   (>= 0.3.0))
+   (>= 0.4.0))
   (eio
    (>= 1.6))
   (eio_main
@@ -143,13 +143,13 @@
   (spindle
    (= :version))
   (rowtype
-   (>= 0.4.0))
+   (>= 0.6.0))
   (rowtype-postgres
-   (>= 0.4.0))
+   (>= 0.6.0))
   ; Linked through rowtype-postgres alone, and named so that its pin is
   ; one of this package's dependencies.
   (postgres-eio
-   (>= 0.3.0))
+   (>= 0.4.0))
   (ptime
    (>= 1.2.0))
   (mtime
@@ -182,7 +182,7 @@
   (wiretype
    (and
     :with-test
-    (>= 0.3.0)))
+    (>= 0.4.0)))
   (uri
    (and
     :with-test

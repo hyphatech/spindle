@@ -1,4 +1,4 @@
 pin-depends: [
-  [ "wiretype.0.3.0" "git+https://github.com/hyphatech/wiretype.git#0.3.0" ]
-  [ "ppx_wiretype.0.3.0" "git+https://github.com/hyphatech/wiretype.git#0.3.0" ]
+  [ "wiretype.0.4.0" "git+https://github.com/hyphatech/wiretype.git#0.4.0" ]
+  [ "ppx_wiretype.0.4.0" "git+https://github.com/hyphatech/wiretype.git#0.4.0" ]
 ]

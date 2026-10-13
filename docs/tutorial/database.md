@@ -151,7 +151,8 @@ value in them:
 ```
 
 Handle the ones you expect first. A unique-constraint violation is a
-`` `Conflict `` with the constraint's name:
+`` `Conflict `` with the constraint's name, whether a statement found it or
+a constraint declared `DEFERRABLE` refused the transaction's `COMMIT`:
 
 ```ocaml
 let sign_up pool ~name ~email =

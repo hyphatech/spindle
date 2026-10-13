@@ -28,11 +28,8 @@ let apply ?(statement_timeout = Mtime.Span.(10 * s))
           ("DateStyle", "ISO");
         ]
       in
-      ( {
-          c with
-          connect_timeout =
-            Some (Option.value c.connect_timeout ~default:connect_timeout);
-        },
+      ( Pg.Conninfo.with_connect_timeout c
+          (Option.value c.connect_timeout ~default:connect_timeout),
         List.filter (fun (k, _) -> not (List.mem_assoc k parameters)) framework
         @ parameters ))
     (Pg.conninfo target)

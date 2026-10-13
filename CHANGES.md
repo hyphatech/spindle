@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Breaking: `spindle_postgres` needs rowtype 0.6.0 and postgres-eio
+  0.4.0. A unique, exclusion or foreign-key constraint declared
+  `DEFERRABLE` that refuses a transaction's `COMMIT` is
+  `` `Conflict `` with the constraint's name, as one a statement finds is,
+  so a route's `` `Conflict `` arm answers it with the code it declares,
+  where it was `` `Not_committed `` and answered `500`.
+  `Rowtype_postgres.Conninfo.t` is a private record: set a database or a
+  connect timeout with `Conninfo.with_database` or
+  `Conninfo.with_connect_timeout`.
+
+- Breaking: `spindle` needs wiretype 0.4.0, which changes what
+  `Spindle.Openapi` and `Spindle.Zod` write for some types: a derived
+  type with parameters is written where it is used, not as one shared
+  component, unless `[@@kind]` names it; and kinds that hold each other
+  in a ring of three or more refer to each other, where the member
+  closing the ring was any JSON. A JSON body whose map key is read in
+  more than one spelling -- a `uuid` in either case -- is refused when it
+  gives one key twice.
+
 - A WebSocket send's `send_timeout` runs from the last byte the peer took,
   as an answer's does, where it ran afresh for each 16 KiB written: a
   peer reading a large message steadily below about 546 bytes a second
