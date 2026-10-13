@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.4.0 (2026-10-13)
 
 - Breaking: `spindle_postgres` needs rowtype 0.6.0 and postgres-eio
   0.4.0. A unique, exclusion or foreign-key constraint declared
