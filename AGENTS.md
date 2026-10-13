@@ -270,16 +270,19 @@ with this file:
 ## Releases
 
 [Semantic Versioning 2.0.0](https://semver.org). Before 1.0, a breaking
-change bumps the minor version and anything else the patch. The three
-packages are released together, at one version.
+change bumps the minor version and anything else the patch; from 1.0, a
+breaking change waits for the next major version, an addition bumps the
+minor and a fix the patch. The three packages are released together, at one
+version.
 
-Breaking means a user's code may stop compiling or behave differently:
-removing or renaming anything in an `.mli`, changing a type, adding a
-constructor to a public variant (it breaks exhaustive matches), adding a
-required argument, or changing a default or documented behaviour. Adding a
-function, a module or an optional argument is not breaking, and neither is
-the wording of a refusal's sentence. A refusal's code, a route's place in
-the document and what the OpenAPI and Zod printers write for a route are
+Breaking means code that follows these rules may stop compiling or behave
+differently: removing or renaming anything in an `.mli`, changing a type,
+adding a required argument, or changing a default or documented behaviour.
+Adding a function, a module, an optional argument or a constructor to a
+public variant is not breaking: a variant grows in a minor version, so a
+match on one that must compile across versions ends in a catch-all arm. Nor
+is the wording of a refusal's sentence. A refusal's code, a route's place
+in the document and what the OpenAPI and Zod printers write for a route are
 behaviour: changing any is breaking.
 
 The version lives only in the git tag (`0.1.0`, no `v`). A release renames
