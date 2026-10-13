@@ -107,7 +107,8 @@ val stream :
 (** A body written as it happens: [produce send] is run once the head has gone,
     and every [send s] reaches the client before it answers [Ok ()]. Once the
     client has gone [send] answers [Error Gone], so a loop written with [let*]
-    ends there. The response is over when [produce] returns.
+    ends there. [send] may be called from several fibers, and their sends go one
+    after another, each whole. The response is over when [produce] returns.
 
     [length] is how many bytes it will send, for a body whose size is known
     before it is read -- a file. The server frames it with [Content-Length]

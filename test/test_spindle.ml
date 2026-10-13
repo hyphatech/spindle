@@ -5339,6 +5339,42 @@ let test_a_client_that_never_reads_frees_its_slot domains () =
   check_string "the slot came free, and the next is served" "HTTP/1.1 200 OK"
     (Eio.Buf_read.line (Eio.Buf_read.of_flow second ~max_size:4096))
 
+(* A stream sent from two fibers at once, to a client that never reads:
+   both sends wait on one connection, and the send limit ends them both, so
+   the slot is the next client's. Each send is larger than a connection
+   holds, so neither finishes unread. *)
+let test_a_stream_sent_from_two_fibers_keeps_its_send_limit domains () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let chunk = String.make (1024 * 1024) 'x' in
+  let two_at_once =
+    Spindle.get
+      Spindle.Path.(s "two")
+      Spindle.Returns.response
+      (Spindle.Dep.return
+         (Ok
+            (Spindle.Response.stream (fun send ->
+                 let sent () =
+                   ignore (send chunk : (unit, Spindle.Response.gone) result)
+                 in
+                 Eio.Fiber.both sent sent;
+                 Ok ()))))
+  in
+  let connect =
+    serve_in_memory ~sw env ~domains
+      ~send_timeout:Mtime.Span.(300 * ms)
+      ~max_connections:1
+      (Spindle.Test.app [ two_at_once; hello ])
+  in
+  Eio.Switch.run @@ fun inner ->
+  let stuck = connect ~sw:inner in
+  Eio.Flow.copy_string "GET /two HTTP/1.1\r\nHost: t\r\n\r\n" stuck;
+  let second = connect ~sw:inner in
+  Eio.Flow.copy_string
+    "GET /hello/b HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n" second;
+  check_string "the slot came free, and the next is served" "HTTP/1.1 200 OK"
+    (Eio.Buf_read.line (Eio.Buf_read.of_flow second ~max_size:4096))
+
 (* The send limit bounds a write that stops, not one that takes long: a
    client taking the answer a piece at a time, each pause inside the limit,
    gets all of it however long the whole takes; one that stops taking is
@@ -8669,6 +8705,9 @@ let () =
             (test_a_producer_that_ignores_the_client_going_ends_at_its_send 1);
           Alcotest.test_case "a client that never reads frees its slot" `Quick
             (test_a_client_that_never_reads_frees_its_slot 1);
+          Alcotest.test_case
+            "a stream sent from two fibers keeps its send limit" `Quick
+            (test_a_stream_sent_from_two_fibers_keeps_its_send_limit 1);
           Alcotest.test_case "the send limit is on a stop, not a length" `Quick
             (test_the_send_limit_is_on_a_stop_not_a_length 1);
           Alcotest.test_case "a stream ends when its client stops reading"
@@ -8739,6 +8778,9 @@ let () =
             (test_a_stream_ends_when_its_client_goes 4);
           Alcotest.test_case "a client that never reads frees its slot" `Quick
             (test_a_client_that_never_reads_frees_its_slot 4);
+          Alcotest.test_case
+            "a stream sent from two fibers keeps its send limit" `Quick
+            (test_a_stream_sent_from_two_fibers_keeps_its_send_limit 4);
           Alcotest.test_case "a client leaving a quiet topic ends its producer"
             `Quick
             (test_a_client_leaving_a_quiet_topic_ends_its_producer 4);

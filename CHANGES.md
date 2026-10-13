@@ -65,6 +65,12 @@
   accepts again 10 ms later, where the failure ended the server and
   cancelled every connection it held.
 
+- A `Response.stream` sent from several fibers at once sends one after
+  another, as an event stream's filler and producer already did, and
+  `send_timeout` ends every one of them: two sends at once could leave
+  one waiting for ever on a client that stopped reading, holding its
+  connection slot.
+
 ## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop

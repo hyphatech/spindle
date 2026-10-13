@@ -394,21 +394,24 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
                else "more"))
     | Chunked | Raw -> ()
   in
-  (* The filler runs beside the producer and they take turns under a lock of
-     this stream's own. A filler that cannot be written stops, and says the
-     client has gone, so a producer waiting on [Request.client_gone] ends
-     now; one that is not learns it at its next send. *)
+  (* Sends take turns under a lock of this stream's own, whether a producer
+     sends from several fibers or a filler runs beside it: a deadline ends
+     one wait at a time, so a second flush beside the first would leave one
+     of them waiting on a client that stopped reading, for ever. *)
+  let lock = Eio.Mutex.create () and last_sent = ref started in
+  let send s =
+    Eio.Mutex.use_ro lock (fun () ->
+        let sent = send s in
+        last_sent := Eio.Time.Mono.now clock;
+        sent)
+  in
+  (* A filler that cannot be written stops, and says the client has gone, so
+     a producer waiting on [Request.client_gone] ends now; one that is not
+     learns it at its next send. *)
   let produce () =
     match stream.keep_alive with
     | None -> stream.produce send
     | Some { Response.quiet; filler } ->
-        let lock = Eio.Mutex.create () and last_sent = ref started in
-        let send s =
-          Eio.Mutex.use_ro lock (fun () ->
-              let sent = send s in
-              last_sent := Eio.Time.Mono.now clock;
-              sent)
-        in
         let rec fill () =
           let silent = Mtime.span !last_sent (Eio.Time.Mono.now clock) in
           if Mtime.Span.is_shorter silent ~than:quiet then (
