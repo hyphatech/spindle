@@ -3304,11 +3304,28 @@ let test_spans_reach_a_collector () =
        (Mutex.protect lock (fun () -> !lines)))
 
 (* A batch is sent once it is whole, not at the next tick -- even one that
-   filled while the sender was out posting the last. *)
+   filled while the sender was out posting the last. On virtual time, with
+   the collector over a mock network, the tick is five seconds the test
+   never waits through: a batch sent at once is sent before any time
+   passes. *)
 let test_a_whole_batch_is_sent_without_waiting_for_the_tick () =
-  Eio_main.run @@ fun env ->
+  In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  let net = Eio.Stdenv.net env and mono_clock = Eio.Stdenv.mono_clock env in
+  let mono_clock = Eio.Stdenv.mono_clock env in
+  let listening, connect = In_memory.listen () in
+  let net = Eio_mock.Net.make "net" in
+  Eio_mock.Net.on_listen net [ `Return listening ];
+  Eio_mock.Net.on_getaddrinfo net
+    (List.init 8 (fun _ -> `Return [ `Tcp (Eio.Net.Ipaddr.V4.loopback, 80) ]));
+  Eio_mock.Net.on_connect net
+    (List.init 8 (fun _ -> `Run (fun () -> connect ~sw)));
+  let quiet =
+    {
+      Eio.Debug.traceln =
+        (fun ?__POS__:_ fmt -> Format.ikfprintf ignore Format.std_formatter fmt);
+    }
+  in
+  Eio.Fiber.with_binding (Eio.Stdenv.debug env)#traceln quiet @@ fun () ->
   let posts = Eio.Stream.create 8 in
   let release, let_go = Eio.Promise.create () in
   let first = ref true in
@@ -3334,14 +3351,14 @@ let test_a_whole_batch_is_sent_without_waiting_for_the_tick () =
       (* The tick's post, held at the collector while a batch fills. *)
       Eio.Stream.take posts;
       spans 600;
+      let released = Eio.Time.Mono.now mono_clock in
       Eio.Promise.resolve let_go ();
-      match
-        Eio.Time.Timeout.run
-          (Eio.Time.Timeout.v mono_clock Mtime.Span.(2 * s))
-          (fun () -> Ok (Eio.Stream.take posts))
-      with
-      | Ok () -> ()
-      | Error `Timeout -> Alcotest.fail "the whole batch waited for the tick")
+      Eio.Stream.take posts;
+      Alcotest.(check bool)
+        "the whole batch was sent before the tick" true
+        (Mtime.Span.is_shorter
+           (Mtime.span released (Eio.Time.Mono.now mono_clock))
+           ~than:Mtime.Span.(5 * s)))
 
 (* ------------------------------------------------------------------ *)
 (* Metrics *)
