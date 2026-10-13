@@ -4507,7 +4507,7 @@ let show_bare = function
   | Token t -> "t[" ^ String.escaped t ^ "]"
   | Bytes b -> "b[" ^ String.escaped b ^ "]"
   | Boolean b -> if b then "?1" else "?0"
-  | Date n -> "@" ^ string_of_int n
+  | Date t -> "@" ^ Printf.sprintf "%.0f" (Ptime.to_float_s t)
   | Display s -> "%[" ^ String.escaped s ^ "]"
 
 let show_sf_parameters ps =
@@ -4529,6 +4529,11 @@ let show_dictionary d =
              ^ ")" ^ show_sf_parameters ps)
        d)
 
+(* The first and the last instant four digits of a year hold, which are
+   Ptime's. *)
+let earliest_date_ms = -62_167_219_200_000
+let latest_date_ms = 253_402_300_799_999
+
 let gen_bare =
   let edges = [ 999_999_999_999_999; -999_999_999_999_999; min_int; max_int ] in
   G.(
@@ -4542,7 +4547,14 @@ let gen_bare =
           (gen_edgy [ 'a'; 'Z'; '*'; ':'; '/'; ' ' ]);
         map (fun s -> Structured.Bytes s) gen_value;
         map (fun b -> Structured.Boolean b) bool;
-        map (fun n -> Structured.Date n) (oneof [ int; 0 -- 2_000_000_000 ]);
+        map
+          (fun ms ->
+            Structured.Date (Ptime.truncate ~frac_s:0 (Instants.of_ms ms)))
+          (oneof
+             [
+               earliest_date_ms -- latest_date_ms;
+               oneof_list [ earliest_date_ms; latest_date_ms; 0 ];
+             ]);
         map (fun s -> Structured.Display s) gen_value;
       ])
 
@@ -4563,11 +4575,6 @@ let gen_dictionary =
                 gen_sf_parameters;
             ])))
 
-(* The first and the last instant four digits of a year hold, which are
-   Ptime's. *)
-let earliest_date_ms = -62_167_219_200_000
-let latest_date_ms = 253_402_300_799_999
-
 (* An instant reads back as its second. *)
 let test_a_written_date_reads_back_as_its_second =
   QCheck.Test.make ~count:2000 ~name:"a written date reads back as its second"
@@ -4587,6 +4594,30 @@ let test_a_written_date_reads_back_as_its_second =
           QCheck.Test.fail_reportf "%S read back as %d, not %d" written
             (Instants.to_ms read) (Instants.to_ms second)
       | None -> QCheck.Test.fail_reportf "%S is refused" written)
+
+(* RFC 9651 §3.3.7 lets a date run to fifteen digits of seconds, far past
+   the years 0 to 9999 that Ptime -- every instant here -- holds, and its
+   published suite lets a parser refuse those (can_fail). One outside them
+   is refused, never moved to the nearest it can hold. *)
+let test_a_date_ptime_cannot_hold_is_refused () =
+  let read raw =
+    match Structured.item raw with
+    | Ok (Structured.Date t, []) ->
+        Ok (Printf.sprintf "%.0f" (Ptime.to_float_s t))
+    | Ok _ -> Ok "something else"
+    | Error _ -> Error "refused"
+  in
+  List.iter
+    (fun (raw, expected) ->
+      Alcotest.(check (result string string)) raw expected (read raw))
+    [
+      ("@-62167219200", Ok "-62167219200");
+      ("@253402300799", Ok "253402300799");
+      ("@-62167219201", Error "refused");
+      ("@253402300800", Error "refused");
+      ("@999999999999999", Error "refused");
+      ("@-999999999999999", Error "refused");
+    ]
 
 let printers_and_parsers =
   [
@@ -4686,6 +4717,8 @@ let () =
             test_printed_credentials_read_back;
           Alcotest.test_case "9111 §5.2: a printed Cache-Control reads back"
             `Quick test_a_printed_cache_control_reads_back;
+          Alcotest.test_case "9651 §3.3.7: a date Ptime cannot hold is refused"
+            `Quick test_a_date_ptime_cannot_hold_is_refused;
         ] );
       ( "the writer",
         [

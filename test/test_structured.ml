@@ -90,7 +90,8 @@ let bare_of : Yojson.Safe.t -> S.bare option = function
       match (U.member "__type" o, value) with
       | `String "token", `String t -> Some (S.Token t)
       | `String "binary", `String b -> Some (S.Bytes (base32 b))
-      | `String "date", `Int n -> Some (S.Date n)
+      | `String "date", `Int n ->
+          Option.map (fun t -> S.Date t) (Ptime.of_span (Ptime.Span.of_int_s n))
       | `String "displaystring", `String d -> Some (S.Display d)
       | _ -> None)
   | _ -> None
@@ -127,7 +128,7 @@ let show_bare = function
   | S.Token t -> "t" ^ t
   | S.Bytes b -> "b" ^ String.escaped b
   | S.Boolean b -> "?" ^ string_of_bool b
-  | S.Date n -> "@" ^ string_of_int n
+  | S.Date t -> "@" ^ Printf.sprintf "%.0f" (Ptime.to_float_s t)
   | S.Display d -> "%" ^ String.escaped d
 
 let show_parameters ps =

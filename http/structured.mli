@@ -24,7 +24,11 @@ type bare =
   | Token of string
   | Bytes of string  (** the bytes, their base64 undone *)
   | Boolean of bool
-  | Date of int  (** seconds since 1970-01-01T00:00:00Z *)
+  | Date of Ptime.t
+      (** whole seconds as a field holds it: one written with a fraction of a
+          second is written in the second it is in, and one read outside the
+          years 0 to 9999, which RFC 9651 allows and no instant holds, is
+          refused *)
   | Display of string  (** UTF-8, which a String cannot hold *)
 
 type parameters = (string * bare) list

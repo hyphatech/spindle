@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Breaking: a Structured Field date is `Spindle_http.Structured.Date of
+  Ptime.t`, where it was an `int` of seconds since 1970, since every
+  instant is a `Ptime.t`. A date outside the years 0 to 9999, which RFC
+  9651 allows and no `Ptime.t` holds, is refused when read, as its
+  published suite lets a parser do; one written with a fraction of a
+  second is written in the second it is in.
+
 - Breaking: a `Spindle_client` answer's `status` -- `response`'s and
   `answer`'s -- is a `Spindle_http.Status.t`, as a route answers with
   and `Head.Response.t` holds, where it was an `int`: match `` `OK ``,

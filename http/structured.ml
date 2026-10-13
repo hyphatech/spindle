@@ -10,7 +10,7 @@ type bare =
   | Token of string
   | Bytes of string
   | Boolean of bool
-  | Date of int
+  | Date of Ptime.t
   | Display of string
 
 type parameters = (string * bare) list
@@ -113,7 +113,12 @@ let boolean =
 let date =
   A.(
     char '@' *> number >>= function
-    | Integer n -> return (Date n)
+    | Integer n -> (
+        (* §3.3.7 allows fifteen digits of seconds, far past the years 0 to
+           9999 an instant holds: such a date is refused, never moved. *)
+        match Ptime.of_span (Ptime.Span.of_int_s n) with
+        | Some t -> return (Date t)
+        | None -> fail "a date outside the years 0 to 9999")
     | _ -> fail "a date")
 
 (* One lower-case hex digit, as §4.2.10 has a display string encoded. *)
@@ -292,7 +297,12 @@ let bare_to_string = function
   | Token t -> token_to_string t
   | Bytes b -> Ok (":" ^ Base64.encode_string b ^ ":")
   | Boolean b -> Ok (if b then "?1" else "?0")
-  | Date n -> Result.map (fun n -> "@" ^ n) (integer_to_string n)
+  | Date t -> (
+      match
+        Ptime.Span.to_int_s (Ptime.to_span (Ptime.truncate ~frac_s:0 t))
+      with
+      | Some n -> Result.map (fun n -> "@" ^ n) (integer_to_string n)
+      | None -> Error "a date no field can hold")
   | Display s -> display_to_string s
 
 let key_to_string k =
