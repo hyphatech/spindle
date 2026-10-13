@@ -82,12 +82,19 @@ module Response : sig
             joined onto the field before it *)
   }
 
-  val read :
-    max:int -> Eio.Buf_read.t -> (t, [ `Closed | `Malformed of string ]) result
-  (** The next head. [`Closed] is the server going, or its connection failing,
-      before a byte of one arrived -- which is what a kept connection the server
-      gave up on looks like -- and [`Malformed] anything else that is not a
-      head, one cut short included, in words for a log.
+  (** Why a response's head was not read: in the shape a request's is, since
+      both are a connection's peer and what it sent. *)
+  type error =
+    | Closed
+        (** the server went, or its connection failed, before a byte of a head
+            -- which is what a kept connection the server gave up on looks like
+        *)
+    | Malformed of string
+        (** anything else that is not a head, one cut short included, in words
+            for a log *)
+
+  val read : max:int -> Eio.Buf_read.t -> (t, error) result
+  (** The next head.
 
       A status line is a version, a space, a code of three digits from 100 to
       599, and the reason after a space; the space may be missing, since nothing

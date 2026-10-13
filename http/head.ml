@@ -358,6 +358,8 @@ module Request = struct
 end
 
 module Response = struct
+  type error = Closed | Malformed of string
+
   type t = {
     version : version;
     status : Status.t;
@@ -399,9 +401,9 @@ module Response = struct
         ~start_too_long:(`Bad_request, "a status line past the limit")
         ~skip_blank_lines:false ~unfold:true ic parse_status_line
     with
-    | No_head -> Error `Closed
-    | Cut -> Error (`Malformed "a head cut short")
-    | Bad (_, detail) -> Error (`Malformed detail)
+    | No_head -> Error Closed
+    | Cut -> Error (Malformed "a head cut short")
+    | Bad (_, detail) -> Error (Malformed detail)
     | Head ((version, status, reason), headers) ->
         Ok { version; status; reason; headers }
 

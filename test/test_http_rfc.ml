@@ -186,8 +186,8 @@ let read_response ?(max = max_head) ?(max_body = max_body) ~meth delivery bytes
       (source (split delivery bytes))
   in
   match Head.Response.read ~max ic with
-  | Error `Closed -> Response_closed
-  | Error (`Malformed _) -> Response_malformed
+  | Error Head.Response.Closed -> Response_closed
+  | Error (Head.Response.Malformed _) -> Response_malformed
   | Ok head -> (
       match Framing.of_response ~request_meth:meth head with
       | Error _ -> Response_unframed head
@@ -3778,8 +3778,8 @@ let test_a_connection_failing_under_a_head_is_a_value () =
     | Ok _ -> "read"
   and response pieces =
     match Head.Response.read ~max:max_head (reader pieces) with
-    | Error `Closed -> "closed"
-    | Error (`Malformed _) -> "malformed"
+    | Error Head.Response.Closed -> "closed"
+    | Error (Head.Response.Malformed _) -> "malformed"
     | Ok _ -> "read"
   in
   Alcotest.(check string) "a request, before a byte" "closed" (request []);

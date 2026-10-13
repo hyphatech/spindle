@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Breaking: `Spindle_http.Head.Response.read` answers a
+  `Head.Response.error`, `Closed` or `Malformed of string`, where it
+  answered the polymorphic `` `Closed `` and `` `Malformed ``: one shape
+  for the same event as `Head.Request.read`'s `Head.error`, whose
+  `Closed` it matches.
+
 - Breaking: a Structured Field date is `Spindle_http.Structured.Date of
   Ptime.t`, where it was an `int` of seconds since 1970, since every
   instant is a `Ptime.t`. A date outside the years 0 to 9999, which RFC

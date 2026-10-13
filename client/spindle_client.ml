@@ -496,9 +496,11 @@ let send_request c meth target ~headers ~body =
    [Closed_unanswered], after which a request may be sent again. *)
 let rec read_final_head ?(switching = false) c ~first =
   match Head.Response.read ~max:max_head c.reader with
-  | Error `Closed when first -> raise Closed_unanswered
-  | Error `Closed -> fail "the server closed the connection mid-answer"
-  | Error (`Malformed m) -> fail "a response that could not be read: %s" m
+  | Error Head.Response.Closed when first -> raise Closed_unanswered
+  | Error Head.Response.Closed ->
+      fail "the server closed the connection mid-answer"
+  | Error (Head.Response.Malformed m) ->
+      fail "a response that could not be read: %s" m
   | Ok head when switching && Status.to_int head.status = 101 -> head
   | Ok head when Status.to_int head.status < 200 ->
       read_final_head ~switching c ~first:false
