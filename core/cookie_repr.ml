@@ -144,14 +144,18 @@ let signed ring ~max_age_s name codec =
   let seal ~now v =
     let stamp = stamp_of now in
     String.concat "."
-      [ stamp; encode v; encode (Key.sign ring (signed_payload stamp v)) ]
+      [
+        stamp;
+        encode v;
+        encode (Key_repr.sign_cookie ring (signed_payload stamp v));
+      ]
   in
   let unseal ~now raw =
     match String.split_on_char '.' raw with
     | [ stamp; v; mac ] -> (
         match (int_of_string_opt stamp, decode v, decode mac) with
         | Some t, Some v, Some mac
-          when Key.verify ring ~mac (signed_payload stamp v)
+          when Key_repr.verify_cookie ring ~mac (signed_payload stamp v)
                && not (is_expired ~age_s:max_age_s ~now t) ->
             Some v
         | _ -> None)
@@ -162,10 +166,12 @@ let signed ring ~max_age_s name codec =
 let encrypted ring ~max_age_s name codec =
   let cookie = checked_name name in
   let seal ~now v =
-    encode (Key.seal ring ~adata:cookie (stamp_of now ^ "." ^ v))
+    encode (Key_repr.seal_cookie ring ~adata:cookie (stamp_of now ^ "." ^ v))
   in
   let unseal ~now raw =
-    match Option.bind (decode raw) (Key.unseal ring ~adata:cookie) with
+    match
+      Option.bind (decode raw) (Key_repr.unseal_cookie ring ~adata:cookie)
+    with
     | None -> None
     | Some opened -> (
         match String.index_opt opened '.' with

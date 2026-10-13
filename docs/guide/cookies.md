@@ -75,7 +75,8 @@ match Spindle.Key.of_secret secret with
   expires. It is also the longest `Cookie.make` writes: a `~max_age_s` given
   there may shorten it, never lengthen it.
 - `Key.sign`/`Key.verify` and `Key.seal`/`Key.unseal` do the same for
-  anything else, such as a token in a link.
+  anything else, such as a token in a link, under keys of their own: nothing
+  they make, over whatever text, is ever a cookie.
 
 ## Sessions
 

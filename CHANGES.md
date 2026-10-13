@@ -74,6 +74,14 @@
 - `Path.url` writes a segment of `.` or `..` as `%2E` or `%2E%2E`, where
   it wrote it as it was, and a browser resolved `/users/..` to `/`.
 
+- **Breaking:** `Key.sign` and `Key.seal` use keys of their own, derived
+  from the secret apart from a signed and an encrypted cookie's, so a
+  token an application signs or seals over text a caller chose is never
+  a cookie: `Key.sign` over a signed cookie's payload was a valid cookie,
+  and `Key.seal` an encrypted one. A token `Key.sign` or `Key.seal` made
+  before no longer verifies or opens; cookies are made and read as
+  before.
+
 ## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop

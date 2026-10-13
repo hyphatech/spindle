@@ -50,13 +50,13 @@ val named : string -> 'a Codec.t -> 'a named
 
 val signed : Key.ring -> max_age_s:int -> string -> 'a Codec.t -> 'a named
 (** The value readable by the browser, and an HMAC-SHA256 over the name, the
-    stamp and the value beside it ({!Key.sign}), compared in constant time.
-    Raises as {!val-named} does. *)
+    stamp and the value beside it, as {!Key.sign} makes one but under a key kept
+    for cookies, compared in constant time. Raises as {!val-named} does. *)
 
 val encrypted : Key.ring -> max_age_s:int -> string -> 'a Codec.t -> 'a named
-(** The value and its stamp sealed with AES-256-GCM ({!Key.seal}), the name
-    bound to them: a browser can read nothing of it. Raises as {!val-named}
-    does. *)
+(** The value and its stamp sealed with AES-256-GCM, as {!Key.seal} seals but
+    under a key kept for cookies, the name bound to them: a browser can read
+    nothing of it. Raises as {!val-named} does. *)
 
 (** What a declared cookie is, for whatever reads one. *)
 module Named : sig

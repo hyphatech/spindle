@@ -24,6 +24,7 @@
   returns_repr
   route_repr
   cookie_repr
+  key_repr
   out
   described
   scalar

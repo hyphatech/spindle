@@ -1091,6 +1091,34 @@ let test_a_key_is_made_from_a_secret () =
     "and a nonce is never used twice" false
     (String.equal sealed (Spindle.Key.seal ring ~adata:"a" "secret"))
 
+(* What Key.sign and Key.seal make for an application -- a link's token, an
+   OAuth state, over text a caller may choose -- is never a cookie: a caller
+   who has one signed or sealed over a cookie's own payload holds nothing
+   the cookie reads. *)
+let test_what_key_signs_is_never_a_cookie () =
+  let ring = Spindle.Key.ring new_key [] in
+  let b64 s =
+    Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet s
+  in
+  let signed =
+    sealed_app
+      (Spindle.Cookie.signed ring ~max_age_s:3600 "who" Spindle.Codec.string)
+  in
+  let mac =
+    Spindle.Key.sign ring (String.concat "\000" [ "who"; "0"; "admin" ])
+  in
+  check_string "a signature over a signed cookie's payload" "absent"
+    (read_with signed
+       ("who=" ^ String.concat "." [ "0"; b64 "admin"; b64 mac ]));
+  let encrypted =
+    sealed_app
+      (Spindle.Cookie.encrypted ring ~max_age_s:3600 "prefs"
+         Spindle.Codec.string)
+  in
+  check_string "a seal of an encrypted cookie's" "absent"
+    (read_with encrypted
+       ("prefs=" ^ b64 (Spindle.Key.seal ring ~adata:"prefs" "0.dark")))
+
 let test_a_sealed_cookie_reads_only_as_it_was_made make =
   let ring = Spindle.Key.ring new_key [] in
   let c = make ring "prefs" in
@@ -8544,6 +8572,8 @@ let () =
           Alcotest.test_case "clearing one" `Quick test_clearing_a_cookie;
           Alcotest.test_case "a key is made from a secret" `Quick
             test_a_key_is_made_from_a_secret;
+          Alcotest.test_case "what Key signs is never a cookie" `Quick
+            test_what_key_signs_is_never_a_cookie;
           Alcotest.test_case "a signed cookie reads only as it was made" `Quick
             test_a_signed_cookie_reads_only_as_it_was_made;
           Alcotest.test_case "an encrypted cookie reads only as it was made"

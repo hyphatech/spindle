@@ -14,10 +14,11 @@ val named : string -> 'a Codec.t -> 'a named
 (** As {!Cookie.named}. Raises [Invalid_argument] for a name no cookie can
     carry. *)
 
-val signed : Key.ring -> max_age_s:int -> string -> 'a Codec.t -> 'a named
+val signed : Key_repr.ring -> max_age_s:int -> string -> 'a Codec.t -> 'a named
 (** As {!Cookie.signed}. *)
 
-val encrypted : Key.ring -> max_age_s:int -> string -> 'a Codec.t -> 'a named
+val encrypted :
+  Key_repr.ring -> max_age_s:int -> string -> 'a Codec.t -> 'a named
 (** As {!Cookie.encrypted}. *)
 
 module Named : sig

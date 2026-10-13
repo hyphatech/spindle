@@ -7,11 +7,13 @@
     ]}
 
     {b A secret is the application's to read}, when it starts: the framework
-    reads no environment. One secret serves both uses -- two keys are derived
-    from it with HKDF-SHA256 (RFC 5869), one to sign and one to seal -- so a key
-    signing one cookie can never be read as one sealing another. *)
+    reads no environment. One secret serves every use -- four keys are derived
+    from it with HKDF-SHA256 (RFC 5869): one to sign a cookie, one to seal one,
+    and one each for {!sign} and {!seal} -- so a key signing one cookie can
+    never be read as one sealing another, and nothing {!sign} or {!seal} makes,
+    over whatever text, is ever a cookie. *)
 
-type t
+type t = Key_repr.t
 (** A key derived from one secret. *)
 
 val of_secret : string -> (t, string) result
@@ -19,7 +21,7 @@ val of_secret : string -> (t, string) result
     at run time, and one too short to be a key is a deployment's mistake to say,
     not a program's to raise on. *)
 
-type ring
+type ring = Key_repr.ring
 (** The key that makes cookies, and the retired ones that still read them. *)
 
 val ring : t -> t list -> ring
@@ -30,11 +32,14 @@ val ring : t -> t list -> ring
 
 (** {1 Signing and sealing}
 
-    What a signed and an encrypted cookie are made of, for anything else that
-    must come back as it was sent -- a link's token, a value in a URL. *)
+    What a signed and an encrypted cookie are made of, under keys of their own,
+    for anything else that must come back as it was sent -- a link's token, a
+    value in a URL. *)
 
 val sign : ring -> string -> string
-(** An HMAC-SHA256 of the text with the newest key: 32 bytes. *)
+(** An HMAC-SHA256 of the text with the newest key: 32 bytes. A cookie's is made
+    under another key, so a caller who chooses the text still holds no cookie.
+*)
 
 val verify : ring -> mac:string -> string -> bool
 (** Whether [mac] is {!sign}'s of the text under any key of the ring, compared
