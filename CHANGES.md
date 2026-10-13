@@ -71,6 +71,9 @@
   one waiting for ever on a client that stopped reading, holding its
   connection slot.
 
+- `Path.url` writes a segment of `.` or `..` as `%2E` or `%2E%2E`, where
+  it wrote it as it was, and a browser resolved `/users/..` to `/`.
+
 ## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop

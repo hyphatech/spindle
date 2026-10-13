@@ -7058,6 +7058,30 @@ let test_the_rest_prints_and_parses_back () =
   check_string "read back" "a b|c/d"
     (Spindle.Test.call a `GET "/static/a%20b/c%2Fd").body
 
+(* A segment that is a dot or two is one a client removes as it resolves
+   the URL (RFC 3986 section 5.2.4), so [/users/..] is fetched as [/]: its
+   dots are encoded, and it is still the segment it was. *)
+let test_a_dot_segment_is_printed_encoded () =
+  let users = Spindle.Path.(s "users" / str "name") in
+  let name v =
+    Spindle.Path.url users [ Spindle.Path.arg (Spindle.Path.str "name") v ]
+  in
+  Alcotest.(check (result string string))
+    "two dots" (Ok "/users/%2E%2E") (name "..");
+  Alcotest.(check (result string string)) "one" (Ok "/users/%2E") (name ".");
+  Alcotest.(check (result string string))
+    "three are a name" (Ok "/users/...") (name "...");
+  let static = Spindle.Path.(s "static" / file) in
+  let rest segs = Spindle.Path.url static [ Spindle.Path.arg file segs ] in
+  Alcotest.(check (result string string))
+    "in a rest" (Ok "/static/a/%2E%2E/%2E")
+    (rest [ "a"; ".."; "." ]);
+  let a =
+    Spindle.Test.app [ Spindle.get static Spindle.Returns.response the_rest ]
+  in
+  check_string "read back" "a|..|."
+    (Spindle.Test.call a `GET "/static/a/%2E%2E/%2E").body
+
 (* Any segments that are not empty print as a URL that reads them back,
    whatever they hold. *)
 let test_a_printed_rest_parses_back =
@@ -8378,6 +8402,8 @@ let () =
             test_a_rest_before_the_end_is_refused;
           Alcotest.test_case "the rest prints and parses back" `Quick
             test_the_rest_prints_and_parses_back;
+          Alcotest.test_case "a dot segment is printed encoded" `Quick
+            test_a_dot_segment_is_printed_encoded;
           QCheck_alcotest.to_alcotest test_a_printed_rest_parses_back;
           Alcotest.test_case "int64, and a custom kind, read as sentences"
             `Quick test_int64_and_a_custom_kind_read_as_sentences;

@@ -84,8 +84,10 @@ val arg : 'a param -> 'a -> arg
 val url : ('a, 'k) t -> arg list -> (string, string) result
 (** The path, printed: [url posts [ arg user_id 7 ]] is [Ok "/users/7/posts"],
     which matches [posts] again. Every segment is percent-encoded, so any text
-    is one segment. A parameter of the path with no argument, an argument given
-    twice, one for a parameter the path does not have, or one that prints as
-    nothing -- an empty segment is never a parameter -- is [Error], naming it.
-    The rest of a path prints each of its segments, and none at all for [[]] or
-    [[""]]; an empty segment among others is [Error] too. *)
+    is one segment -- [.] and [..] as [%2E] and [%2E%2E], which a client would
+    otherwise remove as it resolves the URL. A parameter of the path with no
+    argument, an argument given twice, one for a parameter the path does not
+    have, or one that prints as nothing -- an empty segment is never a parameter
+    -- is [Error], naming it. The rest of a path prints each of its segments,
+    and none at all for [[]] or [[""]]; an empty segment among others is [Error]
+    too. *)

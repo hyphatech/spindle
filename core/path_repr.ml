@@ -50,16 +50,22 @@ let segments p =
             })
     (parts_of p)
 
-(* All but RFC 3986's unreserved characters, so any text is one segment. *)
-let encode s =
-  let b = Buffer.create (String.length s) in
-  String.iter
-    (function
-      | ('A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '-' | '.' | '_' | '~') as c ->
-          Buffer.add_char b c
-      | c -> Buffer.add_string b (Printf.sprintf "%%%02X" (Char.code c)))
-    s;
-  Buffer.contents b
+(* All but RFC 3986's unreserved characters, so any text is one segment;
+   and the dots of a segment that is one or two, which a client removes as
+   it resolves the URL (section 5.2.4). *)
+let encode = function
+  | "." -> "%2E"
+  | ".." -> "%2E%2E"
+  | s ->
+      let b = Buffer.create (String.length s) in
+      String.iter
+        (function
+          | ('A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '-' | '.' | '_' | '~') as c
+            ->
+              Buffer.add_char b c
+          | c -> Buffer.add_string b (Printf.sprintf "%%%02X" (Char.code c)))
+        s;
+      Buffer.contents b
 
 (* What the matcher hands a rest parameter. *)
 let join_rest segments = String.concat "/" (List.map encode segments)
