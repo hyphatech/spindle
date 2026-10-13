@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Breaking: a `Spindle_client` answer's `status` -- `response`'s and
+  `answer`'s -- is a `Spindle_http.Status.t`, as a route answers with
+  and `Head.Response.t` holds, where it was an `int`: match `` `OK ``,
+  or take the number with `Spindle_http.Status.to_int`.
+
 - Breaking: `Spindle_client.error` says whether the request went out.
   `Unreachable` is gone: a request that never left -- no address, a
   refused connection, failed TLS, a URL or field the client cannot

@@ -69,7 +69,7 @@ type t = {
 }
 
 type response = {
-  status : int;
+  status : Status.t;
   headers : (string * string) list;
   body : string;
 }
@@ -546,7 +546,7 @@ let receive_response t c meth ~caller_closes =
       | Ok body ->
           let kept = keep_idle_for t head framing ~caller_closes in
           ( {
-              status = Status.to_int head.status;
+              status = head.status;
               headers =
                 List.map
                   (fun (k, v) -> (String.lowercase_ascii k, v))
@@ -644,6 +644,7 @@ let within_client_span meth uri f =
     name
     (fun span ->
       let answered status =
+        let status = Status.to_int status in
         Trace.add span [ ("http.response.status_code", `Int status) ];
         if status >= 400 then Trace.fail span (string_of_int status)
       and failed = function
@@ -677,7 +678,7 @@ let call t ?timeout ?(headers = []) ?body meth url =
         (Spindle_http.Meth.to_string meth)
         (Option.value (Uri.host uri) ~default:"?")
         (match result with
-        | Ok r -> string_of_int r.status
+        | Ok r -> string_of_int (Status.to_int r.status)
         | Error e -> error_to_string e)
         (if !reused then "reused" else "new")
         Mtime.Span.pp
@@ -736,7 +737,11 @@ module Body = struct
               match error_of_exn ex with Some e -> failed e | None -> raise ex))
 end
 
-type answer = { status : int; headers : (string * string) list; body : Body.t }
+type answer = {
+  status : Status.t;
+  headers : (string * string) list;
+  body : Body.t;
+}
 
 (* The connection and the answer's head, retried as a call is. *)
 let open_answer ~sw t ~headers ~body meth target =
@@ -807,7 +812,7 @@ let stream t ?timeout ?read_timeout ?(headers = []) ?body meth url f =
           Error e
       | None -> raise ex)
   | Ok (target, (c, head)) -> (
-      answered (Status.to_int head.status);
+      answered head.status;
       match Framing.of_response ~request_meth:meth head with
       | Error m ->
           close_connection c;
@@ -836,7 +841,7 @@ let stream t ?timeout ?read_timeout ?(headers = []) ?body meth url f =
             (Fun.protect ~finally (fun () ->
                  f
                    {
-                     status = Status.to_int head.status;
+                     status = head.status;
                      headers =
                        List.map
                          (fun (k, v) -> (String.lowercase_ascii k, v))
@@ -867,7 +872,7 @@ let events t ?timeout ?read_timeout ?(headers = []) ?last_event_id url on_event
   in
   Result.join
     (stream t ?timeout ?read_timeout ~headers `GET url (fun a ->
-         if not (a.status = 200 && is_event_stream a.headers) then
+         if not (Status.equal a.status `OK && is_event_stream a.headers) then
            (* Not a stream: the answer, read whole as a call's is. *)
            let b = Buffer.create 256 in
            let rec whole () =
@@ -926,7 +931,9 @@ type websocket_error =
 
 let websocket_error_to_string = function
   | Failed e -> error_to_string e
-  | Refused r -> Printf.sprintf "answered %d, which opens no socket" r.status
+  | Refused r ->
+      Printf.sprintf "answered %d, which opens no socket"
+        (Status.to_int r.status)
   | Ended e -> Websocket.error_to_string e
 
 (* A caller's own beside one of these would be a second answer. *)
@@ -1081,7 +1088,7 @@ let open_websocket t ?timeout ?(headers = []) ?keep_alive ?max_message protocol
       Error
         (Refused
            {
-             status = Status.to_int head.status;
+             status = head.status;
              headers =
                List.map
                  (fun (k, v) -> (String.lowercase_ascii k, v))
@@ -1307,11 +1314,11 @@ module Otlp = struct
                 ~headers:(("Content-Type", "application/json") :: headers)
                 ~body:(document ~service spans) `POST url
             with
-            | Ok r when r.status >= 200 && r.status < 300 -> ()
+            | Ok r when Status.to_int r.status / 100 = 2 -> ()
             | Ok r ->
                 L.warn (fun m ->
                     m "the collector refused %d spans: %d" (List.length spans)
-                      r.status)
+                      (Status.to_int r.status))
             | Error e ->
                 L.warn (fun m ->
                     m "could not send %d spans to the collector: %s"

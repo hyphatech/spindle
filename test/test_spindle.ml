@@ -3167,7 +3167,8 @@ let test_a_request_and_its_call_are_one_trace () =
           | `String _ | `Int _ | `Float _ | `Bool _ -> ())
         sp.attributes)
     spans;
-  check_int "a bug is a 500" 500 (ask "/broken").status;
+  check_int "a bug is a 500" 500
+    (Spindle_http.Status.to_int (ask "/broken").status);
   let is_broken (sp : Spindle.Trace.span) =
     String.equal sp.name "GET /broken"
   in
@@ -3589,7 +3590,7 @@ let test_the_client_answers_times_out_and_reports domains () =
   let url path = Printf.sprintf "http://127.0.0.1:%d%s" port path in
   (match Spindle_client.call client `GET (url "/hello/kim") with
   | Ok r ->
-      check_int "an answer" 200 r.status;
+      check_int "an answer" 200 (Spindle_http.Status.to_int r.status);
       check_string "its body" {|{"name":"kim","times":1}|} r.body;
       Alcotest.(check bool)
         "and its request id" true
@@ -4139,7 +4140,7 @@ let test_the_client_reads_as_it_arrives () =
    with
   | Ok (Spindle_client.Refused r) ->
       check_int "an answer that is no stream is refused, read whole" 200
-        r.status
+        (Spindle_http.Status.to_int r.status)
   | _ -> Alcotest.fail "a JSON answer is no event stream");
   match
     Spindle_client.stream client
@@ -4263,7 +4264,7 @@ let test_an_answer_at_the_deadline_leaves_no_socket_open () =
   Alcotest.(check bool)
     "answered, or out of time" true
     (match got with
-    | Ok 200 | Error (Spindle_client.Timeout _) -> true
+    | Ok `OK | Error (Spindle_client.Timeout _) -> true
     | Ok _ | Error (Spindle_client.Unsent _ | Spindle_client.Unanswered _) ->
         false);
   check_int "and no socket is left open" before (open_sockets ())
@@ -4537,7 +4538,7 @@ let test_a_body_past_the_limit_is_413 domains () =
       ~body:(Printf.sprintf {|{"name":"%s"}|} (String.make 200 'a'))
       `POST "/echo"
   in
-  check_int "too large" 413 r.status;
+  check_int "too large" 413 (Spindle_http.Status.to_int r.status);
   check_string "said as a sentence"
     {|{"error":"too_large","message":"That request is too large."}|} r.body;
   let r =
@@ -4547,7 +4548,8 @@ let test_a_body_past_the_limit_is_413 domains () =
       ~headers:[ ("content-type", "application/json") ]
       ~body:{|{"name":"lee"}|} `POST "/echo"
   in
-  check_int "and one within it is read" 201 r.status
+  check_int "and one within it is read" 201
+    (Spindle_http.Status.to_int r.status)
 
 (* HEAD is GET's head: the same content-length, and no body after it. A
    HEAD that says 0 tells a cache or a download manager the page is empty. *)
@@ -4623,7 +4625,7 @@ let test_a_middleware_answer_is_in_the_access_log domains () =
   let r =
     call_on ~net ~clock:(Eio.Stdenv.mono_clock env) ~port `GET "/hello/kim"
   in
-  check_int "its own answer" 503 r.status;
+  check_int "its own answer" 503 (Spindle_http.Status.to_int r.status);
   Alcotest.(check bool)
     "one access line for it" true
     (List.exists (contains ~sub:{|"message":"GET /hello/kim 503"|}) !lines)
@@ -4654,7 +4656,8 @@ let test_the_access_log_says_what_went_out domains () =
       (Spindle.Test.app [ framed; hello ])
   in
   let call = call_on ~net ~clock:(Eio.Stdenv.mono_clock env) ~port in
-  check_int "refused on the way out" 500 (call `GET "/framed").status;
+  check_int "refused on the way out" 500
+    (Spindle_http.Status.to_int (call `GET "/framed").status);
   Eio.Switch.run (fun inner ->
       let flow =
         Eio.Net.connect ~sw:inner net (`Tcp (Eio.Net.Ipaddr.V4.loopback, port))
@@ -5406,7 +5409,7 @@ let test_a_jumping_clock_moves_no_duration domains () =
   let r =
     call_on ~net ~clock:(Eio.Stdenv.mono_clock env) ~port `GET "/hello/kim"
   in
-  check_int "answered" 200 r.status;
+  check_int "answered" 200 (Spindle_http.Status.to_int r.status);
   let ns =
     List.find_map
       (fun l ->
@@ -5482,7 +5485,7 @@ let test_no_header_value_reaches_the_log () =
          ]
        (Printf.sprintf "http://127.0.0.1:%d/hello/kim?code=s3cret-query" port)
    with
-  | Ok r -> check_int "answered" 200 r.status
+  | Ok r -> check_int "answered" 200 (Spindle_http.Status.to_int r.status)
   | Error e -> Alcotest.fail (Spindle_client.error_to_string e));
   Alcotest.(check bool) "the request was logged" true (!lines <> []);
   List.iter

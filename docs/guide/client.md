@@ -16,16 +16,20 @@ let () =
   Eio_main.run @@ fun env ->
   Spindle_client.run env @@ fun client ->
   match Spindle_client.call client `GET "https://example.com/" with
-  | Ok { status; body; _ } -> Printf.printf "%d, %d bytes\n" status (String.length body)
+  | Ok { status; body; _ } ->
+      Printf.printf "%d, %d bytes\n"
+        (Spindle_http.Status.to_int status)
+        (String.length body)
   | Error e -> prerr_endline (Spindle_client.error_to_string e)
 ```
 
 `Spindle_client.run env f` makes a client for as long as `f` runs and closes
 its connections when `f` returns.
 
-`call client meth url` answers `Ok` with the `status`, the `headers` (names
-lower-cased) and the whole `body` -- **any status is an answer**, so a `404`
-is `Ok`. `Error` says whether the request went out: `Unsent` (no
+`call client meth url` answers `Ok` with the `status`, a
+`Spindle_http.Status.t` as a route answers with, the `headers` (names
+lower-cased) and the whole `body` -- **any status is an answer**, so a
+`` `Not_found `` is `Ok`. `Error` says whether the request went out: `Unsent` (no
 connection, bad TLS, a URL it cannot call -- the server never saw it, so
 sending it again is safe), `Unanswered` (it went, and the answer was cut
 short, unreadable, or never came -- the server may have acted on it) or
@@ -38,8 +42,10 @@ match
     ~headers:[ ("content-type", "application/json") ] ~body
     `POST "https://api.example.com/v1/things"
 with
-| Ok { status = 200; body; _ } -> decode body
-| Ok r -> Error (Printf.sprintf "upstream answered %d" r.status)
+| Ok { status = `OK; body; _ } -> decode body
+| Ok r ->
+    Error
+      (Printf.sprintf "upstream answered %d" (Spindle_http.Status.to_int r.status))
 | Error e -> Error (Spindle_client.error_to_string e)
 ```
 

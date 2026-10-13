@@ -2114,12 +2114,14 @@ let run_client_row env (row : client_row) delivery =
             | Fails, Error _ -> ()
             | Fails, Ok r ->
                 fail "call %d was answered %d where it owed an error" (n + 1)
-                  r.status
+                  (Spindle_http.Status.to_int r.status)
             | Gives _, Error e ->
                 fail "call %d: %s" (n + 1) (Spindle_client.error_to_string e)
             | Gives a, Ok r ->
-                if a.status <> r.status then
-                  fail "call %d: status %d, owed %d" (n + 1) r.status a.status;
+                if a.status <> Spindle_http.Status.to_int r.status then
+                  fail "call %d: status %d, owed %d" (n + 1)
+                    (Spindle_http.Status.to_int r.status)
+                    a.status;
                 Option.iter
                   (fun b ->
                     if not (String.equal b r.body) then

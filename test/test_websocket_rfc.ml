@@ -912,7 +912,9 @@ let opening ?extra key =
 let outcome = function
   | Ok said -> "opened: " ^ said
   | Error (Spindle_client.Refused r) ->
-      Printf.sprintf "refused %d: %s" r.status r.body
+      Printf.sprintf "refused %d: %s"
+        (Spindle_http.Status.to_int r.status)
+        r.body
   | Error (Spindle_client.Failed e) ->
       "failed: " ^ Spindle_client.error_to_string e
   | Error (Spindle_client.Ended e) -> "ended: " ^ Ws.error_to_string e

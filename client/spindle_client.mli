@@ -92,7 +92,7 @@ val run :
     {!create} on the program's own switch. *)
 
 type response = {
-  status : int;
+  status : Spindle_http.Status.t;
   headers : (string * string) list;  (** names lower-cased *)
   body : string;
 }
@@ -149,7 +149,11 @@ module Body : sig
       after the function it was handed to has returned is [`End]. *)
 end
 
-type answer = { status : int; headers : (string * string) list; body : Body.t }
+type answer = {
+  status : Spindle_http.Status.t;
+  headers : (string * string) list;
+  body : Body.t;
+}
 (** A response whose body is read as it arrives: headers lower-cased. *)
 
 val stream :
