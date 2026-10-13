@@ -28,9 +28,11 @@ val json :
   ?examples:'a list ->
   'a Wiretype.t ->
   ('a, Refusal.t) result t
-(** A value, encoded by its description, with [status] ([`OK]). A value its own
-    description cannot encode is our bug, and answers {!Refusal.internal}.
-    [examples] are values it may return, for whoever documents the route. *)
+(** A value, encoded by its description, with [status] ([`OK]), a success,
+    [2xx]: one that is not is refused when the app is made, since failing is a
+    refusal. A value its own description cannot encode is our bug, and answers
+    {!Refusal.internal}. [examples] are values it may return, for whoever
+    documents the route. *)
 
 val json_response :
   ?examples:'a list ->
@@ -63,7 +65,9 @@ val text : (string, Refusal.t) result t
 
 val empty : ?status:Spindle_http.Status.t -> unit -> (unit, Refusal.t) result t
 (** No body, with [status] ([`No_content]): what a route answers when it did
-    what it was asked and has nothing to say. The endpoint returns [Ok ()]. *)
+    what it was asked and has nothing to say. The endpoint returns [Ok ()]. A
+    [status] that is not a success, [2xx], is refused when the app is made: a
+    redirect is a {!response}'s ({!Response.redirect}). *)
 
 val empty_response :
   statuses:(Spindle_http.Status.t * string) list ->

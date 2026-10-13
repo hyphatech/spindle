@@ -34,21 +34,24 @@ val make :
 (** Refuses, naming the route: two routes of one method that could both answer
     one URL -- the second could never be reached; a code of one name declared
     with two statuses, docs or challenges; a [401] code with no challenge
-    ({!Refusal.Code.make}); a literal segment that is empty or holds a ["/"]; a
-    path naming one parameter twice; a handler that reads a path parameter
-    ({!Spindle.param}) its path does not have; and one whose dependencies read
-    one input -- a query parameter, a header, a cookie, a form's field -- as
-    different things: two codecs, or one value and a list. A literal beats a
-    parameter wherever the routes are listed, and a parameter that may decline
-    ({!Path.val-param}'s [or_not_found]) beats one that may not; between two
-    that both may, the one listed first answers. [not_found] answers every
-    request no route claims, once the framework has answered its own -- a [405],
-    a [501], a trailing-slash redirect -- with whatever status it gives; without
-    it the answer is {!Refusal.not_found}. A rest route at the root
-    ({!Path.rest}) takes every path no other route names, so behind one it is
-    never reached. [middleware] wraps the routes and the not-found answer alike,
-    the first listed outermost (see {!Middleware.t}). [codes] are what they may
-    refuse with, held to what a route's are -- one meaning to a name, a
+    ({!Refusal.Code.make}); a code whose status is no failure, outside [4xx] and
+    [5xx]; a route declaring a success that is none, outside [2xx]
+    ({!Returns.json}, {!Returns.empty}, {!Returns.json_response},
+    {!Returns.empty_response}); a literal segment that is empty or holds a
+    ["/"]; a path naming one parameter twice; a handler that reads a path
+    parameter ({!Spindle.param}) its path does not have; and one whose
+    dependencies read one input -- a query parameter, a header, a cookie, a
+    form's field -- as different things: two codecs, or one value and a list. A
+    literal beats a parameter wherever the routes are listed, and a parameter
+    that may decline ({!Path.val-param}'s [or_not_found]) beats one that may
+    not; between two that both may, the one listed first answers. [not_found]
+    answers every request no route claims, once the framework has answered its
+    own -- a [405], a [501], a trailing-slash redirect -- with whatever status
+    it gives; without it the answer is {!Refusal.not_found}. A rest route at the
+    root ({!Path.rest}) takes every path no other route names, so behind one it
+    is never reached. [middleware] wraps the routes and the not-found answer
+    alike, the first listed outermost (see {!Middleware.t}). [codes] are what
+    they may refuse with, held to what a route's are -- one meaning to a name, a
     challenge on a [401] -- and not written into the API's document, since a
     middleware that is a policy for some routes would have them claimed by every
     operation. [trailing_slash] is [Strict] unless the application asks, because

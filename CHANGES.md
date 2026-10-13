@@ -90,6 +90,13 @@
   session. A `Bearer` token, or any other scheme a page sets itself, is
   served as before.
 
+- **Breaking:** `App.make` refuses a `Returns.json ~status` or
+  `Returns.empty ~status` that is not `2xx`, as it refused one listed in
+  `Returns.json_response`, and a `Refusal.Code` whose status is not `4xx`
+  or `5xx`, wherever it is declared: the OpenAPI document could give such a
+  route two answers under one status, and a refusal answered `200` read as
+  a success. A redirect is `Returns.response` with `Response.redirect`.
+
 ## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop

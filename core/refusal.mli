@@ -20,7 +20,9 @@ module Code : sig
     doc:string ->
     t
   (** [make "conflict" ~status:`Conflict ~doc:"Two writers raced."]. [doc] says
-      what the code means, for whoever reads the routes' documentation.
+      what the code means, for whoever reads the routes' documentation. A
+      [status] outside [4xx] and [5xx] is no refusal's, and {!App.make} refuses
+      a code declared with one.
 
       [challenge] is what a refusal made from the code says in
       [WWW-Authenticate]: RFC 9110 §15.5.2 has every [401] carry one, naming how

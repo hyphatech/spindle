@@ -185,16 +185,16 @@ let check_inputs (r : Route_repr.t) =
             value"
            (route_name r) where name)
 
-(* Listed statuses are successes, since failing is a refusal, each once. *)
+(* Declared statuses are successes, since failing is a refusal, each once. *)
 let check_statuses r =
   let statuses =
     match r.Route_repr.info.returns with
     | Returns_repr.Json_response { statuses; _ }
     | Returns_repr.Empty_response statuses ->
         Some (List.map (fun (s, _) -> Status.to_int s) statuses)
-    | Returns_repr.Json _ | Html | Text | Empty _ | Response | Events _
-    | Websocket _ ->
-        None
+    | Returns_repr.Json { status; _ } | Empty status ->
+        Some [ Status.to_int status ]
+    | Returns_repr.Html | Text | Response | Events _ | Websocket _ -> None
   in
   match statuses with
   | None -> Ok ()
@@ -260,8 +260,19 @@ let check_codes ~codes routes =
     Status.equal (Refusal.Code.status c) `Unauthorized
     && Option.is_none (Refusal.Code.challenge c)
   in
+  let is_failure c =
+    let s = Status.to_int (Refusal.Code.status c) in
+    s >= 400 && s <= 599
+  in
   let rec check = function
     | [] -> Ok ()
+    | (where, c) :: _ when not (is_failure c) ->
+        Error
+          (Printf.sprintf
+             "the code %s in %s is %d, which is no failure: a refusal is 4xx \
+              or 5xx, and a success is the route's answer"
+             (Refusal.Code.name c) where
+             (Status.to_int (Refusal.Code.status c)))
     | (where, c) :: _ when lacks_challenge c ->
         Error
           (Printf.sprintf

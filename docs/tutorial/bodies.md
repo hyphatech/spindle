@@ -194,6 +194,9 @@ The `~detail` goes to the log only.
   it.
 - **A name means one thing.** Two codes with the same name but a different
   status or doc are refused when the app is made.
+- **A code fails, and an answer succeeds.** A code's status is `4xx` or
+  `5xx`, and `Returns.json ~status` or `Returns.empty ~status` is `2xx`;
+  either the other way round is refused when the app is made.
 - **A `401` code needs `~challenge`**, the `WWW-Authenticate` value, e.g.
   `~challenge:{|Bearer realm="api"|}`.
 - **Your own wording for a bad body**:

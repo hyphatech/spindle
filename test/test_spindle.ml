@@ -7513,7 +7513,51 @@ let test_a_routes_statuses_are_checked () =
       ("none", [], "no status");
       ("a failure", [ (`Not_found, "Missing.") ], "not a success");
       ("twice", [ (`OK, "One."); (`OK, "Two.") ], "twice");
-    ]
+    ];
+  (* One status, given as an optional argument, is held to the same. *)
+  let refused why route says =
+    match Spindle.App.make [ route ] with
+    | Ok _ -> Alcotest.failf "%s: the app was made" why
+    | Error m -> Alcotest.(check bool) why true (contains ~sub:says m)
+  in
+  refused "a JSON answer's failure"
+    (Spindle.get
+       Spindle.Path.(s "x")
+       (Spindle.Returns.json ~status:`Not_found Wiretype.string)
+       (Spindle.Dep.return (Ok "x")))
+    "lists 404, which is not a success";
+  refused "an empty answer's redirect"
+    (Spindle.get
+       Spindle.Path.(s "x")
+       (Spindle.Returns.empty ~status:`Found ())
+       (Spindle.Dep.return (Ok ())))
+    "lists 302, which is not a success"
+
+(* A code is a refusal's: a status that is no failure, which a client would
+   read as the route having done what it asked, is refused wherever the code
+   is declared. *)
+let test_a_codes_status_is_a_failure () =
+  let made_it = code "made_it" `OK and moved = code "moved" `Found in
+  (match
+     Spindle.App.make
+       [
+         Spindle.get ~refuses:[ made_it ]
+           Spindle.Path.(s "x")
+           Spindle.Returns.text
+           (Spindle.Dep.return (Ok "x"));
+       ]
+   with
+  | Ok _ -> Alcotest.fail "a route's code of 200 was accepted"
+  | Error m ->
+      Alcotest.(check bool)
+        "a route's, named" true
+        (contains ~sub:"the code made_it in GET /x is 200" m));
+  match Spindle.App.make ~codes:[ moved ] [] with
+  | Ok _ -> Alcotest.fail "the application's code of 302 was accepted"
+  | Error m ->
+      Alcotest.(check bool)
+        "the application's, saying what a code is" true
+        (contains ~sub:"a refusal is 4xx or 5xx" m)
 
 (* A middleware's codes are declared where the app is made and held to what
    a route's are, and one declared nowhere is a bug whether or not a route
@@ -8919,6 +8963,8 @@ let () =
             test_a_route_answers_the_status_it_chose;
           Alcotest.test_case "a route's statuses are checked" `Quick
             test_a_routes_statuses_are_checked;
+          Alcotest.test_case "a code's status is a failure" `Quick
+            test_a_codes_status_is_a_failure;
           Alcotest.test_case "every problem is told at once" `Quick
             test_every_problem_is_told_at_once;
           Alcotest.test_case "typed inputs" `Quick test_typed_inputs;
