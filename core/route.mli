@@ -47,7 +47,8 @@ type param = Route_repr.param = {
   name : string;
   shape : Codec.shape;
   kind : string option;  (** the codec's name, if it has one *)
-  or_not_found : bool;
+  unparsed : Path.unparsed;
+      (** what a segment it cannot read makes of a request *)
   rest : bool;  (** whether it takes the rest of the path ({!Path.rest}) *)
 }
 (** A parameter of the route's path. *)

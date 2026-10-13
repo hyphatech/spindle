@@ -25,25 +25,39 @@ type path = (unit, [ `Path ]) t
 
 (** {1 Parameters} *)
 
-val param : ?or_not_found:unit -> string -> 'a Codec.t -> 'a param
+(** What a segment its codec cannot read makes of the request. *)
+type unparsed = Path_repr.unparsed =
+  | Invalid
+      (** the default: a problem with the request, [400] at [path.<name>]
+          ({!Refusal.invalid}), since the literals already chose the route and
+          so the client sent a bad input *)
+  | Next_route
+      (** a URL this route does not answer, so another route whose path matches
+          is asked, and [404] if none does -- for routes that differ only by a
+          parameter's type:
+
+          {[
+          let by_id = Path.(s "posts" / int ~unparsed:Next_route "key")
+          let by_slug = Path.(s "posts" / str "key")
+          ]}
+
+          Such routes give the parameter one name, since the API's document
+          describes them as one operation ({!Openapi.document}). *)
+
+val param : ?unparsed:unparsed -> string -> 'a Codec.t -> 'a param
 (** [param name codec]: a segment read by [codec], percent-decoded first --
-    [param "colour" colour] for a codec of the application's own.
+    [param "colour" colour] for a codec of the application's own -- and
+    [unparsed] what one it cannot read makes of the request. An empty segment is
+    never a parameter. *)
 
-    {b A segment that does not parse} is a problem with the request, [400] at
-    [path.<name>] ({!Refusal.invalid}): the literals already chose the route, so
-    the client sent a bad input. [or_not_found] makes it a URL this route does
-    not answer instead, for routes that differ only by a parameter's type --
-    [/items/{id}] as a number, and as a name after it. An empty segment is never
-    a parameter. *)
-
-val str : ?or_not_found:unit -> string -> string param
+val str : ?unparsed:unparsed -> string -> string param
 (** [param name Codec.string]: any segment -- [/users/Kim%20Li] is ["Kim Li"].
 *)
 
-val int : ?or_not_found:unit -> string -> int param
+val int : ?unparsed:unparsed -> string -> int param
 (** [param name Codec.int]. *)
 
-val int64 : ?or_not_found:unit -> string -> int64 param
+val int64 : ?unparsed:unparsed -> string -> int64 param
 (** [param name Codec.int64]. *)
 
 val rest : string -> string list param

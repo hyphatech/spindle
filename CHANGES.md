@@ -1,5 +1,23 @@
 # Changes
 
+## Unreleased
+
+- Breaking: a path parameter's `?or_not_found:()` is
+  `?unparsed:Next_route`, which says what it does -- another route whose
+  path matches is asked -- where the old name read as a `404`. Its
+  default, `Path.Invalid`, is the `400` it was. `Route.param`'s
+  `or_not_found` field is `unparsed`.
+- Breaking: routes told apart by a parameter's type are one operation in
+  `Spindle.Openapi`'s document and one entry in `Spindle.Zod`'s module,
+  its parameter any of their types, reading and answering what either
+  route does. With one name for the parameter the document was refused
+  as two routes of one operation id; with two names it held one path
+  twice, which OpenAPI refuses. Two routes whose paths differ only in a
+  parameter's name -- `/items/{id}` and `/items/{item}`, under any
+  methods -- are now the document's `Error`, saying to give them one
+  name, and so are the routes of one operation that answer in different
+  ways or read different bodies.
+
 ## 0.4.0 (2026-10-13)
 
 - Breaking: `spindle_postgres` needs rowtype 0.6.0 and postgres-eio

@@ -3,17 +3,17 @@ module R = Path_repr
 type ('a, 'kind) t = ('a, 'kind) Path_repr.t
 type 'a param = ('a, [ `Param ]) t
 type path = (unit, [ `Path ]) t
+type unparsed = Path_repr.unparsed = Invalid | Next_route
 
-let param ?or_not_found name codec =
-  R.Param
-    { name; codec; or_not_found = Option.is_some or_not_found; rest = false }
+let param ?(unparsed = Invalid) name codec =
+  R.Param { name; codec; unparsed; rest = false }
 
-let str ?or_not_found name = param ?or_not_found name Codec.string
-let int ?or_not_found name = param ?or_not_found name Codec.int
-let int64 ?or_not_found name = param ?or_not_found name Codec.int64
+let str ?unparsed name = param ?unparsed name Codec.string
+let int ?unparsed name = param ?unparsed name Codec.int
+let int64 ?unparsed name = param ?unparsed name Codec.int64
 
 let rest name =
-  R.Param { name; codec = R.rest_codec; or_not_found = false; rest = true }
+  R.Param { name; codec = R.rest_codec; unparsed = Invalid; rest = true }
 
 let spec : type a. a param -> a R.spec = function R.Param p -> p
 let name p = (spec p).name

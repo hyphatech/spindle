@@ -91,9 +91,10 @@ let pp_info ppf i =
        (fun p ->
          Printf.sprintf "%s: %s%s" p.name
            (type_to_string p.shape p.kind)
-           (if p.or_not_found then ", or not this route"
-            else if p.rest then ", the rest of the path"
-            else ""))
+           (match p.unparsed with
+           | Path_repr.Next_route -> ", or not this route"
+           | Path_repr.Invalid ->
+               if p.rest then ", the rest of the path" else ""))
        i.params);
   print_line "reads"
     (List.filter_map

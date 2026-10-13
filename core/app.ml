@@ -68,16 +68,17 @@ let could_match_alike a b =
        (fun x y ->
          match (x, y) with
          | Path_repr.Literal l, Path_repr.Literal m -> String.equal l m
-         | ( Path_repr.Parameter { or_not_found = false; _ },
-             Path_repr.Parameter { or_not_found = false; _ } )
+         | ( Path_repr.Parameter { unparsed = Invalid; _ },
+             Path_repr.Parameter { unparsed = Invalid; _ } )
          | Path_repr.Rest _, Path_repr.Rest _ ->
              true
          | Path_repr.Literal _, (Path_repr.Parameter _ | Path_repr.Rest _)
          | Path_repr.Parameter _, (Path_repr.Literal _ | Path_repr.Rest _)
          | Path_repr.Rest _, (Path_repr.Literal _ | Path_repr.Parameter _)
-         | Path_repr.Parameter { or_not_found = true; _ }, Path_repr.Parameter _
-         | Path_repr.Parameter _, Path_repr.Parameter { or_not_found = true; _ }
-           ->
+         | ( Path_repr.Parameter { unparsed = Next_route; _ },
+             Path_repr.Parameter _ )
+         | ( Path_repr.Parameter _,
+             Path_repr.Parameter { unparsed = Next_route; _ } ) ->
              false)
        (segments_of a) (segments_of b)
 
@@ -341,11 +342,11 @@ let compile routes =
                   c
             in
             insert child rest
-        | Path_repr.Parameter { or_not_found = true; parses; _ } :: rest ->
+        | Path_repr.Parameter { unparsed = Next_route; parses; _ } :: rest ->
             let c = empty_node () in
             n.declining_params <- n.declining_params @ [ (parses, c) ];
             insert c rest
-        | Path_repr.Parameter { or_not_found = false; _ } :: rest ->
+        | Path_repr.Parameter { unparsed = Invalid; _ } :: rest ->
             let c =
               match n.plain_param with
               | Some c -> c

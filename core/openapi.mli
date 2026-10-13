@@ -11,10 +11,15 @@
 
 val document :
   ?title:string -> ?version:string -> App.t -> (string, string list) result
-(** The document, as JSON. [Error] names every description the generator could
-    not name -- two different ones under one kind -- and every two routes whose
-    paths make one operation id, [/a-b] and [/a_b], which a generated client
-    would give one name. *)
+(** The document, as JSON. Routes that share a method and a pattern -- told
+    apart by a parameter's type ({!Path.Next_route}) -- are one operation: its
+    parameter is any of their types, and it reads and answers what any of them
+    does. [Error] names every description the generator could not name -- two
+    different ones under one kind --; every two routes whose paths make one
+    operation id, [/a-b] and [/a_b], which a generated client would give one
+    name; every two whose paths differ only in a parameter's name, [/items/{id}]
+    and [/items/{item}], which OpenAPI counts as one path; and every operation
+    whose routes answer in different ways or read different bodies. *)
 
 val report : App.t -> string list
 (** Every place described loosely, each saying where: a route that may read more
@@ -57,5 +62,6 @@ val docs :
 
     Raises [Invalid_argument] where {!val-routes} answers [Error] -- routes
     {!Spindle.App.make} refuses, two descriptions under one kind, two routes of
-    one operation id, a path with a parameter -- each written in source. A
-    program that builds its routes at run time uses {!val-routes}. *)
+    one operation id or of one path under two names, one operation answering two
+    ways, a path with a parameter -- each written in source. A program that
+    builds its routes at run time uses {!val-routes}. *)

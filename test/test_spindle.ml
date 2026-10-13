@@ -5969,7 +5969,7 @@ let test_a_literal_beats_a_parameter_in_any_order () =
 let test_a_parameter_that_declines_is_asked_first () =
   let by_number =
     Spindle.get
-      Spindle.Path.(s "items" / Spindle.Path.int ~or_not_found:() "number")
+      Spindle.Path.(s "items" / Spindle.Path.int ~unparsed:Next_route "number")
       Spindle.Returns.response (says "number")
   in
   let by_name =
@@ -6094,8 +6094,8 @@ let test_a_bad_parameter_is_a_problem () =
 (* A segment of the application's own type: refused as a problem, or --
    asked for -- a URL this route does not answer. *)
 let test_a_custom_segment_is_a_problem_or_not_the_route () =
-  let even ?or_not_found () =
-    Spindle.Path.param ?or_not_found "n"
+  let even ?unparsed () =
+    Spindle.Path.param ?unparsed "n"
       (Spindle.Codec.custom ~kind:"even number" ~expects:"an even number"
          ~print:string_of_int
          ~parse:(fun s ->
@@ -6121,7 +6121,7 @@ let test_a_custom_segment_is_a_problem_or_not_the_route () =
     (contains ~sub:"This is not an even number." r.body);
   check_status "or not this route" 404
     (Spindle.Test.call
-       (Spindle.Test.app [ half (even ~or_not_found:() ()) ])
+       (Spindle.Test.app [ half (even ~unparsed:Spindle.Path.Next_route ()) ])
        `GET "/half/7")
       .status
 
@@ -6210,7 +6210,7 @@ let test_the_table_answers_as_the_rule =
                     | Lit l -> Spindle.Path.s l
                     | Plain -> Spindle.Path.(root / str name)
                     | Declining ->
-                        Spindle.Path.(root / int ~or_not_found:() name)
+                        Spindle.Path.(root / int ~unparsed:Next_route name)
                   in
                   (Spindle.Path.(acc / one), n + 1))
                 (Spindle.Path.root, 0) segs

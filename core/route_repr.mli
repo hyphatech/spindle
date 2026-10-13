@@ -6,7 +6,7 @@ type param = {
   name : string;
   shape : Codec.shape;
   kind : string option;
-  or_not_found : bool;
+  unparsed : Path_repr.unparsed;
   rest : bool;
 }
 

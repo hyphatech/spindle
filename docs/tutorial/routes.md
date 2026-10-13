@@ -158,8 +158,11 @@ reported.
 - **A literal beats a parameter**, whatever the order of the list:
   `/users/me` answers before `/users/{id}`.
 - **A parameter that doesn't parse is a `400`** at `path.<name>`. Give it
-  `~or_not_found:()` (`Path.int ~or_not_found:() "id"`) to make it "not this
-  route" instead, when two routes differ only by a parameter's type.
+  `~unparsed:Next_route` (`Path.(s "posts" / int ~unparsed:Next_route
+  "key")`) to make it "not this route" instead, so the next route whose
+  path matches answers -- `/posts/42` by its number, `/posts/blue-lamp` by
+  its name. Such routes share the parameter's name, and the API's document
+  describes them as one operation.
 - **A path no route names** is `404`, or your own answer with
   `Spindle.serve env ~not_found:page routes`. A path another method's route
   names is `405`, with `Allow` listing the methods it has.

@@ -43,15 +43,15 @@ val make :
     dependencies read one input -- a query parameter, a header, a cookie, a
     form's field -- as different things: two codecs, or one value and a list. A
     literal beats a parameter wherever the routes are listed, and a parameter
-    that may decline ({!Path.val-param}'s [or_not_found]) beats one that may
-    not; between two that both may, the one listed first answers. [not_found]
-    answers every request no route claims, once the framework has answered its
-    own -- a [405], a [501], a trailing-slash redirect -- with whatever status
-    it gives; without it the answer is {!Refusal.not_found}. A rest route at the
-    root ({!Path.rest}) takes every path no other route names, so behind one it
-    is never reached. [middleware] wraps the routes and the not-found answer
-    alike, the first listed outermost (see {!Middleware.t}). [codes] are what
-    they may refuse with, held to what a route's are -- one meaning to a name, a
+    that may decline ({!Path.Next_route}) beats one that may not; between two
+    that both may, the one listed first answers. [not_found] answers every
+    request no route claims, once the framework has answered its own -- a [405],
+    a [501], a trailing-slash redirect -- with whatever status it gives; without
+    it the answer is {!Refusal.not_found}. A rest route at the root
+    ({!Path.rest}) takes every path no other route names, so behind one it is
+    never reached. [middleware] wraps the routes and the not-found answer alike,
+    the first listed outermost (see {!Middleware.t}). [codes] are what they may
+    refuse with, held to what a route's are -- one meaning to a name, a
     challenge on a [401] -- and not written into the API's document, since a
     middleware that is a policy for some routes would have them claimed by every
     operation. [trailing_slash] is [Strict] unless the application asks, because

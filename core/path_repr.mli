@@ -1,10 +1,16 @@
 (** A path as the framework reads it: its segments and each parameter's codec.
     What {!Path} is, underneath, and what the router matches. *)
 
+type unparsed =
+  | Invalid
+  | Next_route
+      (** What a segment its codec cannot read makes of a request:
+          {!Path.unparsed}. *)
+
 type 'a spec = {
   name : string;
   codec : 'a Codec.t;
-  or_not_found : bool;
+  unparsed : unparsed;
   rest : bool;
       (** every remaining segment, read as the matcher hands them over: each
           encoded again and joined by ["/"], so a segment holding an encoded
@@ -26,7 +32,7 @@ type segment =
   | Literal of string
   | Parameter of {
       name : string;
-      or_not_found : bool;
+      unparsed : unparsed;
       parses : string -> bool;
       shape : Codec.shape;
       kind : string option;

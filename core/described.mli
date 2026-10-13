@@ -32,12 +32,44 @@ type body =
   | Parts_body  (** a body read a part at a time *)
   | Raw_body  (** read as it arrived, so an empty one is read too *)
 
+type located = In_path | In_query | In_header | In_cookie
+
+(** A default as the JSON its schema reads. *)
+type default =
+  | Bare of string  (** a number or a boolean, as its codec prints it *)
+  | Quoted of string  (** anything else, a string *)
+
+type parameter = {
+  name : string;
+  located : located;
+  required : bool;
+  schema : Wiretype.Schema.t;
+  default : default option;
+}
+(** An input the route reads beside its body: its path's, a query parameter, a
+    header, a cookie. A credential is none, since it is its scheme. *)
+
 type route = {
   info : Route.info;
+      (** the first's, where several routes are one operation: they share its
+          method and its pattern *)
   operation_id : string;  (** [post_orders_order_id_items] *)
+  summary : string option;
+  doc : string option;
+  tags : string list;
+  parameters : parameter list;  (** its path's first, then what it reads *)
+  credentials : Dep.credential list;
+  anonymous : bool;  (** whether a caller with no credential is answered *)
+  codes : Refusal.Code.t list;
+      (** what it may refuse with, the framework's included, each once *)
   returns : returns;
   body : body option;
 }
+(** One operation: a route, or the routes that share a method and a pattern --
+    told apart by a parameter's type ({!Path.Next_route}) -- which OpenAPI gives
+    one operation and zod one key. It reads what any of them reads, a parameter
+    required only where every one requires it and of any of their schemas, and
+    answers what any of them answers. *)
 
 type t = {
   routes : route list;

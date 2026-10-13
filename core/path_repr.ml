@@ -1,13 +1,15 @@
 (* A path as the framework reads it: its segments and each parameter's
    codec. *)
 
+type unparsed = Invalid | Next_route
+
 (* [rest] takes every remaining segment. Its codec reads them as the matcher
    hands them over, each encoded again and joined by "/", so a segment
    holding an encoded "/" stays one segment. *)
 type 'a spec = {
   name : string;
   codec : 'a Codec.t;
-  or_not_found : bool;
+  unparsed : unparsed;
   rest : bool;
 }
 
@@ -27,7 +29,7 @@ type segment =
   | Literal of string
   | Parameter of {
       name : string;
-      or_not_found : bool;
+      unparsed : unparsed;
       parses : string -> bool;
       shape : Codec.shape;
       kind : string option;
@@ -43,7 +45,7 @@ let segments p =
           Parameter
             {
               name = p.name;
-              or_not_found = p.or_not_found;
+              unparsed = p.unparsed;
               parses = (fun s -> Option.is_some (Codec.parse p.codec s));
               shape = Codec.shape p.codec;
               kind = Codec.kind p.codec;

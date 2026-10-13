@@ -404,6 +404,143 @@ let test_two_paths_that_make_one_operation_are_refused () =
         "naming the operation" true
         (List.exists (contains ~sub:"get_a_b") e)
 
+(* Routes told apart by a parameter's type are one path and one method to
+   OpenAPI, so they are one operation: its parameter is either type, and it
+   reads and answers what either route does. The zod module keys them once. *)
+let test_routes_told_apart_by_a_type_are_one_operation () =
+  let by_number =
+    Spindle.get ~summary:"An item by its number"
+      Spindle.Path.(s "items" / Spindle.Path.int ~unparsed:Next_route "key")
+      (Spindle.Returns.json item_json)
+      (Spindle.Dep.return (Error Spindle.Refusal.not_found))
+  and by_name =
+    Spindle.get ~summary:"Items by their name" ~refuses:[ gone ]
+      Spindle.Path.(s "items" / Spindle.Path.str "key")
+      (Spindle.Returns.json (Wiretype.list item_json))
+      (let+ _ = Spindle.Query.required "lang" Spindle.Codec.string in
+       Error Spindle.Refusal.not_found)
+  in
+  let a = Spindle.Test.app [ by_number; by_name ] in
+  let j = json_of_doc a in
+  let keys path = Yojson.Safe.Util.keys (member path j) in
+  Alcotest.(check (list string))
+    "one path" [ "/items/{key}" ] (keys [ "paths" ]);
+  Alcotest.(check (list string))
+    "one operation" [ "get" ]
+    (keys [ "paths"; "/items/{key}" ]);
+  let op = member [ "paths"; "/items/{key}"; "get" ] j in
+  Alcotest.(check string)
+    "both summaries" "An item by its number; Items by their name"
+    (str [ "summary" ] op);
+  Alcotest.(check (list string))
+    "the parameter either type, and the query one route reads, not required"
+    [ "key:path:true:integer|string"; "lang:query:false:string" ]
+    (List.map
+       (fun p ->
+         let schema = member [ "schema" ] p in
+         let types =
+           match member [ "anyOf" ] schema with
+           | `List alts -> String.concat "|" (List.map (str [ "type" ]) alts)
+           | _ -> str [ "type" ] schema
+         in
+         String.concat ":"
+           [
+             str [ "name" ] p;
+             str [ "in" ] p;
+             Yojson.Safe.to_string (member [ "required" ] p);
+             types;
+           ])
+       (Yojson.Safe.Util.to_list (member [ "parameters" ] op)));
+  Alcotest.(check (list string))
+    "either answer"
+    [ "#/components/schemas/Item"; "array" ]
+    (List.map
+       (fun alt ->
+         match member [ "$ref" ] alt with
+         | `String r -> r
+         | _ -> str [ "type" ] alt)
+       (Yojson.Safe.Util.to_list
+          (member
+             [
+               "responses";
+               "200";
+               "content";
+               "application/json";
+               "schema";
+               "anyOf";
+             ]
+             op)));
+  Alcotest.(check bool)
+    "and the refusal one route declares" true
+    (contains ~sub:"gone" (str [ "responses"; "410"; "description" ] op));
+  match Spindle.Zod.module_ a with
+  | Error e -> Alcotest.failf "no module: %s" (String.concat "; " e)
+  | Ok ts ->
+      let entry = {|"GET /items/{key}": {|} in
+      let rec count from =
+        let n = String.length entry in
+        if from + n > String.length ts then 0
+        else if String.equal (String.sub ts from n) entry then
+          1 + count (from + n)
+        else count (from + 1)
+      in
+      Alcotest.(check int) "zod keys the route once" 1 (count 0);
+      Alcotest.(check bool)
+        "with either answer" true
+        (contains ~sub:"z.union(" ts)
+
+(* OpenAPI names a parameter once at its place in a path, so two routes
+   whose paths differ only in a parameter's name are refused, whatever
+   their methods, rather than written as two paths it counts as one. *)
+let test_one_path_with_two_names_is_refused () =
+  let answer route path =
+    route path Spindle.Returns.response
+      (Spindle.Dep.return (Ok (Spindle.Response.make "")))
+  in
+  let a =
+    Spindle.Test.app
+      [
+        answer Spindle.get Spindle.Path.(s "items" / Spindle.Path.int "id");
+        answer Spindle.delete Spindle.Path.(s "items" / Spindle.Path.int "item");
+      ]
+  in
+  match Spindle.Openapi.document a with
+  | Ok _ -> Alcotest.fail "one path was written under two names"
+  | Error e ->
+      Alcotest.(check bool)
+        "naming both, and what to do" true
+        (List.exists
+           (fun m ->
+             contains ~sub:"GET /items/{id}" m
+             && contains ~sub:"DELETE /items/{item}" m
+             && contains ~sub:"give them one name" m)
+           e)
+
+(* One operation answers one way: a page beside a value is refused, since
+   neither printer can say which request gets which. *)
+let test_one_operation_that_answers_two_ways_is_refused () =
+  let by_number =
+    Spindle.get
+      Spindle.Path.(s "items" / Spindle.Path.int ~unparsed:Next_route "key")
+      (Spindle.Returns.json item_json)
+      (Spindle.Dep.return (Error Spindle.Refusal.not_found))
+  and by_name =
+    Spindle.get
+      Spindle.Path.(s "items" / Spindle.Path.str "key")
+      Spindle.Returns.html
+      (Spindle.Dep.return (Ok "<p>an item</p>"))
+  in
+  match Spindle.Openapi.document (Spindle.Test.app [ by_number; by_name ]) with
+  | Ok _ -> Alcotest.fail "one operation answered two ways"
+  | Error e ->
+      Alcotest.(check bool)
+        "naming the operation, and why" true
+        (List.exists
+           (fun m ->
+             contains ~sub:"GET /items/{key}" m
+             && contains ~sub:"answer in different ways" m)
+           e)
+
 (* Each status a route may answer is its own response in the document, with
    when it happens, and the zod entry lists them beside the one body. *)
 let test_each_status_is_a_response () =
@@ -666,6 +803,12 @@ let () =
             test_what_is_loose_is_reported;
           Alcotest.test_case "two paths that make one operation are refused"
             `Quick test_two_paths_that_make_one_operation_are_refused;
+          Alcotest.test_case "routes told apart by a type are one operation"
+            `Quick test_routes_told_apart_by_a_type_are_one_operation;
+          Alcotest.test_case "one path with two names is refused" `Quick
+            test_one_path_with_two_names_is_refused;
+          Alcotest.test_case "one operation that answers two ways is refused"
+            `Quick test_one_operation_that_answers_two_ways_is_refused;
           Alcotest.test_case "two reads of one input are one parameter" `Quick
             test_two_reads_of_one_input_are_one_parameter;
           Alcotest.test_case "a body is required where an empty one is refused"

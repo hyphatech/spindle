@@ -10,7 +10,7 @@ type param = {
   name : string;
   shape : Codec.shape;
   kind : string option;
-  or_not_found : bool;
+  unparsed : Path_repr.unparsed;
   rest : bool;
 }
 
@@ -60,15 +60,15 @@ let handle t req ~params ~body = t.run req ~params ~body
 let params_of_segments segments =
   List.filter_map
     (function
-      | Path_repr.Parameter { name; shape; kind; or_not_found; parses = _ } ->
-          Some { name; shape; kind; or_not_found; rest = false }
+      | Path_repr.Parameter { name; shape; kind; unparsed; parses = _ } ->
+          Some { name; shape; kind; unparsed; rest = false }
       | Path_repr.Rest name ->
           Some
             {
               name;
               shape = Codec.String;
               kind = Some "path";
-              or_not_found = false;
+              unparsed = Path_repr.Invalid;
               rest = true;
             }
       | Path_repr.Literal _ -> None)

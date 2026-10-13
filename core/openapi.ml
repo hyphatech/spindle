@@ -18,69 +18,30 @@ let schema_ref name = Obj [ ("$ref", String ("#/components/schemas/" ^ name)) ]
 let schema s = Out.of_value (S.Json_schema.of_t ~defs:"#/components/schemas/" s)
 let json_content s = Obj [ ("application/json", Obj [ ("schema", s) ]) ]
 
-(* A default as the JSON its schema reads: a number or a boolean bare, as
-   its codec prints it, anything else as a string. *)
-let with_default (i : Dep.input) s =
-  match (i.default, s) with
-  | Some text, Obj members ->
-      let value =
-        match i.shape with
-        | Codec.Integer | Codec.Number | Codec.Boolean -> Raw text
-        | Codec.String | Codec.Format _ | Codec.Enum _ -> String text
-      in
-      Obj (members @ [ ("default", value) ])
+let with_default (p : D.parameter) s =
+  match (p.default, s) with
+  | Some (D.Bare text), Obj members -> Obj (members @ [ ("default", Raw text) ])
+  | Some (D.Quoted text), Obj members ->
+      Obj (members @ [ ("default", String text) ])
   | Some _, _ | None, _ -> s
 
-let parameter_object where (i : Dep.input) =
-  Obj
-    [
-      ("name", String i.name);
-      ("in", String where);
-      ("required", Bool i.required);
-      ( "schema",
-        let s = schema (D.of_shape i.shape) in
-        if i.many then Obj [ ("type", String "array"); ("items", s) ]
-        else with_default i s );
-    ]
-
-let credential_reads (i : Route.info) =
-  List.concat_map (fun (c : Dep.credential) -> c.reads) i.credentials
-
-(* A credential is described once, as its security scheme, and never again
-   among the parameters. *)
-let is_credential i need =
-  List.exists
-    (fun read ->
-      match (read, need) with
-      | Dep.Cookie a, Dep.Cookie b
-      | Dep.Header a, Dep.Header b
-      | Dep.Query a, Dep.Query b ->
-          String.equal a.name b.name
-      | _ -> false)
-    (credential_reads i)
+let located = function
+  | D.In_path -> "path"
+  | D.In_query -> "query"
+  | D.In_header -> "header"
+  | D.In_cookie -> "cookie"
 
 let parameters (r : D.route) =
   List.map
-    (fun (p : Route.param) ->
+    (fun (p : D.parameter) ->
       Obj
         [
           ("name", String p.name);
-          ("in", String "path");
-          ("required", Bool true);
-          ("schema", schema (D.of_shape p.shape));
+          ("in", String (located p.located));
+          ("required", Bool p.required);
+          ("schema", with_default p (schema p.schema));
         ])
-    r.info.params
-  @ List.filter_map
-      (fun need ->
-        if is_credential r.info need then None
-        else
-          match need with
-          | Dep.Query i -> Some (parameter_object "query" i)
-          | Dep.Header i -> Some (parameter_object "header" i)
-          | Dep.Cookie i -> Some (parameter_object "cookie" i)
-          | Dep.Path _ | Dep.Field _ | Dep.File _ | Dep.Body _ | Dep.Custom _ ->
-              None)
-      r.info.needs
+    r.parameters
 
 let examples = function
   | [] -> []
@@ -250,7 +211,7 @@ let responses (r : D.route) =
               ] );
         ]
   in
-  let codes = r.info.codes @ Route_repr.framework_codes r.info in
+  let codes = r.codes in
   let statuses =
     List.sort_uniq Int.compare
       (List.map (fun c -> Spindle_http.Status.to_int (Code.status c)) codes)
@@ -283,30 +244,17 @@ let responses (r : D.route) =
   in
   Obj (success @ refused)
 
-(* Anonymous access is listed where every credential read is optional and
-   the route never refuses with a 401 (RFC 9110 §15.5.2). *)
 let security (r : D.route) =
-  match r.info.credentials with
+  match r.credentials with
   | [] -> []
   | creds ->
-      let is_unauthorized c =
-        Spindle_http.Status.equal (Code.status c) `Unauthorized
-      in
-      let allows_anonymous =
-        (not (List.exists is_unauthorized r.info.codes))
-        && List.for_all
-             (function
-               | Dep.Cookie i | Dep.Header i | Dep.Query i -> not i.required
-               | _ -> true)
-             (credential_reads r.info)
-      in
       [
         ( "security",
           List
             (List.map
                (fun (c : Dep.credential) -> Obj [ (c.scheme, List []) ])
                creds
-            @ if allows_anonymous then [ Obj [] ] else []) );
+            @ if r.anonymous then [ Obj [] ] else []) );
       ]
 
 let request_body (r : D.route) =
@@ -425,16 +373,14 @@ let request_body (r : D.route) =
   | None -> []
 
 let operation (r : D.route) =
-  let meta = r.info.meta in
-  let from_meta k f =
-    match Meta.find k meta with Some v -> [ f v ] | None -> []
-  in
+  let present k f = function Some v -> [ (k, f v) ] | None -> [] in
   Obj
     ([ ("operationId", String r.operation_id) ]
-    @ from_meta Meta.summary (fun s -> ("summary", String s))
-    @ from_meta Meta.doc (fun s -> ("description", String s))
-    @ from_meta Meta.tags (fun t ->
-        ("tags", List (List.map (fun s -> String s) t)))
+    @ present "summary" (fun s -> String s) r.summary
+    @ present "description" (fun s -> String s) r.doc
+    @ (match r.tags with
+      | [] -> []
+      | tags -> [ ("tags", List (List.map (fun s -> String s) tags)) ])
     @ (match parameters r with [] -> [] | ps -> [ ("parameters", List ps) ])
     @ request_body r
     @ [ ("responses", responses r) ]
@@ -483,7 +429,7 @@ let schemes (d : D.t) =
                     | Some d -> [ ("description", String d) ]
                     | None -> []) );
               ])
-        acc r.info.credentials)
+        acc r.credentials)
     [] d.routes
 
 let paths (d : D.t) =
