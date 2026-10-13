@@ -55,7 +55,7 @@ let app = Spindle.Test.app routes
 let outcome = function
   | Ok v -> Ok v
   | Error (Spindle.Test.Refused r) ->
-      Error (Printf.sprintf "refused %d" r.status)
+      Error (Printf.sprintf "refused %d" (Spindle_http.Status.to_int r.status))
   | Error (Spindle.Test.Ended e) -> Error (Ws.error_to_string e)
 
 let check_outcome = Alcotest.(check (result string string))

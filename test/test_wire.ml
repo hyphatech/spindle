@@ -152,6 +152,11 @@ let with_server ?max_body ?max_header_bytes ?discard_limit ?body_budget routes f
   f (on_connection env connect)
 
 let check_int = Alcotest.(check int)
+
+(* A status as a test writes it, a number, against one as it was answered. *)
+let check_status what expected status =
+  Alcotest.(check int) what expected (Spindle_http.Status.to_int status)
+
 let check_string = Alcotest.(check string)
 let check_bool = Alcotest.(check bool)
 
@@ -808,7 +813,9 @@ let test_head_is_the_head_on_every_kind () =
           let t =
             Spindle.Test.call ~headers:[ ("host", "t") ] served `HEAD path
           in
-          check_int (path ^ ": the status") t.status a.status;
+          check_int (path ^ ": the status")
+            (Spindle_http.Status.to_int t.status)
+            a.status;
           Alcotest.(check (list (pair string string)))
             (path ^ ": the headers Test.call sees")
             (comparable t.headers) (comparable a.headers);
@@ -843,7 +850,7 @@ let test_a_header_that_could_split_the_response_is_never_written () =
                "x")))
   in
   let t = Spindle.Test.call (Spindle.Test.app [ split ]) `GET "/split" in
-  check_int "in-process, ours to fix" 500 t.status;
+  check_status "in-process, ours to fix" 500 t.status;
   with_server [ split ] @@ fun connect ->
   connect @@ fun send r ->
   send (get "/split");

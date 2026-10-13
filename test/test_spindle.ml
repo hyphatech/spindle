@@ -16,7 +16,10 @@ let code name status =
   in
   Spindle.Refusal.Code.make ?challenge name ~status ~doc:"A test's."
 
-let check_status = Alcotest.(check int)
+(* A status as a test writes it, a number, against one as it was answered. *)
+let check_status what expected status =
+  Alcotest.(check int) what expected (Spindle_http.Status.to_int status)
+
 let check_int = Alcotest.(check int)
 let check_string = Alcotest.(check string)
 let check_header = Alcotest.(check (option string))
@@ -519,12 +522,10 @@ let test_a_refusal_before_the_body_never_reads_it () =
             `POST "/post")
          ~body)
   in
-  check_status "signed out, first" 401
-    (Spindle.Status.to_int (Spindle.Response.status (call [])));
+  check_status "signed out, first" 401 (Spindle.Response.status (call []));
   check_int "and the body never read" 0 !read;
   check_status "signed in" 200
-    (Spindle.Status.to_int
-       (Spindle.Response.status (call [ ("cookie", "session=s") ])));
+    (Spindle.Response.status (call [ ("cookie", "session=s") ]));
   check_int "read once" 1 !read
 
 (* [bind] waits for its left side's value, so what it reads next may be
@@ -1619,17 +1620,14 @@ let test_a_form_is_read_once_and_only_as_a_form () =
            })
   in
   check_status "four fields" 200
-    (Spindle.Status.to_int
-       (Spindle.Response.status (call form_headers "email=a&age=1&tag=x")));
+    (Spindle.Response.status (call form_headers "email=a&age=1&tag=x"));
   check_int "one read of the body" 1 !read;
   check_status "another type is 415" 415
-    (Spindle.Status.to_int
-       (Spindle.Response.status
-          (call [ ("content-type", "application/json") ] {|{"email":"a"}|})));
+    (Spindle.Response.status
+       (call [ ("content-type", "application/json") ] {|{"email":"a"}|}));
   check_int "before the body is read" 1 !read;
   check_status "and no type at all is read as a form" 200
-    (Spindle.Status.to_int
-       (Spindle.Response.status (call [] "email=a&age=1&tag=x")));
+    (Spindle.Response.status (call [] "email=a&age=1&tag=x"));
   let counted =
     Spindle.post
       Spindle.Path.(s "count")
@@ -2413,7 +2411,7 @@ let test_a_test_reads_a_stream_that_never_ends () =
          if List.length !seen = 3 then `Stop else `Continue)
    with
   | Ok () -> ()
-  | Error r -> Alcotest.failf "no stream: %d" r.status);
+  | Error r -> Alcotest.failf "no stream: %d" (Spindle.Status.to_int r.status));
   Alcotest.(check (list (pair string (option string))))
     "three events, as a client reads them"
     [ ("tick 1", Some "1"); ("tick 2", Some "2"); ("tick 3", Some "3") ]
@@ -2427,7 +2425,7 @@ let test_a_test_reads_a_stream_that_never_ends () =
     (Option.fold ~none:false ~some:Eio.Promise.is_resolved !heard_gone);
   match Spindle.Test.events a "/hello/kim" (fun _ -> `Continue) with
   | Error r ->
-      check_int "an answer that is no stream is the answer" 200 r.status
+      check_status "an answer that is no stream is the answer" 200 r.status
   | Ok () -> Alcotest.fail "a JSON answer is no stream"
 
 let test_json_is_only_json () =
@@ -6251,11 +6249,12 @@ let test_the_table_answers_as_the_rule =
           let other = match meth with `GET -> `POST | _ -> `GET in
           match best meth with
           | Some (i, _) ->
-              r.status = 200 && String.equal r.body (string_of_int i)
+              Spindle.Status.to_int r.status = 200
+              && String.equal r.body (string_of_int i)
           | None -> (
               match best other with
-              | Some _ -> r.status = 405
-              | None -> r.status = 404)))
+              | Some _ -> Spindle.Status.to_int r.status = 405
+              | None -> Spindle.Status.to_int r.status = 404)))
 
 (* Text the echo can answer: JSON carries only UTF-8, and a segment of other
    bytes is a value its route cannot write. *)
@@ -6293,7 +6292,7 @@ let test_a_printed_path_parses_back =
           let r =
             Spindle.Test.call (Spindle.Test.app [ echo_place ]) `GET target
           in
-          r.status = 200 && String.equal r.body expected
+          Spindle.Status.to_int r.status = 200 && String.equal r.body expected
       | Error m, _ | _, Error m -> QCheck.Test.fail_report m)
 
 (* Printing is checked when it runs: each parameter once, and only the
@@ -7505,10 +7504,9 @@ let test_a_route_answers_the_status_it_chose () =
         }
   in
   check_status "an unlisted status is sent" 202
-    (Spindle.Status.to_int (Spindle.Response.status response));
+    (Spindle.Response.status response);
   (match answered.undeclared with
-  | Some (Spindle.App.Status s) ->
-      check_status "and named" 202 (Spindle.Status.to_int s)
+  | Some (Spindle.App.Status s) -> check_status "and named" 202 s
   | Some (Spindle.App.Code _) | None -> Alcotest.fail "not said to be unlisted");
   match Spindle.Test.call a `PUT "/users/stray" with
   | _ -> Alcotest.fail "a status nobody listed passed a test"

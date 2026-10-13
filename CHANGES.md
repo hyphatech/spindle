@@ -104,6 +104,11 @@
   seconds rounded up. `Cookie.make ?max_age_s` is that field and stays a
   number of seconds.
 
+- **Breaking:** `Spindle.Test.response`'s `status` is a
+  `Spindle_http.Status.t`, as every other status in the API is, where it
+  was an `int`: a test compares `Spindle_http.Status.to_int r.status`, or
+  matches `` `OK ``.
+
 ## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop

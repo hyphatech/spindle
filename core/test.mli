@@ -2,7 +2,9 @@
     sets. *)
 
 type response = {
-  status : int;
+  status : Spindle_http.Status.t;
+      (** as {!Spindle_http.Status.of_int} spells it: [`Conflict], never
+          [`Code 409] *)
   headers : (string * string) list;  (** [set-cookie] among them *)
   body : string;
 }

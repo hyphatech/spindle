@@ -14,7 +14,7 @@ let echo =
 let test_echo () =
   let app = Spindle.Test.app [ echo ] in
   let r = Spindle.Test.call app `POST "/echo" ~body:"hi" in
-  Alcotest.(check int) "status" 200 r.status;
+  Alcotest.(check int) "status" 200 (Spindle_http.Status.to_int r.status);
   Alcotest.(check string) "body" "hi" r.body;
   Alcotest.(check (option string))
     "type" (Some "text/plain; charset=utf-8")
@@ -30,6 +30,9 @@ let test_echo () =
   `?peer` (default `127.0.0.1`), `?headers` and `?body`.
 - The answer's status and headers are exactly what the server would write,
   cookies included, minus `connection`. A stream is run to its end.
+- `r.status` is a `Spindle_http.Status.t`, as every status in the API is,
+  in its one spelling: match on `` `Conflict ``, never `` `Code 409 ``, or
+  compare its `Status.to_int`.
 - A refusal with a code the route does not declare, or a status its route
   does not list, raises `Invalid_argument`: the server would only log that
   bug, the test fails on it.
@@ -64,7 +67,7 @@ let test_count () =
         if List.length !seen = 3 then `Stop else `Continue)
   with
   | Ok () -> Alcotest.(check (list string)) "three" [ "1"; "2"; "3" ] (List.rev !seen)
-  | Error r -> Alcotest.failf "no stream: %d" r.status
+  | Error r -> Alcotest.failf "no stream: %d" (Spindle_http.Status.to_int r.status)
 ```
 
 Each event has its `name`, `data` and `id`, as a client reads them.

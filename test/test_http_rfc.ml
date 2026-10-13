@@ -2513,7 +2513,8 @@ let test_501_comes_before_the_not_found_answer () =
   in
   Alcotest.(check int)
     "an unknown method" 501
-    (Spindle.Test.call app (`Other "PROPFIND") "/anywhere").status;
+    (Status.to_int
+       (Spindle.Test.call app (`Other "PROPFIND") "/anywhere").status);
   Alcotest.(check string)
     "and a known one still reaches it" "the not-found answer"
     (Spindle.Test.call app `GET "/anywhere").body
@@ -3820,9 +3821,10 @@ let test_a_malformed_media_type_is_refused () =
   in
   let app = Spindle.Test.app [ route ] in
   let status content_type =
-    (Spindle.Test.call app `POST "/echo" ~body:{|"hi"|}
-       ~headers:[ ("content-type", content_type) ])
-      .status
+    Status.to_int
+      (Spindle.Test.call app `POST "/echo" ~body:{|"hi"|}
+         ~headers:[ ("content-type", content_type) ])
+        .status
   in
   Alcotest.(check int)
     "json, with a charset" 200
@@ -4267,7 +4269,9 @@ let test_a_representation_answers_as_the_rfc_says () =
     (fun (rfc, says, headers, status) ->
       Alcotest.(check int)
         (rfc ^ ": " ^ says)
-        status (call (List.map (fun (n, v) -> (n, fill v)) headers)).status)
+        status
+        (Status.to_int
+           (call (List.map (fun (n, v) -> (n, fill v)) headers)).status))
     representation_rows
 
 module Forwarded = Spindle_http.Forwarded

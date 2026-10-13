@@ -363,7 +363,10 @@ let test_a_body_is_required_where_an_empty_one_is_refused () =
   let j = json_of_doc a in
   List.iter
     (fun (what, path, target) ->
-      let refused = (Spindle.Test.call a `POST target ~body:"").status = 400 in
+      let refused =
+        Spindle_http.Status.equal
+          (Spindle.Test.call a `POST target ~body:"").status `Bad_request
+      in
       let required =
         match member [ "paths"; path; "post"; "requestBody"; "required" ] j with
         | `Bool b -> b
@@ -496,10 +499,11 @@ let test_a_body_refused_for_its_type_says_415 () =
         Alcotest.(check int)
           (Printf.sprintf "and /%s answers it" path)
           415
-          (Spindle.Test.call a `POST ("/" ^ path)
-             ~headers:[ ("content-type", "text/plain") ]
-             ~body:"x")
-            .status)
+          (Spindle_http.Status.to_int
+             (Spindle.Test.call a `POST ("/" ^ path)
+                ~headers:[ ("content-type", "text/plain") ]
+                ~body:"x")
+               .status))
     routes
 
 (* Nothing is described as its status alone, in the document and the
@@ -535,18 +539,24 @@ let test_docs_are_served_from_here () =
   in
   let get path = Spindle.Test.call a `GET path in
   let doc = get "/openapi.json" in
-  Alcotest.(check int) "the document" 200 doc.status;
+  Alcotest.(check int)
+    "the document" 200
+    (Spindle_http.Status.to_int doc.status);
   Alcotest.(check bool)
     "of the app without itself" false
     (contains ~sub:"/openapi.json" doc.body);
   let page = get "/docs" in
-  Alcotest.(check int) "the reference" 200 page.status;
+  Alcotest.(check int)
+    "the reference" 200
+    (Spindle_http.Status.to_int page.status);
   Alcotest.(check bool)
     "with scripts of its own" true
     (contains ~sub:{|<script src="/docs/scalar.js">|} page.body
     && not (contains ~sub:"https://" page.body));
   let script = get "/docs/scalar.js" in
-  Alcotest.(check int) "and the script, here" 200 script.status;
+  Alcotest.(check int)
+    "and the script, here" 200
+    (Spindle_http.Status.to_int script.status);
   Alcotest.(check bool) "all of it" true (String.length script.body > 1_000_000)
 
 (* The page names the document and its scripts where they are served, so
@@ -561,16 +571,20 @@ let test_docs_can_be_moved () =
            [ add ])
   in
   let get path = Spindle.Test.call a `GET path in
-  Alcotest.(check int) "the document" 200 (get "/api.json").status;
   Alcotest.(check int)
-    "and nothing where it was" 404 (get "/openapi.json").status;
+    "the document" 200
+    (Spindle_http.Status.to_int (get "/api.json").status);
+  Alcotest.(check int)
+    "and nothing where it was" 404
+    (Spindle_http.Status.to_int (get "/openapi.json").status);
   let page = (get "/reference").body in
   Alcotest.(check bool)
     "the page names both" true
     (contains ~sub:{|data-url="/api.json"|} page
     && contains ~sub:{|<script src="/reference/scalar.js">|} page);
   Alcotest.(check int)
-    "and its script is beneath it" 200 (get "/reference/scalar.js").status
+    "and its script is beneath it" 200
+    (Spindle_http.Status.to_int (get "/reference/scalar.js").status)
 
 (* A page at a parameter is no one place, and it is written in source. *)
 let test_a_mistake_in_the_docs_raises () =

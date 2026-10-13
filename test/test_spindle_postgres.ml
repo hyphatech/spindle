@@ -146,7 +146,7 @@ let test_an_exhausted_pool_is_a_warning () =
       (Spindle.Dep.return (Error (Spindle_postgres.refusal (`Pool `Busy))))
   in
   let r = Spindle.Test.call (Spindle.Test.app [ busy ]) `GET "/busy" in
-  Alcotest.(check int) "503" 503 r.status;
+  Alcotest.(check int) "503" 503 (Spindle_http.Status.to_int r.status);
   Alcotest.(check bool)
     "why is a warning" true
     (List.exists
@@ -367,7 +367,9 @@ let test_a_busy_pool_is_ready () =
         Spindle.Test.app
           (Spindle.Health.routes [ Spindle_postgres.Pool.check pool ])
       in
-      let ready () = (Spindle.Test.call app `GET "/readyz").status in
+      let ready () =
+        Spindle_http.Status.to_int (Spindle.Test.call app `GET "/readyz").status
+      in
       Alcotest.(check int) "at rest" 200 (ready ());
       let held = ref 0 in
       ignore
@@ -388,7 +390,9 @@ let test_a_closed_pool_is_not_ready () =
       in
       Spindle_postgres.Pool.close pool;
       Alcotest.(check int)
-        "once closed" 503 (Spindle.Test.call app `GET "/readyz").status)
+        "once closed" 503
+        (Spindle_http.Status.to_int
+           (Spindle.Test.call app `GET "/readyz").status))
 
 (* A user filters a library's log by the name they installed. *)
 let test_the_log_source_is_the_librarys_name () =
@@ -736,7 +740,7 @@ let test_a_read_and_a_write_are_one_transaction () =
   with_counter_pool (fun pool ->
       let after = ref false in
       let r = call (bump ~refuse:false ~after pool) in
-      Alcotest.(check int) "answered" 200 r.status;
+      Alcotest.(check int) "answered" 200 (Spindle_http.Status.to_int r.status);
       (match Yojson.Safe.from_string r.body with
       | `List [ `Int n; `Int read_in; `Int written_in ] ->
           Alcotest.(check int) "the value" 1 n;
@@ -749,11 +753,13 @@ let test_a_refused_bracket_keeps_nothing_unless_it_says () =
   with_counter_pool (fun pool ->
       let after = ref false in
       let r = call (bump ~refuse:true ~after pool) in
-      Alcotest.(check int) "refused" 409 r.status;
+      Alcotest.(check int) "refused" 409 (Spindle_http.Status.to_int r.status);
       Alcotest.(check int) "rolled back" 0 (counted pool);
       Alcotest.(check bool) "and nothing came after" false !after;
       let r = call (bump ~keep_refused:true ~refuse:true ~after pool) in
-      Alcotest.(check int) "refused again" 409 r.status;
+      Alcotest.(check int)
+        "refused again" 409
+        (Spindle_http.Status.to_int r.status);
       Alcotest.(check int) "kept, where the work says" 1 (counted pool);
       Alcotest.(check bool) "still nothing after a refusal" false !after)
 

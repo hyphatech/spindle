@@ -3,7 +3,7 @@ module Status = Spindle_http.Status
 module Meth = Spindle_http.Meth
 
 type response = {
-  status : int;
+  status : Status.t;
   headers : (string * string) list;
   body : string;
 }
@@ -84,7 +84,7 @@ let call ?(now = Ptime.epoch) ?(peer = "127.0.0.1") ?proxied ?proxy_header
   in
   let wire = answer_checked app req ~body in
   {
-    status = Status.to_int wire.status;
+    status = Status.of_int (Status.to_int wire.status);
     headers = wire.headers;
     body =
       (match wire.body with
@@ -296,7 +296,7 @@ let events ?(now = Ptime.epoch) ?(headers = []) app target f =
   | Wire.Nothing | Wire.Bytes _ | Wire.Counted _ | Wire.Connection _ ->
       Error
         {
-          status = Status.to_int wire.status;
+          status = Status.of_int (Status.to_int wire.status);
           headers = wire.headers;
           body = (match wire.body with Wire.Bytes s -> s | _ -> "");
         }
@@ -363,7 +363,7 @@ let websocket ?(now = Ptime.epoch) ?(headers = []) app protocol target f =
       Error
         (Refused
            {
-             status = Status.to_int wire.status;
+             status = Status.of_int (Status.to_int wire.status);
              headers = wire.headers;
              body = (match wire.body with Wire.Bytes s -> s | _ -> "");
            })
