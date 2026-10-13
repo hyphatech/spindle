@@ -79,7 +79,8 @@ let read_payload r h ~on_piece buf =
   in
   go 0
 
-(* Written and flushed a piece at a time, so the send limit bounds each. *)
+(* Written and flushed a piece at a time, so a large message is never held
+   whole in the writer's buffer. *)
 let write_piece_bytes = 16_384
 
 let write w ?mask ~fin opcode payload ~flush =

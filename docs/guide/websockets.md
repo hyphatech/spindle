@@ -80,6 +80,9 @@ The framework handles the rest of the protocol for you:
 
 - ping and pong: a ping after `~keep_alive` (15 s) of silence, and a
   peer silent for twice that is `Lost`;
+- a peer that takes nothing written for the server's `send_timeout`
+  (30 s) is `Lost`, and one still reading, however slowly, is sent the
+  whole message;
 - a message over `~max_message` (1 MiB) closes the socket with 1009, and one
   of a kind the socket does not carry with 1003;
 - a stopping server closes every socket with 1001;

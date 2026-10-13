@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A WebSocket send's `send_timeout` runs from the last byte the peer took,
+  as an answer's does, where it ran afresh for each 16 KiB written: a
+  peer reading a large message steadily below about 546 bytes a second
+  was cut off as `Lost`. One that stops taking anything still is, up to a
+  tenth of the limit late.
+
 - `Spindle.Refusal.busy` writes a `Retry-After` of at least one second,
   as `rate_limited` does, where a `retry_after_s` below one was written
   as it came, and a negative one is no `Retry-After` RFC 9110 allows.

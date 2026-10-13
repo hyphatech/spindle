@@ -592,9 +592,74 @@ let test_a_peer_sending_slowly_is_heard () =
   in
   Alcotest.(check string) "the whole message, echoed" message answer
 
-(* A handler whose send to a peer that stopped reading is lost returns,
-   and what it had written is given [send_timeout] to go, as any answer
-   is: the connection then closes and its slot is the next client's. *)
+(* A peer still reading is never cut off, however slowly a large message
+   goes: a kilobyte every half second, well under [send_timeout] between
+   any two, takes over a minute for the whole, and it all arrives. The send
+   limit runs from the last byte the peer took, as an answer's does. *)
+let test_a_peer_reading_slowly_is_sent_the_whole_message () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let clock = Eio.Stdenv.mono_clock env in
+  let payload = {|{"text":"|} ^ String.make 200_000 'x' ^ {|"}|} in
+  let large =
+    Spindle.get
+      Spindle.Path.(s "large")
+      (Spindle.Returns.websocket chat)
+      (let+ () = Spindle.Dep.return () in
+       Ok (fun ws -> Ws.send ws { text = String.make 200_000 'x' }))
+  in
+  let listening, connect = In_memory.listen () in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      Spindle.Server.serve_on ~mono_clock:clock
+        ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+        ~domains:1 ~send_timeout:Mtime.Span.s
+        ~now:(fun () -> Ptime.epoch)
+        [ listening ]
+        (Spindle.Test.app [ large ]);
+      `Stop_daemon);
+  let flow = connect ~sw in
+  Eio.Flow.copy_string
+    "GET /large HTTP/1.1\r\n\
+     Host: t\r\n\
+     Upgrade: websocket\r\n\
+     Connection: Upgrade\r\n\
+     Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+     Sec-WebSocket-Version: 13\r\n\
+     \r\n"
+    flow;
+  let r = Eio.Buf_read.of_flow flow ~max_size:1024 in
+  let rec head () = match Eio.Buf_read.line r with "" -> () | _ -> head () in
+  head ();
+  let frame_header = Eio.Buf_read.take 10 r in
+  Alcotest.(check string)
+    "a text frame of the payload's length" "\x81\x7f"
+    (String.sub frame_header 0 2);
+  let taken = Buffer.create (String.length payload) in
+  let rec read () =
+    if Buffer.length taken >= String.length payload then ()
+    else (
+      Eio.Time.Mono.sleep_span clock Mtime.Span.(500 * ms);
+      match
+        Eio.Buf_read.take
+          (min 1024 (String.length payload - Buffer.length taken))
+          r
+      with
+      | piece ->
+          Buffer.add_string taken piece;
+          read ()
+      | exception End_of_file -> ())
+  in
+  read ();
+  Alcotest.(check int)
+    "every byte of the message" (String.length payload) (Buffer.length taken);
+  Alcotest.(check bool)
+    "the message whole" true
+    (String.equal payload (Buffer.contents taken))
+
+(* A handler whose send to a peer that stopped reading is lost
+   [send_timeout] after the last byte the peer took, and returns, and what
+   it had written is given [send_timeout] to go, as any answer is: the
+   connection then closes and its slot is the next client's. *)
 let test_a_socket_whose_peer_stopped_reading_gives_back_its_slot () =
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
@@ -607,7 +672,8 @@ let test_a_socket_whose_peer_stopped_reading_gives_back_its_slot () =
        Ok
          (fun ws ->
            let sent = Ws.send ws { text = String.make 200_000 'x' } in
-           Eio.Promise.resolve lose ();
+           Eio.Promise.resolve lose
+             (Eio.Time.Mono.now (Eio.Stdenv.mono_clock env));
            sent))
   in
   let hello =
@@ -636,7 +702,11 @@ let test_a_socket_whose_peer_stopped_reading_gives_back_its_slot () =
      Sec-WebSocket-Version: 13\r\n\
      \r\n"
     never_reads;
-  Eio.Promise.await lost;
+  (* From the last byte taken, at once, and up to a tenth of the limit late. *)
+  let lost_at = Mtime.to_uint64_ns (Eio.Promise.await lost) in
+  Alcotest.(check bool)
+    "the send is lost a second after the last byte was taken" true
+    (lost_at >= 1_000_000_000L && lost_at <= 1_100_000_000L);
   let next = connect ~sw in
   Eio.Flow.copy_string
     "GET /hello HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n" next;
@@ -749,6 +819,8 @@ let () =
             test_a_silent_peer_is_pinged_then_dropped;
           Alcotest.test_case "a peer sending slowly is heard" `Quick
             test_a_peer_sending_slowly_is_heard;
+          Alcotest.test_case "a peer reading slowly is sent the whole message"
+            `Quick test_a_peer_reading_slowly_is_sent_the_whole_message;
           Alcotest.test_case
             "a socket whose peer stopped reading gives back its slot" `Quick
             test_a_socket_whose_peer_stopped_reading_gives_back_its_slot;

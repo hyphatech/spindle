@@ -116,19 +116,37 @@ let end_with t e = ignore (Eio.Promise.try_resolve t.resolve_ended e : bool)
 (* ------------------------------------------------------------------ *)
 (* Writing *)
 
-(* Bounded a piece at a time, so a peer still reading a large message
-   slowly is not cut off. *)
+(* Bounded by progress, not by time: [send_timeout] runs from the last byte
+   the peer took, so a peer still reading a large message slowly is not cut
+   off and one that stopped is. What is left to write is looked at ten times
+   a limit, so the bound passes up to a tenth of it late, as the server's
+   deadlines do. *)
 let flush_bounded t () =
-  match
-    Timeout.run (Timeout.v t.clock t.send_timeout) (fun () ->
-        Ok (W.flush t.writer))
-  with
-  | Ok () -> Ok ()
-  | Error `Timeout ->
+  let tick =
+    Mtime.Span.of_uint64_ns
+      (Int64.unsigned_div (Mtime.Span.to_uint64_ns t.send_timeout) 10L)
+  in
+  let rec watch ~left ~since =
+    Eio.Time.Mono.sleep_span t.clock tick;
+    let now = Eio.Time.Mono.now t.clock in
+    let still_left = W.pending_bytes t.writer in
+    if still_left < left then watch ~left:still_left ~since:now
+    else if Mtime.Span.is_shorter (Mtime.span since now) ~than:t.send_timeout
+    then watch ~left ~since
+    else
       Error
         (Lost
            (Format.asprintf "nothing written was taken for %a" Mtime.Span.pp
               t.send_timeout))
+  in
+  match
+    Eio.Fiber.first
+      (fun () -> Ok (W.flush t.writer))
+      (fun () ->
+        watch ~left:(W.pending_bytes t.writer)
+          ~since:(Eio.Time.Mono.now t.clock))
+  with
+  | flushed -> flushed
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
   | exception ex -> Error (Lost (Printexc.to_string ex))
 
