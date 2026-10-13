@@ -722,13 +722,28 @@ let answer_resolution t ~body ~answered_route resolution req =
         false
   in
   (* A site the policy lets read a covered route may write to it; under Any,
-     only without a cookie. *)
+     only without a credential the browser attaches by itself: a cookie, or
+     the HTTP authentication it has cached, whose schemes are these. Any
+     other scheme a page sets itself, through a preflight. An Authorization
+     that is no credentials is taken for one, since nobody can say who set
+     it. *)
+  let ambient_credential () =
+    Option.is_some (Request.header req "cookie")
+    || List.exists
+         (fun v ->
+           match Spindle_http.Auth.credentials v with
+           | Ok { scheme = "basic" | "digest" | "negotiate" | "ntlm"; _ }
+           | Error _ ->
+               true
+           | Ok _ -> false)
+         (Spindle_http.Field.all (Request.headers req) "authorization")
+  in
   let cors_trusts =
     match (t.cors, resolution, Request.header req "origin") with
     | Some cors, Route ((r : Route_repr.t), _), Some origin
       when Cors_repr.covers cors r.info ->
         Cors_repr.trusts cors ~origin
-          ~cookie:(Option.is_some (Request.header req "cookie"))
+          ~ambient_credential:(ambient_credential ())
     | (Some _ | None), _, (Some _ | None) -> false
   in
   if

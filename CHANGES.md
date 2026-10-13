@@ -82,6 +82,14 @@
   before no longer verifies or opens; cookies are made and read as
   before.
 
+- **Breaking:** under `Cors.Any`, a write from another site carrying an
+  `Authorization` in a scheme a browser caches and sends by itself --
+  `Basic`, `Digest`, `Negotiate`, `NTLM` -- or one that is no credentials
+  is `403 cross_origin`, as one carrying a `Cookie` was: a form another
+  site posts is never preflighted and rides a cached login as it does a
+  session. A `Bearer` token, or any other scheme a page sets itself, is
+  served as before.
+
 ## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop

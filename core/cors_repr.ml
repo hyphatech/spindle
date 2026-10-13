@@ -20,12 +20,12 @@ let allows t origin =
   | Any -> true
   | Origins named -> List.exists (String.equal origin) named
 
-(* Under [Any], only without a cookie: a form another site posts is never
-   preflighted and would ride a session. *)
-let trusts t ~origin ~cookie =
+(* Under [Any], only without a credential the browser attached itself: a
+   form another site posts is never preflighted and would ride it. *)
+let trusts t ~origin ~ambient_credential =
   match t.origins with
   | Origins named -> List.exists (String.equal origin) named
-  | Any -> not cookie
+  | Any -> not ambient_credential
 
 (* [*] only without credentials, beside which a browser reads only its own
    origin, named. *)

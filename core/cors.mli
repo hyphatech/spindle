@@ -24,13 +24,15 @@
 
     {b The forgery check.} A named origin is trusted by it on the routes the
     policy covers, since letting a site read an answer while refusing its writes
-    is a policy nobody wants. [Any] trusts no origin with a cookie: a form
-    another site's page posts is never preflighted, so trusting every origin
-    would switch the check off, and under [Any] a request from another site
-    passes only when it carries no [Cookie] -- the credential a browser attaches
-    without asking. A public API called with a token in [Authorization], which a
-    page sets only through a preflight, is served; a forged write riding a
-    session is still [403]. *)
+    is a policy nobody wants. [Any] trusts no origin with a credential the
+    browser attached itself: a form another site's page posts is never
+    preflighted, so trusting every origin would switch the check off, and under
+    [Any] a request from another site passes only when it carries no [Cookie]
+    and no [Authorization] in a scheme a browser keeps and sends without asking
+    -- [Basic], [Digest], [Negotiate], [NTLM] -- nor one that is no credentials
+    at all. A public API called with a token in [Authorization] under another
+    scheme, [Bearer] say, which a page sets only through a preflight, is served;
+    a forged write riding a session or a cached login is still [403]. *)
 
 type origins = Cors_repr.origins =
   | Origins of string list

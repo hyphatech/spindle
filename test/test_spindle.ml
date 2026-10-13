@@ -1994,6 +1994,33 @@ let test_an_allowed_origin_may_write () =
     (Spindle.Test.call any `POST "/api/item"
        ~headers:(("cookie", "session=s") :: from_anywhere))
       .status;
+  (* A browser attaches the HTTP authentication it has cached -- Basic,
+     Digest, Negotiate, NTLM -- to a form another site posts, or to a fetch
+     it makes with credentials, neither preflighted; a scheme a page can only
+     set itself, through a preflight, is a token the page was given. *)
+  List.iter
+    (fun value ->
+      check_status
+        ("and one riding HTTP authentication, " ^ value)
+        403
+        (Spindle.Test.call any `POST "/api/item"
+           ~headers:
+             (("authorization", value) :: ("sec-fetch-mode", "cors")
+            :: from_anywhere))
+          .status)
+    [
+      "Basic a2ltOnNlY3JldA==";
+      "Digest username=\"kim\", realm=\"shop\"";
+      "Negotiate YIIB";
+      "NTLM TlRMTVNTUAAB";
+      "no credentials at all";
+    ];
+  check_status "while a bearer token, set by the page, is served" 200
+    (Spindle.Test.call any `POST "/api/item"
+       ~headers:
+         (("authorization", "Bearer mF_9.B5f-4.1JqM")
+         :: ("sec-fetch-mode", "cors") :: from_anywhere))
+      .status;
   Alcotest.(check bool)
     "Any beside credentials is refused" true
     (match Spindle.Cors.make ~credentials:true Spindle.Cors.Any with

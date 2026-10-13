@@ -143,4 +143,8 @@ host and whether the browser used `https`.
     `Access-Control-Allow-Origin`, or answers `*` under `Any`; an origin you
     did not allow is told nothing. An allowed origin also passes the forgery check. `~routes`
     narrows the policy to some routes, say your API. `Any` with
-    `~credentials:true` raises.
+    `~credentials:true` raises. Under `Any`, a write from another site
+    passes only with no credential the browser attaches by itself: no
+    `Cookie`, and no `Authorization` in a scheme a browser keeps -- `Basic`,
+    `Digest`, `Negotiate`, `NTLM`. A token the page sets itself, such as
+    `Authorization: Bearer ...`, is served.

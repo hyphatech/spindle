@@ -15,10 +15,11 @@ type t = {
 val covers : t -> Route_repr.info -> bool
 (** Whether the policy is the route's. *)
 
-val trusts : t -> origin:string -> cookie:bool -> bool
+val trusts : t -> origin:string -> ambient_credential:bool -> bool
 (** Whether a write from [origin] is believed: a named origin always, and under
-    [Any] only a request carrying no cookie, since a form another site posts is
-    never preflighted and would ride a session. *)
+    [Any] only a request carrying no credential the browser attached itself -- a
+    cookie, or HTTP authentication it has cached -- since a form another site
+    posts is never preflighted and would ride it. *)
 
 val preflight :
   t ->
