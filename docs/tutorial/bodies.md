@@ -131,7 +131,9 @@ Spindle.put Path.(s "users" / user_id)
 
 `Returns.empty_response ~statuses` is the same with no body: the endpoint
 returns `` Ok `Created `` or `` Ok `No_content ``. Every listed status must
-be a `2xx`; failing is a refusal.
+be a `2xx`; failing is a refusal. A JSON answer is never `204` or `205`,
+which HTTP sends without a body: an answer with nothing to say is
+`Returns.empty`'s.
 
 ## Setting cookies and headers
 

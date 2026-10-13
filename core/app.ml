@@ -185,7 +185,10 @@ let check_inputs (r : Route_repr.t) =
             value"
            (route_name r) where name)
 
-(* Declared statuses are successes, since failing is a refusal, each once. *)
+(* Declared statuses are successes, since failing is a refusal, each once.
+   One a JSON answer is sent under carries content, which RFC 9110 §15.3.5
+   and §15.3.6 forbid a 204 and a 205: the wire would drop what the document
+   promises. *)
 let check_statuses r =
   let statuses =
     match r.Route_repr.info.returns with
@@ -196,18 +199,36 @@ let check_statuses r =
         Some [ Status.to_int status ]
     | Returns_repr.Html | Text | Response | Events _ | Websocket _ -> None
   in
+  let with_content =
+    match r.Route_repr.info.returns with
+    | Returns_repr.Json_response { statuses; _ } ->
+        List.map (fun (s, _) -> Status.to_int s) statuses
+    | Returns_repr.Json { status; _ } -> [ Status.to_int status ]
+    | Returns_repr.Empty _ | Empty_response _ | Html | Text | Response
+    | Events _ | Websocket _ ->
+        []
+  in
   match statuses with
   | None -> Ok ()
   | Some [] ->
       Error (Printf.sprintf "%s lists no status to answer" (route_name r))
   | Some statuses -> (
-      match List.find_opt (fun s -> s < 200 || s > 299) statuses with
-      | Some s ->
+      match
+        ( List.find_opt (fun s -> s < 200 || s > 299) statuses,
+          List.find_opt (fun s -> s = 204 || s = 205) with_content )
+      with
+      | Some s, _ ->
           Error
             (Printf.sprintf
                "%s lists %d, which is not a success: failing is a refusal"
                (route_name r) s)
-      | None ->
+      | None, Some s ->
+          Error
+            (Printf.sprintf
+               "%s lists %d, which carries no body: declare a bodiless answer \
+                with Returns.empty or Returns.empty_response"
+               (route_name r) s)
+      | None, None ->
           if
             List.compare_lengths (List.sort_uniq Int.compare statuses) statuses
             < 0

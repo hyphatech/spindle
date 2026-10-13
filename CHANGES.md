@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Breaking: `App.make` refuses a JSON answer under `204` or `205` --
+  `` Returns.json ~status:`No_content `` or either listed in
+  `Returns.json_response`'s `statuses` -- which HTTP sends without a body,
+  so the document promised JSON the wire dropped. Only a table that was
+  already wrong stops starting: declare such an answer with
+  `Returns.empty` or `Returns.empty_response`.
+
 - Breaking: `Spindle_http.Head.Response.read` answers a
   `Head.Response.error`, `Closed` or `Malformed of string`, where it
   answered the polymorphic `` `Closed `` and `` `Malformed ``: one shape

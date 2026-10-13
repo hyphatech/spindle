@@ -7550,7 +7550,26 @@ let test_a_routes_statuses_are_checked () =
        Spindle.Path.(s "x")
        (Spindle.Returns.empty ~status:`Found ())
        (Spindle.Dep.return (Ok ())))
-    "lists 302, which is not a success"
+    "lists 302, which is not a success";
+  (* RFC 9110 §15.3.5, §15.3.6: a 204 or a 205 carries no content, so a JSON
+     answer under one would be a document's promise the wire drops. *)
+  refused "a JSON answer's 204"
+    (Spindle.get
+       Spindle.Path.(s "x")
+       (Spindle.Returns.json ~status:`No_content Wiretype.string)
+       (Spindle.Dep.return (Ok "x")))
+    "lists 204, which carries no body: declare a bodiless answer with \
+     Returns.empty";
+  refused "a JSON answer's 205"
+    (Spindle.get
+       Spindle.Path.(s "x")
+       (Spindle.Returns.json ~status:(`Code 205) Wiretype.string)
+       (Spindle.Dep.return (Ok "x")))
+    "lists 205, which carries no body";
+  refused "a chosen JSON answer's 204"
+    (listing [ (`OK, "Found."); (`No_content, "Nothing.") ])
+    "lists 204, which carries no body: declare a bodiless answer with \
+     Returns.empty"
 
 (* A code is a refusal's: a status that is no failure, which a client would
    read as the route having done what it asked, is refused wherever the code

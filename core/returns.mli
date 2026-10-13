@@ -30,9 +30,10 @@ val json :
   ('a, Refusal.t) result t
 (** A value, encoded by its description, with [status] ([`OK]), a success,
     [2xx]: one that is not is refused when the app is made, since failing is a
-    refusal. A value its own description cannot encode is our bug, and answers
-    {!Refusal.internal}. [examples] are values it may return, for whoever
-    documents the route. *)
+    refusal, and so is [204] or [205], which HTTP sends without a body
+    ({!empty}'s). A value its own description cannot encode is our bug, and
+    answers {!Refusal.internal}. [examples] are values it may return, for
+    whoever documents the route. *)
 
 val json_response :
   ?examples:'a list ->
@@ -51,9 +52,10 @@ val json_response :
     ]}
 
     A status is a success, [2xx]: failing is a refusal. An empty list, a status
-    listed twice or one that is not a success is refused when the app is made. A
-    status the endpoint answers that the list does not name is still sent, and
-    is logged as the route's bug, which {!Test.call} raises on. *)
+    listed twice, one that is not a success, or [204] or [205], which HTTP sends
+    without a body, is refused when the app is made. A status the endpoint
+    answers that the list does not name is still sent, and is logged as the
+    route's bug, which {!Test.call} raises on. *)
 
 val html : (string, Refusal.t) result t
 (** A page: [200], [text/html; charset=utf-8], written as the endpoint made it.
