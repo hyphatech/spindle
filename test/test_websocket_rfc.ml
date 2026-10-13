@@ -1,11 +1,13 @@
 (* The conformance table for RFC 6455: every requirement Spindle meets, as a
    server and as a client, a row each, named by its section. One function
    runs a row: frames through one end of a socket, a handshake through the
-   application, or a client's handshake against a server that says what the
-   row says. A frame row is read whole, a byte at a time, and at cuts a
-   generator chooses, through a reader of sixty-four bytes, so a payload is
-   always read in pieces: an end that depends on how its bytes arrived is
-   one a socket will break. *)
+   server's own connection loop, or a client's handshake against a server
+   that says what the row says. Every row is read whole, a byte at a time,
+   and at cuts a generator chooses: a frame row through a reader of
+   sixty-four bytes, so a payload is always read in pieces, and a handshake
+   with the first frames after it, which arrive in the head's own piece
+   when it is whole. An end that depends on how its bytes arrived is one a
+   socket will break. *)
 
 module Ws = Spindle.Websocket
 open Spindle.Syntax
@@ -716,103 +718,181 @@ let handshake_rows =
       403 [];
   ]
 
-let check_handshake (r : handshake_row) () =
-  let a =
-    Spindle.Test.call ~version:r.version ~headers:r.headers app `GET r.path
+(* What a row's client sends: its head, and after a handshake that should
+   open, a message and a close at once, so the frames that arrive in the
+   head's own piece are read as frames. *)
+let request_of (r : handshake_row) =
+  let version =
+    match r.version with
+    | Spindle_http.Head.Http_1_0 -> "HTTP/1.0"
+    | Spindle_http.Head.Http_1_1 -> "HTTP/1.1"
   in
-  let name = r.h_rfc ^ " " ^ r.h_says in
-  Alcotest.(check int) name r.status a.status;
+  String.concat ""
+    (Printf.sprintf "GET %s %s\r\n" r.path version
+    :: List.map (fun (n, v) -> Printf.sprintf "%s: %s\r\n" n v) r.headers)
+  ^ "\r\n"
+  ^ if r.status = 101 then text "hello" ^ bye else ""
+
+(* Through the server's own connection loop, on [In_memory]'s virtual
+   time: each piece is read before the next is sent, so the server reads
+   at the boundaries the delivery chose. *)
+let check_handshake (r : handshake_row) delivery =
+  let name =
+    Printf.sprintf "%s %s (%s)" r.h_rfc r.h_says (delivery_name delivery)
+  in
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let listening, connect = In_memory.listen ~piecewise:true () in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      Spindle.Server.serve_on
+        ~mono_clock:(Eio.Stdenv.mono_clock env)
+        ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+        ~domains:1
+        ~now:(fun () -> Ptime.epoch)
+        [ listening ] app;
+      `Stop_daemon);
+  let flow = connect ~sw in
   List.iter
-    (fun (field, value) ->
-      Alcotest.(check (option string))
-        (name ^ ": " ^ field)
-        value
-        ( Option.map String.lowercase_ascii (Spindle.Test.header a field)
-        |> fun v ->
-          match (field, value) with
-          | "sec-websocket-accept", _ -> Spindle.Test.header a field
-          | _ -> v ))
-    r.has
+    (fun piece -> Eio.Flow.copy_string piece flow)
+    (split delivery (request_of r));
+  let reader = Eio.Buf_read.of_flow flow ~max_size:1_048_576 in
+  match Spindle_http.Head.Response.read ~max:65_536 reader with
+  | Error _ -> Alcotest.failf "%s: an answer that could not be read" name
+  | Ok head ->
+      Alcotest.(check int)
+        name r.status
+        (Spindle_http.Status.to_int head.status);
+      List.iter
+        (fun (field, value) ->
+          let found = Spindle_http.Field.find head.headers field in
+          Alcotest.(check (option string))
+            (name ^ ": " ^ field)
+            value
+            (match field with
+            | "sec-websocket-accept" -> found
+            | _ -> Option.map String.lowercase_ascii found))
+        r.has;
+      if r.status = 101 then
+        Alcotest.(check (list string))
+          (name ^ ": the frames that came with the head, answered")
+          [ show (Text "hello"); show (Close (Some 1000)) ]
+          (List.map
+             (fun (_, o) -> show o)
+             (frames_of (Eio.Buf_read.take_all reader)))
 
 (* ------------------------------------------------------------------ *)
 (* A client's handshake, against a server that answers as the row says *)
 
-(* One connection: the head the client sent, then [answer] of its key; and,
-   for a 101, every frame after it read and a close answered, so the
-   client's own closing handshake completes. *)
-let scripted ?(timeout = Mtime.Span.(2 * s)) env answer f =
+(* The lines of the head a client wrote, before its blank line. *)
+let head_lines written =
+  let n = String.length written in
+  let rec blank i =
+    if i + 4 > n then n
+    else if String.equal (String.sub written i 4) "\r\n\r\n" then i
+    else blank (i + 1)
+  in
+  List.map
+    (fun l ->
+      if String.ends_with ~suffix:"\r" l then
+        String.sub l 0 (String.length l - 1)
+      else l)
+    (String.split_on_char '\n' (String.sub written 0 (blank 0)))
+
+(* The value of a field among a head's lines, by the test's own reading. *)
+let field_in lines name =
+  List.find_map
+    (fun l ->
+      match String.index_opt l ':' with
+      | Some i
+        when String.equal (String.lowercase_ascii (String.sub l 0 i)) name ->
+          Some (String.trim (String.sub l (i + 1) (String.length l - i - 1)))
+      | Some _ | None -> None)
+    lines
+
+(* A server's end of one connection, as a row scripts it: it keeps what the
+   client writes and, at the client's first read -- once its head is
+   written -- answers [answer] of its key in the pieces [delivery] makes,
+   one read each. Past the last piece it says nothing more, as a server
+   that keeps its connection open. *)
+module Script = struct
+  type t = {
+    written : Buffer.t;
+    answer : string -> string;
+    delivery : delivery;
+    mutable left : string list option;  (** [None] until the first read *)
+  }
+
+  type tag = [ `Generic ]
+
+  let read_methods = []
+
+  let single_read t buf =
+    let left =
+      match t.left with
+      | Some left -> left
+      | None ->
+          let key =
+            field_in
+              (head_lines (Buffer.contents t.written))
+              "sec-websocket-key"
+          in
+          List.filter
+            (fun p -> String.length p > 0)
+            (split t.delivery (t.answer (Option.value key ~default:"")))
+    in
+    match left with
+    | [] ->
+        t.left <- Some [];
+        Eio.Fiber.await_cancel ()
+    | p :: rest ->
+        let n = min (String.length p) (Cstruct.length buf) in
+        Cstruct.blit_from_string p 0 buf 0 n;
+        t.left <-
+          Some
+            (if n = String.length p then rest
+             else String.sub p n (String.length p - n) :: rest);
+        n
+
+  let single_write t bufs =
+    let s = Cstruct.to_string (Cstruct.concat bufs) in
+    Buffer.add_string t.written s;
+    String.length s
+
+  let copy t ~src = Eio.Flow.Pi.simple_copy ~single_write t ~src
+  let shutdown _ _ = ()
+  let setsockopt _ _ _ = ()
+  let getsockopt _ _ = raise (Eio.Net.err Invalid_option)
+  let close _ = ()
+end
+
+(* One connection, through the client's own network, on [In_memory]'s
+   virtual time, so a deadline is the row's to say and no machine's: what
+   [f] got, and the lines of the head the client sent. *)
+let scripted ?timeout delivery answer f =
+  In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  let net = Eio.Stdenv.net env in
-  let socket =
-    Eio.Net.listen net ~sw ~backlog:4 ~reuse_addr:true
-      (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
+  let script =
+    { Script.written = Buffer.create 256; answer; delivery; left = None }
   in
-  let port =
-    match Eio.Net.listening_addr socket with
-    | `Tcp (_, p) -> p
-    | _ -> Alcotest.fail "expected a TCP socket"
-  in
-  let heard = ref [] in
-  Eio.Fiber.fork_daemon ~sw (fun () ->
-      let rec accept () =
-        Eio.Net.accept_fork socket ~sw
-          ~on_error:(fun _ -> ())
-          (fun flow _ ->
-            let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
-            let rec head acc =
-              match Eio.Buf_read.line r with
-              | "" -> List.rev acc
-              | l -> head (l :: acc)
-            in
-            let lines = head [] in
-            heard := lines;
-            let key =
-              List.find_map
-                (fun l ->
-                  match String.index_opt l ':' with
-                  | Some i
-                    when String.equal
-                           (String.lowercase_ascii (String.sub l 0 i))
-                           "sec-websocket-key" ->
-                      Some
-                        (String.trim
-                           (String.sub l (i + 1) (String.length l - i - 1)))
-                  | _ -> None)
-                lines
-              |> Option.value ~default:""
-            in
-            Eio.Flow.copy_string (answer key) flow;
-            (* Answer a close, and read until the client goes. *)
-            let rec frames () =
-              match Eio.Buf_read.take 2 r with
-              | exception End_of_file -> ()
-              | h ->
-                  let len = Char.code h.[1] land 0x7f in
-                  let body = Eio.Buf_read.take (4 + len) r in
-                  if Char.code h.[0] land 0x0f = 8 then
-                    Eio.Flow.copy_string
-                      (close ~mask:None
-                         (String.get_uint16_be
-                            (masked (String.sub body 0 4)
-                               (String.sub body 4 len))
-                            0))
-                      flow
-                  else frames ()
-            in
-            try frames () with _ -> ());
-        accept ()
-      in
-      accept ());
+  let net = Eio_mock.Net.make "net" in
+  Eio_mock.Net.on_getaddrinfo net
+    [ `Return [ `Tcp (Eio.Net.Ipaddr.V4.loopback, 80) ] ];
+  Eio_mock.Net.on_connect net
+    [
+      `Return
+        (Eio.Resource.T (script, Eio.Net.Pi.stream_socket (module Script))
+          : [ `Generic ] Eio.Net.stream_socket_ty Eio.Resource.t);
+    ];
   let client =
     Spindle_client.create ~sw ~net
       ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ~timeout ()
+      ?timeout ()
   in
-  let url = Printf.sprintf "ws://127.0.0.1:%d/socket" port in
   let got =
-    f (fun protocol g -> Spindle_client.websocket client protocol url g)
+    f (fun protocol g ->
+        Spindle_client.websocket client protocol "ws://t/socket" g)
   in
-  (got, !heard)
+  (got, head_lines (Buffer.contents script.written))
 
 let upgrade ?(accept = fun key -> Ws.accept_key key) ?(extra = "") key =
   Printf.sprintf
@@ -823,39 +903,24 @@ let upgrade ?(accept = fun key -> Ws.accept_key key) ?(extra = "") key =
      %s\r\n"
     (accept key) extra
 
+(* A 101 and the server's first frames, one after the other: delivered
+   whole, they arrive in one piece, and the frames are read from what the
+   head's reader already holds. *)
+let opening ?extra key =
+  upgrade ?extra key ^ text ~mask:None "hi" ^ close ~mask:None 1000
+
 let outcome = function
-  | Ok () -> "opened"
+  | Ok said -> "opened: " ^ said
   | Error (Spindle_client.Refused r) ->
       Printf.sprintf "refused %d: %s" r.status r.body
   | Error (Spindle_client.Failed e) ->
       "failed: " ^ Spindle_client.error_to_string e
   | Error (Spindle_client.Ended e) -> "ended: " ^ Ws.error_to_string e
 
-let check_client_handshake ?timeout env ~protocol answer expected () =
-  let got, _ =
-    scripted ?timeout env answer (fun open_ -> open_ protocol (fun _ -> Ok ()))
-  in
-  let got = outcome got in
-  Alcotest.(check bool)
-    (Printf.sprintf "%s, where it %s" expected got)
-    true
-    (String.starts_with ~prefix:expected got)
-
-let test_a_client_asks_as_the_rfc_says env () =
-  let got, heard =
-    scripted env upgrade (fun open_ -> open_ texts (fun _ -> Ok ()))
-  in
-  Alcotest.(check string) "opened" "opened" (outcome got);
-  let field name =
-    List.find_map
-      (fun l ->
-        match String.index_opt l ':' with
-        | Some i
-          when String.equal (String.lowercase_ascii (String.sub l 0 i)) name ->
-            Some (String.trim (String.sub l (i + 1) (String.length l - i - 1)))
-        | _ -> None)
-      heard
-  in
+let test_a_client_asks_as_the_rfc_says () =
+  let got, heard = scripted Whole opening (fun open_ -> open_ texts receive) in
+  Alcotest.(check string) "opened" "opened: hi" (outcome got);
+  let field = field_in heard in
   Alcotest.(check (option string))
     "4.1: a GET of the resource, in HTTP/1.1" (Some "GET /socket HTTP/1.1")
     (List.nth_opt heard 0);
@@ -872,40 +937,41 @@ let test_a_client_asks_as_the_rfc_says env () =
     (Option.bind (field "sec-websocket-key") (fun k ->
          Result.to_option (Result.map String.length (Base64.decode k))))
 
-let test_a_key_is_fresh_every_time env () =
+let test_a_key_is_fresh_every_time () =
   let key () =
-    let _, heard =
-      scripted env upgrade (fun open_ -> open_ texts (fun _ -> Ok ()))
-    in
-    List.find_opt
-      (fun l ->
-        String.length l > 17
-        && String.equal
-             (String.lowercase_ascii (String.sub l 0 17))
-             "sec-websocket-key")
-      heard
+    let _, heard = scripted Whole opening (fun open_ -> open_ texts receive) in
+    field_in heard "sec-websocket-key"
   in
   let a = key () and b = key () in
   Alcotest.(check bool)
     "4.1: two handshakes, two keys" false
     (Option.equal String.equal a b)
 
-let client_handshake_rows env =
-  let row rfc says ?(protocol = texts) ?timeout answer expected =
-    Alcotest.test_case
-      (rfc ^ " " ^ says)
-      `Quick
-      (check_client_handshake ?timeout env ~protocol answer expected)
+type client_handshake_row = {
+  ch_rfc : string;
+  ch_says : string;
+  protocol : (string, string) Ws.protocol;
+  timeout : Mtime.Span.t option;
+  answer : string -> string;  (** of the client's key *)
+  expected : string;  (** how the outcome begins *)
+}
+
+let client_handshake_rows =
+  let row ch_rfc ch_says ?(protocol = texts) ?timeout answer expected =
+    { ch_rfc; ch_says; protocol; timeout; answer; expected }
   in
   [
-    row "4.1" "a 101 that accepts the key opens the socket" upgrade "opened";
+    row "4.1"
+      "a 101 that accepts the key opens the socket, and the frames that came \
+       with it are read"
+      opening "opened: hi";
     row "4.1" "an answer that is not a 101 is refused, with its words"
       (fun _ -> "HTTP/1.1 403 Forbidden\r\nContent-Length: 4\r\n\r\nNope")
       "refused 403: Nope";
     row "4.1" "a refusal whose body stalls is held to the handshake's deadline"
       ~timeout:Mtime.Span.(200 * ms)
       (fun _ -> "HTTP/1.1 403 Forbidden\r\nContent-Length: 100\r\n\r\nNot all")
-      "failed: no answer within";
+      "failed: no answer within 200ms";
     row "4.1" "a 101 whose accept is not for this key fails"
       (upgrade ~accept:(fun _ -> "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="))
       "failed: a 101 whose Sec-WebSocket-Accept";
@@ -925,12 +991,24 @@ let client_handshake_rows env =
     row "4.1" "a 101 speaking none, when one was asked for, fails"
       ~protocol:named upgrade "failed: a 101 speaking another protocol";
     row "4.1" "a 101 speaking the protocol asked for opens it" ~protocol:named
-      (upgrade ~extra:"Sec-WebSocket-Protocol: chat\r\n")
-      "opened";
+      (opening ~extra:"Sec-WebSocket-Protocol: chat\r\n")
+      "opened: hi";
     row "4.1" "a 101 naming an extension nobody offered fails"
       (upgrade ~extra:"Sec-WebSocket-Extensions: permessage-deflate\r\n")
       "failed: an extension this client never offered";
   ]
+
+let check_client_handshake r delivery =
+  let got, _ =
+    scripted ?timeout:r.timeout delivery r.answer (fun open_ ->
+        open_ r.protocol receive)
+  in
+  let got = outcome got in
+  Alcotest.(check bool)
+    (Printf.sprintf "%s %s (%s): %s, where it %s" r.ch_rfc r.ch_says
+       (delivery_name delivery) r.expected got)
+    true
+    (String.starts_with ~prefix:r.expected got)
 
 (* ------------------------------------------------------------------ *)
 (* At any cut *)
@@ -970,10 +1048,42 @@ let test_every_row_holds_at_any_cut () =
               (gen_cuts (String.length rows.(i).hears))))
        (fun (i, cuts) ->
          check_client rows.(i) (At cuts);
+         true));
+  let rows = Array.of_list handshake_rows in
+  QCheck.Test.check_exn
+    (QCheck.Test.make ~count:100 ~name:"a server's handshake row, at any cut"
+       (QCheck.make
+          ~print:(fun (i, cuts) ->
+            let r = rows.(i) in
+            Printf.sprintf "%s: %s, %s" r.h_rfc r.h_says
+              (delivery_name (At cuts)))
+          G.(
+            int_bound (Array.length rows - 1) >>= fun i ->
+            map
+              (fun cuts -> (i, cuts))
+              (gen_cuts (String.length (request_of rows.(i))))))
+       (fun (i, cuts) ->
+         check_handshake rows.(i) (At cuts);
+         true));
+  let rows = Array.of_list client_handshake_rows in
+  QCheck.Test.check_exn
+    (QCheck.Test.make ~count:100 ~name:"a client's handshake row, at any cut"
+       (QCheck.make
+          ~print:(fun (i, cuts) ->
+            let r = rows.(i) in
+            Printf.sprintf "%s: %s, %s" r.ch_rfc r.ch_says
+              (delivery_name (At cuts)))
+          G.(
+            int_bound (Array.length rows - 1) >>= fun i ->
+            map
+              (fun cuts -> (i, cuts))
+              (gen_cuts
+                 (String.length (rows.(i).answer "dGhlIHNhbXBsZSBub25jZQ==")))))
+       (fun (i, cuts) ->
+         check_client_handshake rows.(i) (At cuts);
          true))
 
 let () =
-  Eio_main.run @@ fun env ->
   let each check rows name_of =
     List.concat_map
       (fun r ->
@@ -1011,18 +1121,15 @@ let () =
               (test_a_send_cut_off_mid_frame_ends_the_socket As_client);
           ] );
       ( "a server's handshake",
-        List.map
-          (fun (r : handshake_row) ->
-            Alcotest.test_case
-              (r.h_rfc ^ " " ^ r.h_says)
-              `Quick (check_handshake r))
-          handshake_rows );
+        each check_handshake handshake_rows (fun (r : handshake_row) ->
+            r.h_rfc ^ " " ^ r.h_says) );
       ( "a client's handshake",
         Alcotest.test_case "4.1 a client asks as the RFC says" `Quick
-          (test_a_client_asks_as_the_rfc_says env)
+          test_a_client_asks_as_the_rfc_says
         :: Alcotest.test_case "10.3 a key is fresh every time" `Quick
-             (test_a_key_is_fresh_every_time env)
-        :: client_handshake_rows env );
+             test_a_key_is_fresh_every_time
+        :: each check_client_handshake client_handshake_rows (fun r ->
+            r.ch_rfc ^ " " ^ r.ch_says) );
       ( "at any cut",
         [
           Alcotest.test_case "every row holds at any cut" `Quick
