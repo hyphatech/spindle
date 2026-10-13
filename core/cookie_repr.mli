@@ -14,11 +14,16 @@ val named : string -> 'a Codec.t -> 'a named
 (** As {!Cookie.named}. Raises [Invalid_argument] for a name no cookie can
     carry. *)
 
-val signed : Key_repr.ring -> max_age_s:int -> string -> 'a Codec.t -> 'a named
+val whole_seconds : Mtime.Span.t -> int
+(** The span in whole seconds, rounded up: a cookie's [Max-Age] is never shorter
+    than what it was declared with. *)
+
+val signed :
+  Key_repr.ring -> max_age:Mtime.Span.t -> string -> 'a Codec.t -> 'a named
 (** As {!Cookie.signed}. *)
 
 val encrypted :
-  Key_repr.ring -> max_age_s:int -> string -> 'a Codec.t -> 'a named
+  Key_repr.ring -> max_age:Mtime.Span.t -> string -> 'a Codec.t -> 'a named
 (** As {!Cookie.encrypted}. *)
 
 module Named : sig

@@ -28,7 +28,7 @@ val ring : t -> t list -> ring
 (** [ring newest retired]: every cookie is signed or sealed with [newest], and
     read with any of them, so a key is rotated by putting a new one first and
     the old one after it, and retired by leaving it out once every cookie it
-    made has aged past its [max_age_s]. *)
+    made has aged past its [max_age]. *)
 
 (** {1 Signing and sealing}
 

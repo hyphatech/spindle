@@ -1102,7 +1102,8 @@ let test_what_key_signs_is_never_a_cookie () =
   in
   let signed =
     sealed_app
-      (Spindle.Cookie.signed ring ~max_age_s:3600 "who" Spindle.Codec.string)
+      (Spindle.Cookie.signed ring ~max_age:Mtime.Span.hour "who"
+         Spindle.Codec.string)
   in
   let mac =
     Spindle.Key.sign ring (String.concat "\000" [ "who"; "0"; "admin" ])
@@ -1112,7 +1113,7 @@ let test_what_key_signs_is_never_a_cookie () =
        ("who=" ^ String.concat "." [ "0"; b64 "admin"; b64 mac ]));
   let encrypted =
     sealed_app
-      (Spindle.Cookie.encrypted ring ~max_age_s:3600 "prefs"
+      (Spindle.Cookie.encrypted ring ~max_age:Mtime.Span.hour "prefs"
          Spindle.Codec.string)
   in
   check_string "a seal of an encrypted cookie's" "absent"
@@ -1149,15 +1150,20 @@ let test_a_sealed_cookie_reads_only_as_it_was_made make =
 
 let test_a_signed_cookie_reads_only_as_it_was_made () =
   test_a_sealed_cookie_reads_only_as_it_was_made (fun ring name ->
-      Spindle.Cookie.signed ring ~max_age_s:60 name Spindle.Codec.string)
+      Spindle.Cookie.signed ring
+        ~max_age:Mtime.Span.(60 * s)
+        name Spindle.Codec.string)
 
 let test_an_encrypted_cookie_reads_only_as_it_was_made () =
   test_a_sealed_cookie_reads_only_as_it_was_made (fun ring name ->
-      Spindle.Cookie.encrypted ring ~max_age_s:60 name Spindle.Codec.string);
+      Spindle.Cookie.encrypted ring
+        ~max_age:Mtime.Span.(60 * s)
+        name Spindle.Codec.string);
   let c =
     Spindle.Cookie.encrypted
       (Spindle.Key.ring new_key [])
-      ~max_age_s:60 "prefs" Spindle.Codec.string
+      ~max_age:Mtime.Span.(60 * s)
+      "prefs" Spindle.Codec.string
   in
   Alcotest.(check bool)
     "and nothing of its value is on the wire" false
@@ -1167,7 +1173,7 @@ let test_an_encrypted_cookie_reads_only_as_it_was_made () =
    holds it to as well as the browser: one without would replay for ever. *)
 let test_a_sealed_cookie_ages make =
   let ring = Spindle.Key.ring new_key [] in
-  let c = make ring ~max_age_s:60 "who" Spindle.Codec.string in
+  let c = make ring ~max_age:Mtime.Span.(60 * s) "who" Spindle.Codec.string in
   let app = sealed_app c in
   let made = 1_000_000 in
   let cookie = issued ~now:(Instants.of_ms made) app "kim" in
@@ -1203,7 +1209,22 @@ let test_a_sealed_cookie_ages make =
   check_status "a required one that does not open is a problem" 400
     (Spindle.Test.call required `GET "/who"
        ~headers:[ ("cookie", "who=forged") ])
-      .status
+      .status;
+  (* Whole seconds, rounded up: the cookie never ends before its span. *)
+  let brief =
+    sealed_app
+      (make ring ~max_age:Mtime.Span.(1500 * ms) "who" Spindle.Codec.string)
+  in
+  Alcotest.(check bool)
+    "a span between seconds is the next" true
+    (contains ~sub:"Max-Age=2"
+       (Option.value ~default:""
+          (Spindle.Test.header
+             (Spindle.Test.call brief `POST "/set/x")
+             "set-cookie")));
+  let cookie = issued ~now:(Instants.of_ms made) brief "kim" in
+  check_string "and is read as long" "kim"
+    (read_with ~now:(Instants.of_ms (made + 1_900)) brief cookie)
 
 let test_a_signed_cookie_ages () =
   test_a_sealed_cookie_ages Spindle.Cookie.signed

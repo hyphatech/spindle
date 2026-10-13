@@ -137,18 +137,11 @@ let find t id ~now =
                   (save t ~digest ~created:e.created ~now data)
               else Ok (Some { digest; data; created = e.created })))
 
-(* [Max-Age] counts whole seconds: rounded up, so the cookie outlives the
-   session rather than the session its cookie. *)
-let whole_seconds span =
-  Int64.to_int
-    (Int64.unsigned_div
-       (Int64.add (Mtime.Span.to_uint64_ns span) 999_999_999L)
-       1_000_000_000L)
-
 let start t ~set_cookie ~now data =
   let id = Cookie_repr.encode (Mirage_crypto_rng_unix.getrandom id_bytes) in
   let* session = save t ~digest:(digest_of_id id) ~created:now ~now data in
-  set_cookie (Cookie.make ~max_age_s:(whole_seconds t.absolute) t.named id);
+  set_cookie
+    (Cookie.make ~max_age_s:(Cookie_repr.whole_seconds t.absolute) t.named id);
   Ok session
 
 let renew t old ~set_cookie ~now data =

@@ -138,7 +138,16 @@ let is_expired ~age_s ~now stamp =
   | Some last -> Ptime.is_later (Ptime.truncate ~frac_s:0 now) ~than:last
   | None -> true
 
-let signed ring ~max_age_s name codec =
+(* [Max-Age] and the stamp count whole seconds: an age rounded up, so the
+   cookie never ends before the span it was declared with. *)
+let whole_seconds span =
+  Int64.to_int
+    (Int64.unsigned_div
+       (Int64.add (Mtime.Span.to_uint64_ns span) 999_999_999L)
+       1_000_000_000L)
+
+let signed ring ~max_age name codec =
+  let max_age_s = whole_seconds max_age in
   let cookie = checked_name name in
   let signed_payload stamp v = String.concat "\000" [ cookie; stamp; v ] in
   let seal ~now v =
@@ -163,7 +172,8 @@ let signed ring ~max_age_s name codec =
   in
   { cookie; codec; sealer = Some { seal; unseal }; age = Some max_age_s }
 
-let encrypted ring ~max_age_s name codec =
+let encrypted ring ~max_age name codec =
+  let max_age_s = whole_seconds max_age in
   let cookie = checked_name name in
   let seal ~now v =
     encode (Key_repr.seal_cookie ring ~adata:cookie (stamp_of now ^ "." ^ v))

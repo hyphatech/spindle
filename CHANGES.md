@@ -97,6 +97,13 @@
   route two answers under one status, and a refusal answered `200` read as
   a success. A redirect is `Returns.response` with `Response.redirect`.
 
+- **Breaking:** `Cookie.signed` and `Cookie.encrypted` take
+  `~max_age:Mtime.Span.t` where they took `~max_age_s:int`, as
+  `Session.create` takes its spans: it is a bound the server holds a
+  cookie to, not only the `Max-Age` it writes, which is the span in whole
+  seconds rounded up. `Cookie.make ?max_age_s` is that field and stays a
+  number of seconds.
+
 ## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop
