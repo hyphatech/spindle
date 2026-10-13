@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Breaking: `Spindle_client.error` says whether the request went out.
+  `Unreachable` is gone: a request that never left -- no address, a
+  refused connection, failed TLS, a URL or field the client cannot
+  write -- is `Unsent`, and one that went and was not answered whole --
+  closed under it, cut short, unreadable, too long -- is `Unanswered`,
+  so a caller knows when a `POST` can be sent again. `Timeout` may be
+  either, and is to be taken as `Unanswered`. A client span's failure
+  says `unsent` or `unanswered` where it said `unreachable`.
+
 - A WebSocket message's buffer grows as its bytes arrive, where it was
   made as large as its first frame declared: fourteen bytes from a peer
   held as much memory as `max_message` allows, a mebibyte by default,

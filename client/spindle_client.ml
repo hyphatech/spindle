@@ -74,10 +74,10 @@ type response = {
   body : string;
 }
 
-type error = Unreachable of string | Timeout of Mtime.Span.t
+type error = Unsent of string | Unanswered of string | Timeout of Mtime.Span.t
 
 let error_to_string = function
-  | Unreachable m -> m
+  | Unsent m | Unanswered m -> m
   | Timeout span -> Format.asprintf "no answer within %a" Mtime.Span.pp span
 
 (* Four times what the server allows a request's head. *)
@@ -97,8 +97,12 @@ let tls ~authenticator =
       | Error (`Msg m) -> Error ("cannot configure TLS: " ^ m)
       | Ok config -> Ok config)
 
+(* What failed before the request went out, so the server cannot have
+   acted on it, and what failed after: a caller retries only the first. *)
+exception Cannot_send of string
 exception Failed of string
 
+let cannot_send fmt = Printf.ksprintf (fun m -> raise (Cannot_send m)) fmt
 let fail fmt = Printf.ksprintf (fun m -> raise (Failed m)) fmt
 
 let create ~sw ~net ~mono_clock:clock ?(timeout = Mtime.Span.(30 * s))
@@ -144,8 +148,8 @@ let with_owner t f =
 
 (* A request on a reused connection may be sent again if it never left, or,
    for an idempotent method, if no byte of an answer arrived. *)
-exception Unsent of string
-exception Unanswered
+exception Write_failed of string
+exception Closed_unanswered
 
 (* [authority] is without userinfo (RFC 9110 §7.2); [path] is the request
    target, its path and query. *)
@@ -189,12 +193,12 @@ let target_of ~url uri =
     match Uri.scheme uri with
     | Some "https" -> true
     | Some "http" | None -> false
-    | Some s -> fail "a scheme this client does not speak: %s" s
+    | Some s -> cannot_send "a scheme this client does not speak: %s" s
   in
   let host =
     match Uri.host uri with
     | Some h when not (String.equal h "") -> h
-    | Some _ | None -> fail "a URL with no host"
+    | Some _ | None -> cannot_send "a URL with no host"
   in
   let bracketed = if String.contains host ':' then "[" ^ host ^ "]" else host in
   let default = if https then 443 else 80 in
@@ -232,7 +236,7 @@ let tls_identity t target =
   if not target.https then None
   else
     match t.tls with
-    | Error m -> fail "%s" m
+    | Error m -> cannot_send "%s" m
     | Ok config -> (
         match
           Result.bind (Domain_name.of_string target.host) Domain_name.host
@@ -242,7 +246,7 @@ let tls_identity t target =
             match Ipaddr.of_string target.host with
             | Ok ip -> Some (config, `Ip ip)
             | Error (`Msg _) ->
-                fail "a host that is neither a name nor an address: %s"
+                cannot_send "a host that is neither a name nor an address: %s"
                   target.host))
 
 (* A socket to [addr], on a switch of its own that a fiber on [sw] holds
@@ -288,7 +292,7 @@ let connect_to ~sw net addr =
 let connect ~sw t target =
   let identity = tls_identity t target in
   let rec connect_first = function
-    | [] -> fail "no address for %s" target.host
+    | [] -> cannot_send "no address for %s" target.host
     | [ addr ] -> connect_to ~sw t.net addr
     | addr :: rest -> (
         match connect_to ~sw t.net addr with
@@ -299,9 +303,13 @@ let connect ~sw t target =
             connect_first rest)
   in
   let socket, switch, release =
-    connect_first
-      (Eio.Net.getaddrinfo_stream t.net target.host
-         ~service:(string_of_int target.port))
+    match
+      connect_first
+        (Eio.Net.getaddrinfo_stream t.net target.host
+           ~service:(string_of_int target.port))
+    with
+    | opened -> opened
+    | exception (Eio.Io _ as ex) -> cannot_send "%s" (Printexc.to_string ex)
   in
   let flow, secure =
     match identity with
@@ -312,11 +320,15 @@ let connect ~sw t target =
         in
         match Tls_eio.client_of_flow config ?host ?ip socket with
         | tls -> ((tls :> flow), true)
-        | exception ex ->
+        | exception ex -> (
             Eio.Cancel.protect (fun () ->
                 (try Eio.Resource.close socket with Eio.Io _ -> ());
                 Eio.Promise.resolve release ());
-            raise ex)
+            match ex with
+            | Eio.Io _ | End_of_file | Tls_eio.Tls_alert _
+            | Tls_eio.Tls_failure _ ->
+                cannot_send "%s" (Printexc.to_string ex)
+            | _ -> raise ex))
   in
   let tls_reads : Filled.t option =
     if secure then
@@ -472,19 +484,19 @@ let send_request c meth target ~headers ~body =
         (match Write.request_head oc meth ~target:target.path fields with
         | Ok () -> ()
         | Error (`Field name) ->
-            fail "a request field that cannot be written: %s" name
-        | Error `Target -> fail "a request target that cannot be written");
+            cannot_send "a request field that cannot be written: %s" name
+        | Error `Target -> cannot_send "a request target that cannot be written");
         Option.iter (Eio.Buf_write.string oc) body)
   with
   | () -> ()
-  | exception (Eio.Io _ as ex) -> raise (Unsent (Printexc.to_string ex))
+  | exception (Eio.Io _ as ex) -> raise (Write_failed (Printexc.to_string ex))
 
 (* Every 1xx before the final head is dropped (RFC 9110 §15.2), but a 101
    where the request asked to switch is the answer. Ending before a byte is
-   [Unanswered], after which a request may be sent again. *)
+   [Closed_unanswered], after which a request may be sent again. *)
 let rec read_final_head ?(switching = false) c ~first =
   match Head.Response.read ~max:max_head c.reader with
-  | Error `Closed when first -> raise Unanswered
+  | Error `Closed when first -> raise Closed_unanswered
   | Error `Closed -> fail "the server closed the connection mid-answer"
   | Error (`Malformed m) -> fail "a response that could not be read: %s" m
   | Ok head when switching && Status.to_int head.status = 101 -> head
@@ -562,7 +574,7 @@ let exchange ~sw t ~headers ~body meth target ~reused =
        (fun (n, _) -> List.mem (String.lowercase_ascii n) client_fields)
        headers
    with
-  | Some (n, _) -> fail "a request field the client writes itself: %s" n
+  | Some (n, _) -> cannot_send "a request field the client writes itself: %s" n
   | None -> ());
   let k = pool_key target in
   let caller_closes = Field.has_element headers "connection" "close" in
@@ -583,10 +595,10 @@ let exchange ~sw t ~headers ~body meth target ~reused =
     | answer, None ->
         close_connection c;
         answer
-    | exception Unsent _ when was_kept ->
+    | exception Write_failed _ when was_kept ->
         close_connection c;
         attempt ~fresh:true
-    | exception Unanswered when was_kept && is_idempotent meth ->
+    | exception Closed_unanswered when was_kept && is_idempotent meth ->
         close_connection c;
         attempt ~fresh:true
     | exception ex ->
@@ -596,13 +608,14 @@ let exchange ~sw t ~headers ~body meth target ~reused =
   attempt ~fresh:false
 
 let error_of_exn = function
-  | Failed m -> Some (Unreachable m)
-  | Unsent m -> Some (Unreachable ("the request was not sent: " ^ m))
-  | Unanswered ->
-      Some (Unreachable "the server closed the connection without answering")
+  | Cannot_send m -> Some (Unsent m)
+  | Write_failed m -> Some (Unsent ("the request could not be written: " ^ m))
+  | Failed m -> Some (Unanswered m)
+  | Closed_unanswered ->
+      Some (Unanswered "the server closed the connection without answering")
   | (Eio.Io _ | End_of_file | Tls_eio.Tls_alert _ | Tls_eio.Tls_failure _) as ex
     ->
-      Some (Unreachable (Printexc.to_string ex))
+      Some (Unanswered (Printexc.to_string ex))
   | _ -> None
 
 (* Named by method, as OpenTelemetry names a client span, [HTTP] for any
@@ -634,7 +647,8 @@ let within_client_span meth uri f =
         Trace.add span [ ("http.response.status_code", `Int status) ];
         if status >= 400 then Trace.fail span (string_of_int status)
       and failed = function
-        | Unreachable _ -> Trace.fail span "unreachable"
+        | Unsent _ -> Trace.fail span "unsent"
+        | Unanswered _ -> Trace.fail span "unanswered"
         | Timeout _ -> Trace.fail span "timeout"
       in
       f ~answered ~failed)
@@ -714,9 +728,9 @@ module Body = struct
               b.state <- Ended;
               Ok `End
           | Ok (Error (`Unreadable m)) ->
-              failed (Unreachable ("an answer cut short: " ^ m))
+              failed (Unanswered ("an answer cut short: " ^ m))
           | Ok (Error (`Too_large | `Over_budget)) ->
-              failed (Unreachable "an answer that could not be held")
+              failed (Unanswered "an answer that could not be held")
           | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
           | exception ex -> (
               match error_of_exn ex with Some e -> failed e | None -> raise ex))
@@ -731,7 +745,7 @@ let open_answer ~sw t ~headers ~body meth target =
        (fun (n, _) -> List.mem (String.lowercase_ascii n) client_fields)
        headers
    with
-  | Some (n, _) -> fail "a request field the client writes itself: %s" n
+  | Some (n, _) -> cannot_send "a request field the client writes itself: %s" n
   | None -> ());
   let k = pool_key target in
   let rec attempt ~fresh =
@@ -745,10 +759,10 @@ let open_answer ~sw t ~headers ~body meth target =
       read_final_head c ~first:true
     with
     | head -> (c, head)
-    | exception Unsent _ when was_kept ->
+    | exception Write_failed _ when was_kept ->
         close_connection c;
         attempt ~fresh:true
-    | exception Unanswered when was_kept && is_idempotent meth ->
+    | exception Closed_unanswered when was_kept && is_idempotent meth ->
         close_connection c;
         attempt ~fresh:true
     | exception ex ->
@@ -797,7 +811,7 @@ let stream t ?timeout ?read_timeout ?(headers = []) ?body meth url f =
       match Framing.of_response ~request_meth:meth head with
       | Error m ->
           close_connection c;
-          Error (Unreachable ("a response whose length cannot be told: " ^ m))
+          Error (Unanswered ("a response whose length cannot be told: " ^ m))
       | Ok framing ->
           let b =
             {
@@ -862,7 +876,7 @@ let events t ?timeout ?read_timeout ?(headers = []) ?last_event_id url on_event
                  Buffer.add_string b s;
                  if Buffer.length b > t.max_body then
                    Error
-                     (Unreachable
+                     (Unanswered
                         (Printf.sprintf "a response longer than %d bytes"
                            t.max_body))
                  else whole ()
@@ -898,7 +912,7 @@ let events t ?timeout ?read_timeout ?(headers = []) ?last_event_id url on_event
                  in
                  match Spindle_http.Event_stream.feed r s with
                  | Ok events -> each events
-                 | Error m -> Error (Unreachable m))
+                 | Error m -> Error (Unanswered m))
            in
            next ()))
 
@@ -930,8 +944,8 @@ let http_uri_of_ws uri =
   match Uri.scheme uri with
   | Some "ws" -> Uri.with_scheme uri (Some "http")
   | Some "wss" -> Uri.with_scheme uri (Some "https")
-  | Some s -> fail "a scheme a WebSocket is not opened over: %s" s
-  | None -> fail "a URL with no scheme"
+  | Some s -> cannot_send "a scheme a WebSocket is not opened over: %s" s
+  | None -> cannot_send "a URL with no scheme"
 
 (* RFC 6455 §4.1: a 101 that names websocket, answers this key, and speaks
    the protocol asked for, or none where none was. *)
@@ -1023,7 +1037,8 @@ let open_websocket t ?timeout ?(headers = []) ?keep_alive ?max_message protocol
                  List.mem n client_fields || List.mem n handshake_fields)
                headers
            with
-          | Some (n, _) -> fail "a request field the client writes itself: %s" n
+          | Some (n, _) ->
+              cannot_send "a request field the client writes itself: %s" n
           | None -> ());
           let target = target_of ~url (http_uri_of_ws (Uri.of_string url)) in
           let c = connect ~sw t target in
@@ -1077,7 +1092,7 @@ let open_websocket t ?timeout ?(headers = []) ?keep_alive ?max_message protocol
       match check_upgrade ~key protocol head with
       | Error m ->
           close_connection c;
-          Error (Failed (Unreachable m))
+          Error (Failed (Unanswered m))
       | Ok () ->
           let ended =
             with_socket_writer t ~send_timeout:deadline c (fun writer ->

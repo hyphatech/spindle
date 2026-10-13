@@ -3610,7 +3610,7 @@ let test_the_client_answers_times_out_and_reports domains () =
        !lines);
   (match Spindle_client.call impatient `GET (url "/slow") with
   | Error (Spindle_client.Timeout _) -> ()
-  | Ok _ | Error (Spindle_client.Unreachable _) ->
+  | Ok _ | Error (Spindle_client.Unsent _ | Spindle_client.Unanswered _) ->
       Alcotest.fail "a call past its deadline should have been given up");
   (match Spindle_client.call client `GET (url "/events") with
   | Ok r ->
@@ -3626,9 +3626,9 @@ let test_the_client_answers_times_out_and_reports domains () =
            !lines)
   | Error e -> Alcotest.fail (Spindle_client.error_to_string e));
   match Spindle_client.call client `GET "http://127.0.0.1:1/nobody" with
-  | Error (Spindle_client.Unreachable _) -> ()
-  | Ok _ | Error (Spindle_client.Timeout _) ->
-      Alcotest.fail "nobody listening is unreachable"
+  | Error (Spindle_client.Unsent _) -> ()
+  | Ok _ | Error (Spindle_client.Unanswered _ | Spindle_client.Timeout _) ->
+      Alcotest.fail "nobody listening was never sent anything"
 
 (* A handshake that fails -- here against a server that speaks no TLS and
    hangs up -- leaves no socket behind: the one it was tried on is closed
@@ -3682,9 +3682,9 @@ let test_a_refused_address_leaves_no_socket () =
   let before = open_descriptors () in
   for _ = 1 to 20 do
     match Spindle_client.call client `GET "http://127.0.0.1:1/nobody" with
-    | Error (Spindle_client.Unreachable _) -> ()
-    | Ok _ | Error (Spindle_client.Timeout _) ->
-        Alcotest.fail "nobody listening is unreachable"
+    | Error (Spindle_client.Unsent _) -> ()
+    | Ok _ | Error (Spindle_client.Unanswered _ | Spindle_client.Timeout _) ->
+        Alcotest.fail "nobody listening was never sent anything"
   done;
   check_int "no descriptor left behind" before (open_descriptors ())
 
@@ -3861,6 +3861,67 @@ let test_a_client_sends_the_url_as_it_was_given () =
     urls;
   Alcotest.(check (list string))
     "each target as its URL wrote it" (List.map snd urls) !targets
+
+(* An error says whether the request went out, since a POST that went out
+   is never sent twice and the caller decides: one that never left -- a
+   URL the client cannot call, a field it writes itself, a connection
+   refused -- is [Unsent], and one that went and was not answered whole is
+   [Unanswered]. *)
+let test_an_error_says_whether_the_request_went_out () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let listening, connect = In_memory.listen () in
+  let answers =
+    [
+      "";
+      "HTTP/1.1 two hundred\r\n\r\n";
+      "HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabc";
+    ]
+  in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      List.iter
+        (fun answer ->
+          let flow, _ = Eio.Net.accept ~sw listening in
+          let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
+          (match Spindle_http.Head.Request.read ~max:65536 r with
+          | Error _ -> Alcotest.fail "a request that could not be read"
+          | Ok _ -> Eio.Buf_read.skip 2 r);
+          Eio.Flow.copy_string answer flow;
+          Eio.Flow.close flow)
+        answers;
+      `Stop_daemon);
+  let net = Eio_mock.Net.make "net" in
+  let address = `Return [ `Tcp (Eio.Net.Ipaddr.V4.loopback, 80) ] in
+  Eio_mock.Net.on_getaddrinfo net (List.init 4 (fun _ -> address));
+  Eio_mock.Net.on_connect net
+    (`Raise (Eio.Net.err (Connection_failure (Refused In_memory.Peer_closed)))
+    :: List.map (fun _ -> `Run (fun () -> connect ~sw)) answers);
+  let client =
+    Spindle_client.create ~sw ~net ~mono_clock:(Eio.Stdenv.mono_clock env) ()
+  in
+  let went ?(headers = []) url =
+    match Spindle_client.call client ~headers ~body:"hi" `POST url with
+    | Ok _ -> "answered"
+    | Error (Spindle_client.Unsent _) -> "unsent"
+    | Error (Spindle_client.Unanswered _) -> "unanswered"
+    | Error (Spindle_client.Timeout _) -> "timed out"
+  in
+  List.iter
+    (fun (says, expected, call) ->
+      Alcotest.(check string) says expected (call ()))
+    [
+      ("a scheme the client does not speak", "unsent", fun () -> went "ftp://t/");
+      ("a URL with no host", "unsent", fun () -> went "http:///p");
+      ( "a field the client writes itself",
+        "unsent",
+        fun () -> went ~headers:[ ("Content-Length", "2") ] "http://t/" );
+      ("a connection refused", "unsent", fun () -> went "http://t/");
+      ( "closed after the request was read",
+        "unanswered",
+        fun () -> went "http://t/" );
+      ("an answer that cannot be read", "unanswered", fun () -> went "http://t/");
+      ("an answer cut short", "unanswered", fun () -> went "http://t/");
+    ]
 
 (* ------------------------------------------------------------------ *)
 (* The edges, over a real socket *)
@@ -4203,7 +4264,8 @@ let test_an_answer_at_the_deadline_leaves_no_socket_open () =
     "answered, or out of time" true
     (match got with
     | Ok 200 | Error (Spindle_client.Timeout _) -> true
-    | Ok _ | Error (Spindle_client.Unreachable _) -> false);
+    | Ok _ | Error (Spindle_client.Unsent _ | Spindle_client.Unanswered _) ->
+        false);
   check_int "and no socket is left open" before (open_sockets ())
 
 let call_on ~net ~clock ~port ?(headers = []) ?body meth path =
@@ -5388,7 +5450,9 @@ let test_https_is_never_spoken_as_plain_http domains () =
     Spindle_client.call client `GET
       (Printf.sprintf "https://127.0.0.1:%d/hello/kim" port)
   with
-  | Error (Spindle_client.Unreachable _ | Spindle_client.Timeout _) -> ()
+  | Error (Spindle_client.Unsent _ | Spindle_client.Timeout _) -> ()
+  | Error (Spindle_client.Unanswered _) ->
+      Alcotest.fail "a request went out before its handshake"
   | Ok _ -> Alcotest.fail "an https call was answered in the clear"
 
 (* The framework logs no header value and no query string: a request's
@@ -8517,6 +8581,8 @@ let () =
             `Quick test_a_connection_that_cannot_be_watched_is_not_kept;
           Alcotest.test_case "a client sends the URL as it was given" `Quick
             test_a_client_sends_the_url_as_it_was_given;
+          Alcotest.test_case "an error says whether the request went out" `Quick
+            test_an_error_says_whether_the_request_went_out;
         ] );
       ( "the edges",
         [

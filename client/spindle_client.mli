@@ -30,12 +30,13 @@
     kept connection, and one that means the same done twice -- [GET], [HEAD],
     [PUT], [DELETE], [OPTIONS] -- that met a kept connection's end before a byte
     of its answer. A [POST] that went out is never sent twice; it fails, and the
-    caller decides.
+    caller decides: an error says whether the request went out, {!Unsent} or
+    {!Unanswered}, since only one that did not can be sent again blind.
 
     HTTPS is TLS against the system's certificates, set up once per client. A
     machine with no usable trust store cannot verify anybody, and the honest
     answer is that the call cannot be made, not that it is trusted anyway:
-    {!Unreachable}, on every https call, and plain http unaffected.
+    {!Unsent}, on every https call, and plain http unaffected.
 
     Cancellation is never an error here. It is how Eio stops work nobody is
     waiting for, and it passes through. *)
@@ -97,17 +98,25 @@ type response = {
 }
 
 type error =
-  | Unreachable of string
-      (** the call could not be made, or its answer not read, in words for the
-          log: a URL with no host, or a scheme other than [http] and [https]; a
-          host with no address, or none of whose addresses connects; no usable
-          trust store, an [https] host that is neither a name nor an address, or
-          a TLS handshake or alert that failed; a request target or field that
-          cannot be written, or a field the client writes itself; a response
-          that cannot be read, whose length cannot be told, that is cut short or
-          is longer than [max_body], or an event longer than it; and the
-          connection failing or closing under the call *)
-  | Timeout of Mtime.Span.t  (** the deadline that passed *)
+  | Unsent of string
+      (** the request did not go out whole, so the server cannot have acted on
+          it and it may be sent again: a URL with no host, or a scheme other
+          than [http] and [https]; a host with no address, or none of whose
+          addresses connects; no usable trust store, an [https] host that is
+          neither a name nor an address, or a TLS handshake that failed; a
+          request target or field that cannot be written, or a field the client
+          writes itself; and a request the connection would not take. In words
+          for the log. *)
+  | Unanswered of string
+      (** the request went out and no whole answer came back, so the server may
+          have acted on it: the connection closing or failing before the answer
+          ended; an answer that cannot be read, whose length cannot be told,
+          that is cut short or is longer than [max_body], or an event longer
+          than it; and, for a WebSocket, a [101] that does not accept the
+          handshake. In words for the log. *)
+  | Timeout of Mtime.Span.t
+      (** the deadline that passed, which may have been before the request went
+          out or after: like {!Unanswered}, it may have been acted on *)
 
 val error_to_string : error -> string
 

@@ -25,8 +25,12 @@ its connections when `f` returns.
 
 `call client meth url` answers `Ok` with the `status`, the `headers` (names
 lower-cased) and the whole `body` -- **any status is an answer**, so a `404`
-is `Ok`. `Error` is `Unreachable` (no connection, bad TLS, an unreadable
-answer) or `Timeout`. Send a body with `~body` and `~headers`:
+is `Ok`. `Error` says whether the request went out: `Unsent` (no
+connection, bad TLS, a URL it cannot call -- the server never saw it, so
+sending it again is safe), `Unanswered` (it went, and the answer was cut
+short, unreadable, or never came -- the server may have acted on it) or
+`Timeout`, which is to be taken as `Unanswered`. Send a body with `~body`
+and `~headers`:
 
 ```ocaml
 match
@@ -75,7 +79,8 @@ Good to know:
 - A request is retried only when that is safe: one that could not be written
   on a reused connection, or an idempotent one (`GET`, `HEAD`, `PUT`,
   `DELETE`, `OPTIONS`) whose reused connection closed before any answer. A
-  `POST` that went out is never sent twice; it fails, and you decide.
+  `POST` that went out is never sent twice; it fails with `Unanswered`, and
+  you decide.
 - Each call logs one `debug` line on `spindle.client`, never its headers or
   body.
 
