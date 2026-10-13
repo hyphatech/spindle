@@ -2184,6 +2184,16 @@ let test_a_limit_that_cannot_be_is_refused () =
       Spindle.Rate.create ~mono_clock ~limit:1 ~per:Mtime.Span.s ~burst:0 ());
   refused "per" (fun () ->
       Spindle.Rate.create ~mono_clock ~limit:1 ~per:Mtime.Span.zero ());
+  (* A period shorter than a nanosecond a call leaves none between two, so
+     it would let everything through. *)
+  refused "per" (fun () ->
+      Spindle.Rate.create ~mono_clock ~limit:1_000
+        ~per:(Mtime.Span.of_uint64_ns 999L)
+        ());
+  ignore
+    (Spindle.Rate.create ~mono_clock ~limit:1_000
+       ~per:(Mtime.Span.of_uint64_ns 1_000L)
+       ());
   ignore
     (Spindle.Rate.create ~mono_clock ~limit:1 ~per:Mtime.Span.ms ~burst:1 ())
 

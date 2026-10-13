@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `Spindle.Rate.create` raises `Invalid_argument` for a `per` shorter
+  than `limit` nanoseconds, which left no time between two calls and so
+  limited nothing. Not breaking in practice: no limit that worked is
+  refused.
+
 - Breaking: `App.make` refuses a JSON answer under `204` or `205` --
   `` Returns.json ~status:`No_content `` or either listed in
   `Returns.json_response`'s `statuses` -- which HTTP sends without a body,

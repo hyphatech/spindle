@@ -31,9 +31,9 @@ val create :
   unit ->
   t
 (** [limit] calls every [per], up to [burst] ([limit]) of them at once. Raises
-    [Invalid_argument] for a [limit] or a [burst] below one, or a [per] of zero,
-    which would limit nothing or everything: each is a constant written in
-    source. *)
+    [Invalid_argument] for a [limit] or a [burst] below one, or a [per] shorter
+    than [limit] nanoseconds, which leaves no time between two calls: each would
+    limit nothing or everything, and is a constant written in source. *)
 
 val limit : t -> key:string Dep.t -> unit Dep.t
 (** The request counted against its key -- the client's address, a session, a

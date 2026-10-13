@@ -19,6 +19,11 @@ let create ~mono_clock ~limit ~per ?(burst = limit) () =
     Mtime.Span.of_uint64_ns
       (Int64.unsigned_div (Mtime.Span.to_uint64_ns per) (Int64.of_int limit))
   in
+  (* An interval of zero moves no key's instant, so nothing is ever limited. *)
+  if Mtime.Span.equal interval Mtime.Span.zero then
+    refuse
+      (Printf.sprintf "~per, shorter than a nanosecond for each of ~limit:%d"
+         limit);
   {
     mono_clock :> Eio.Time.Mono.ty Eio.Resource.t;
     interval;

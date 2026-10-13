@@ -32,8 +32,8 @@ retry-after: 6
 - `Rate.create ~mono_clock ~limit ~per ?burst ()` allows `limit` calls
   every `per`, an `Mtime.Span.t`, and up to `burst` (default: `limit`) at
   once. Make it once, at startup, and share it between requests. A `limit`
-  or `burst` below one, or a `per` of zero, raises `Invalid_argument`
-  there.
+  or `burst` below one, or a `per` shorter than `limit` nanoseconds, which
+  leaves no time between two calls, raises `Invalid_argument` there.
 - `~key` is what is counted: `Spindle.client` (the client's address), or any
   `string Dep.t` -- a session, a token, a path parameter. An IPv6 address is
   counted by its /64, since a client may change its address within one at
