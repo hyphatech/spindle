@@ -11,8 +11,9 @@ How work becomes a commit on `main`, the same in every Hypha repository.
   each whole. A commit holds its tests, its documents and, where the
   repository keeps a `CHANGES.md`, its line there.
 - **The subject is an imperative sentence**, capitalised, under 72
-  characters, with no full stop: `Ask for OCaml 5.5 or later`. It says what
-  the change does for a reader of the log, never which files it touched.
+  characters, with no full stop: `Keep a session across restarts`. It
+  says what the change does for a reader of the log, never which files it
+  touched.
 - **The body says why**, wrapped at 72: the problem or the decision, and
   what was weighed against it. Never what the diff already shows, a test
   count or a file list. A fix too small to need a reason has a subject
@@ -38,10 +39,10 @@ How work becomes a commit on `main`, the same in every Hypha repository.
   words; done is a commit in its worktree, waiting for the owner to land
   it. `main` reaches GitHub when its owner pushes it.
 - **A pull request is the exception**, for when one is asked for. Its
-  branch is named for its subject (`ask-for-ocaml-5-5`), it holds
-  everything the branch holds, and it is squash-merged once its checks
-  pass, its subject the title and ` (#<number>)` -- never a merge commit.
-  When it merges is the owner's decision.
+  branch is named for its subject (`keep-a-session-across-restarts`), it
+  holds everything the branch holds, and it is squash-merged once its
+  checks pass, its subject the title and ` (#<number>)` -- never a merge
+  commit. When it merges is the owner's decision.
 
 ## A pull request's body
 
