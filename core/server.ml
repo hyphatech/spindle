@@ -1026,39 +1026,52 @@ let serve settings ~mono_clock:clock ~now ~domain_mgr ?stop ?(on_stop = ignore)
   (* Accepting stops only after [on_stop] has run, so nothing the
      application does to stop races a server that has let go of it. *)
   let accepting_stopped, stop_accepting = Eio.Promise.create () in
-  (* One cap per address, shared by every domain, taken before [accept]: a
-     cap under the descriptor limit keeps [accept] from failing with EMFILE,
-     which Eio does not catch and which would cancel every connection. *)
+  (* One cap per address, shared by every domain, taken before [accept]. *)
   let sockets =
     List.map
       (fun socket -> (socket, Eio.Semaphore.make max_connections))
       sockets
   in
+  (* An accept fails when the process is out of descriptors or the kernel
+     out of memory, or when a connection was reset before it was taken. The
+     socket stays readable through the first two, so accepting again at once
+     would spin until they pass: a pause, short against any client's patience,
+     lets connections close meanwhile. *)
+  let accept_again_after = Mtime.Span.(10 * ms) in
   let accept ~sw ~sweep (socket, slots) =
     let rec loop () =
       Eio.Semaphore.acquire slots;
-      Eio.Net.accept_fork ~sw socket ~on_error (fun flow addr ->
-          Option.iter (fun i -> Metrics.add i.connections [] 1) instruments;
-          Fun.protect
-            ~finally:(fun () ->
-              Option.iter
-                (fun i -> Metrics.add i.connections [] (-1))
-                instruments;
-              Eio.Semaphore.release slots)
-            (fun () ->
-              match
-                serve_connection ~clock ~now ~limits ~trace ~instruments ~state
-                  ~sweep app flow addr
-              with
-              | () -> ()
-              | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
-              | exception ex ->
-                  let bt = Printexc.get_raw_backtrace () in
-                  log_connection_failure
-                    (Eio.Exn.add_context ex "handling connection from %a"
-                       Eio.Net.Sockaddr.pp addr)
-                    bt));
-      loop ()
+      match
+        Eio.Net.accept_fork ~sw socket ~on_error (fun flow addr ->
+            Option.iter (fun i -> Metrics.add i.connections [] 1) instruments;
+            Fun.protect
+              ~finally:(fun () ->
+                Option.iter
+                  (fun i -> Metrics.add i.connections [] (-1))
+                  instruments;
+                Eio.Semaphore.release slots)
+              (fun () ->
+                match
+                  serve_connection ~clock ~now ~limits ~trace ~instruments
+                    ~state ~sweep app flow addr
+                with
+                | () -> ()
+                | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
+                | exception ex ->
+                    let bt = Printexc.get_raw_backtrace () in
+                    log_connection_failure
+                      (Eio.Exn.add_context ex "handling connection from %a"
+                         Eio.Net.Sockaddr.pp addr)
+                      bt))
+      with
+      | () -> loop ()
+      | exception (Eio.Io _ as ex) ->
+          Eio.Semaphore.release slots;
+          L.warn (fun m ->
+              m "accept failed, accepting again in %a: %s" Mtime.Span.pp
+                accept_again_after (Printexc.to_string ex));
+          Eio.Time.Mono.sleep_span clock accept_again_after;
+          loop ()
     in
     Eio.Fiber.first loop (fun () -> Eio.Promise.await accepting_stopped)
   in

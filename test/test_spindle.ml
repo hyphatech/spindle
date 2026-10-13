@@ -5075,6 +5075,45 @@ let test_past_the_cap_a_connection_waits domains () =
   Eio.Flow.close first;
   check_string "and is served once it closes" "HTTP/1.1 200 OK" (status second)
 
+(* An accept that fails -- out of descriptors, or a connection reset before
+   it was taken -- is that accept's, never the server's: the server says so
+   and goes on accepting, with the slot it took for it given back. One slot,
+   and two failures, so a slot kept by either would leave the client
+   unanswered. *)
+let test_a_failed_accept_is_not_the_servers_end domains () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let lines = ref [] in
+  Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
+    ~out:(fun l -> lines := l :: !lines)
+    ();
+  let listening, connect =
+    In_memory.listen
+      ~accept_failures:
+        [
+          Eio_unix.Err.v Unix.EMFILE "accept" "";
+          Eio_unix.Err.v Unix.ECONNABORTED "accept" "";
+        ]
+      ()
+  in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      Spindle.Server.serve_on
+        ~mono_clock:(Eio.Stdenv.mono_clock env)
+        ~now:(fun () -> Ptime.epoch)
+        ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+        ~domains ~max_connections:1 [ listening ]
+        (Spindle.Test.app [ hello ]);
+      `Stop_daemon);
+  Eio.Switch.run @@ fun inner ->
+  let flow = connect ~sw:inner in
+  Eio.Flow.copy_string
+    "GET /hello/a HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n" flow;
+  check_string "the next connection is served" "HTTP/1.1 200 OK"
+    (Eio.Buf_read.line (Eio.Buf_read.of_flow flow ~max_size:4096));
+  Alcotest.(check int)
+    "each failure said once" 2
+    (List.length (List.filter (contains ~sub:"accept failed") !lines))
+
 (* Whether [addr] on [port] answers a request: nobody listening there is a
    refusal, at once. *)
 let answers ~net addr port =
@@ -8620,6 +8659,8 @@ let () =
             test_a_background_raise_is_logged_not_raised;
           Alcotest.test_case "past the cap a connection waits" `Quick
             (test_past_the_cap_a_connection_waits 1);
+          Alcotest.test_case "a failed accept is not the server's end" `Quick
+            (test_a_failed_accept_is_not_the_servers_end 1);
           Alcotest.test_case "a client leaving a quiet topic ends its producer"
             `Quick
             (test_a_client_leaving_a_quiet_topic_ends_its_producer 1);
@@ -8686,6 +8727,8 @@ let () =
             (test_a_stop_lets_a_stream_of_known_length_finish 4);
           Alcotest.test_case "past the cap a connection waits" `Quick
             (test_past_the_cap_a_connection_waits 4);
+          Alcotest.test_case "a failed accept is not the server's end" `Quick
+            (test_a_failed_accept_is_not_the_servers_end 4);
           Alcotest.test_case "localhost is both loopbacks" `Quick
             (test_localhost_is_both_loopbacks 4);
           Alcotest.test_case "a wildcard listens on every interface" `Quick

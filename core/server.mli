@@ -138,9 +138,11 @@ val run :
     answers unread bytes with. [max_connections] (512) is how many connections
     each address holds at once; past it the kernel's [backlog] (128) keeps the
     rest waiting; every domain accepts on every address, and the cap is the
-    address's, not a domain's. Keep it under the process's descriptor limit: the
-    cap is what keeps [accept] from failing at that limit, a failure that would
-    otherwise cancel every open connection.
+    address's, not a domain's. Keep it under the process's descriptor limit:
+    past that limit [accept] fails, and an [accept] that fails -- out of
+    descriptors or memory, or a connection reset before it was taken -- is
+    logged at [warning] and tried again after 10 ms, while the connections
+    already open are served.
 
     {b Stopping.} Without [stop], serves until the switch is cancelled. When
     [stop] resolves: [on_stop ()] runs -- where the application ends its

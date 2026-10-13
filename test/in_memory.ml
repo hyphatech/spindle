@@ -110,16 +110,23 @@ let socket s =
   (Eio.Resource.T (s, Eio.Net.Pi.stream_socket (module Socket))
     : [ `Generic ] Eio.Net.stream_socket_ty Eio.Resource.t)
 
-(* What the server accepts: the connections [connect] made, in order. *)
+(* What the server accepts: the connections [connect] made, in order,
+   once each of [failures] has been raised by an [accept] of its own. *)
 module Listening = struct
-  type t = Socket.t Eio.Stream.t
+  type t = { waiting : Socket.t Eio.Stream.t; mutable failures : exn list }
   type tag = [ `Generic ]
 
   let setsockopt _ _ _ = ()
   let getsockopt _ _ = raise (Eio.Net.err Invalid_option)
 
   let accept t ~sw:_ =
-    (socket (Eio.Stream.take t), `Tcp (Eio.Net.Ipaddr.V4.loopback, 1))
+    match t.failures with
+    | ex :: rest ->
+        t.failures <- rest;
+        raise ex
+    | [] ->
+        ( socket (Eio.Stream.take t.waiting),
+          `Tcp (Eio.Net.Ipaddr.V4.loopback, 1) )
 
   let close _ = ()
   let listening_addr _ = `Tcp (Eio.Net.Ipaddr.V4.loopback, 80)
@@ -128,11 +135,15 @@ end
 (* A socket for [Spindle.Server.serve_on] to listen on, and the client's
    way to connect to it, closed with the switch it is given. On a
    [piecewise] one, a client's every write is read before the next is sent,
-   so the server reads the pieces a test chose, as no kernel promises. *)
-let listen ?(piecewise = false) () =
+   so the server reads the pieces a test chose, as no kernel promises. The
+   server's first accepts raise [accept_failures], one each, as a kernel's
+   do out of descriptors or memory. *)
+let listen ?(piecewise = false) ?(accept_failures = []) () =
   let waiting = Eio.Stream.create max_int in
   let listening =
-    (Eio.Resource.T (waiting, Eio.Net.Pi.listening_socket (module Listening))
+    (Eio.Resource.T
+       ( { Listening.waiting; failures = accept_failures },
+         Eio.Net.Pi.listening_socket (module Listening) )
       : [ `Generic ] Eio.Net.listening_socket_ty Eio.Resource.t)
   in
   let connect ~sw =

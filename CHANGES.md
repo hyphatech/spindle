@@ -60,6 +60,11 @@
   network's, is closed after its call and never kept, since the client
   could not tell that the server closed it.
 
+- A server whose `accept` fails -- out of file descriptors or memory, or
+  a connection reset before it was taken -- logs it at `warning` and
+  accepts again 10 ms later, where the failure ended the server and
+  cancelled every connection it held.
+
 ## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop

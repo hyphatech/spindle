@@ -69,7 +69,10 @@ A route that takes large uploads reads its body as a stream, with a limit of
 its own ([dependencies](../tutorial/dependencies.md#large-bodies)).
 
 Keep `max_connections` under the process's file descriptor limit
-(`ulimit -n`): every open stream and WebSocket holds a connection.
+(`ulimit -n`): every open stream and WebSocket holds a connection, and a
+file being sent holds a descriptor as well. Past the limit a connection
+waits: the server logs the failed accept at `warning` and tries again 10 ms
+later, serving the connections it has meanwhile.
 
 ## Graceful shutdown
 
