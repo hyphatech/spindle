@@ -134,9 +134,9 @@ val rate_limited : retry_after_s:int -> t
 
 val busy : ?retry_after_s:int -> ?detail:string -> unit -> t
 (** Something the request needed did not come free in time -- a connection, room
-    for its body: [503 busy], with [Retry-After] ([retry_after_s] seconds, 1).
-    Refusing at once is what keeps an overloaded server answering; the client is
-    the one that can wait. *)
+    for its body: [503 busy], with [Retry-After] ([retry_after_s] seconds, 1),
+    at least one. Refusing at once is what keeps an overloaded server answering;
+    the client is the one that can wait. *)
 
 val unsupported_media_type : t
 (** A body sent as something the route does not read: [415]. *)

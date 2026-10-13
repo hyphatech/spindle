@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `Spindle.Refusal.busy` writes a `Retry-After` of at least one second,
+  as `rate_limited` does, where a `retry_after_s` below one was written
+  as it came, and a negative one is no `Retry-After` RFC 9110 allows.
+
 - `Spindle.Rate.create` raises `Invalid_argument` for a `per` shorter
   than `limit` nanoseconds, which left no time between two calls and so
   limited nothing. Not breaking in practice: no limit that worked is

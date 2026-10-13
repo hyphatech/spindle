@@ -7581,6 +7581,21 @@ let test_a_routes_statuses_are_checked () =
     "lists 204, which carries no body: declare a bodiless answer with \
      Returns.empty"
 
+(* RFC 9110 §10.2.3: Retry-After is a non-negative number of seconds, so a
+   wait given as less than one is written as one, as a rate limit's is. *)
+let test_a_retry_after_is_at_least_a_second () =
+  let retry_after (r : Spindle.Refusal.t) =
+    List.assoc_opt "retry-after" r.headers
+  in
+  check_header "a busy refusal's, negative" (Some "1")
+    (retry_after (Spindle.Refusal.busy ~retry_after_s:(-5) ()));
+  check_header "a busy refusal's, zero" (Some "1")
+    (retry_after (Spindle.Refusal.busy ~retry_after_s:0 ()));
+  check_header "a busy refusal's, as given" (Some "30")
+    (retry_after (Spindle.Refusal.busy ~retry_after_s:30 ()));
+  check_header "a rate limit's, negative" (Some "1")
+    (retry_after (Spindle.Refusal.rate_limited ~retry_after_s:(-5)))
+
 (* A code is a refusal's: a status that is no failure, which a client would
    read as the route having done what it asked, is refused wherever the code
    is declared. *)
@@ -9011,6 +9026,8 @@ let () =
             test_a_route_answers_the_status_it_chose;
           Alcotest.test_case "a route's statuses are checked" `Quick
             test_a_routes_statuses_are_checked;
+          Alcotest.test_case "a retry-after is at least a second" `Quick
+            test_a_retry_after_is_at_least_a_second;
           Alcotest.test_case "a code's status is a failure" `Quick
             test_a_codes_status_is_a_failure;
           Alcotest.test_case "every problem is told at once" `Quick
