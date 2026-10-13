@@ -109,6 +109,11 @@
   was an `int`: a test compares `Spindle_http.Status.to_int r.status`, or
   matches `` `OK ``.
 
+- **Breaking:** a form's files are read by `Form.File.required`,
+  `Form.File.optional` and `Form.File.list`, each a `Form.File.t`, as
+  its fields are by `Form.required`, `optional` and `list`, where they
+  were `Form.file`, `Form.file_opt` and `Form.files`, each a `Form.file`.
+
 ## 0.3.1 (2026-10-12)
 
 - `Spindle_http.Instant.sleep` blocks a domain or a thread no Eio loop

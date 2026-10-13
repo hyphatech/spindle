@@ -156,23 +156,28 @@ let checked name =
   field name Codec.string ~required:false ~many:false (fun vs ->
       Ok (match vs with [] -> false | _ :: _ -> true))
 
-let file_need name ~required ~many = Dep.File { name; required; many }
+module File = struct
+  type t = file = {
+    filename : string option;
+    content_type : Media_type.t;
+    content : string;
+  }
 
-let file name =
-  from_body
-    ~need:(file_need name ~required:true ~many:false)
-    (fun p -> values_named name p.files)
-    (function
-      | [] -> Error (Input.missing ~at:(field_path name)) | f :: _ -> Ok f)
+  let named name ~required ~many read =
+    from_body
+      ~need:(Dep.File { name; required; many })
+      (fun p -> values_named name p.files)
+      read
 
-let file_opt name =
-  from_body
-    ~need:(file_need name ~required:false ~many:false)
-    (fun p -> values_named name p.files)
-    (function [] -> Ok None | f :: _ -> Ok (Some f))
+  let required name =
+    named name ~required:true ~many:false (function
+      | [] -> Error (Input.missing ~at:(field_path name))
+      | f :: _ -> Ok f)
 
-let files name =
-  from_body
-    ~need:(file_need name ~required:false ~many:true)
-    (fun p -> values_named name p.files)
-    (fun fs -> Ok fs)
+  let optional name =
+    named name ~required:false ~many:false (function
+      | [] -> Ok None
+      | f :: _ -> Ok (Some f))
+
+  let list name = named name ~required:false ~many:true (fun fs -> Ok fs)
+end

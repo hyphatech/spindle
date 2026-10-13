@@ -1789,15 +1789,15 @@ let test_an_upload_is_read_a_part_at_a_time () =
     "is malformed" [ "body" ] (problems_of broken.body)
 
 let test_a_form's_files_are_inputs () =
-  let avatar = Spindle.Form.file_opt "avatar"
-  and docs = Spindle.Form.files "doc"
+  let avatar = Spindle.Form.File.optional "avatar"
+  and docs = Spindle.Form.File.list "doc"
   and name = Spindle.Form.required "name" Spindle.Codec.string in
   let route =
     Spindle.post
       Spindle.Path.(s "profile")
       Spindle.Returns.text
       (let+ n = name and+ a = avatar and+ d = docs in
-       let show (f : Spindle.Form.file) =
+       let show (f : Spindle.Form.File.t) =
          Option.value f.filename ~default:"?"
          ^ "("
          ^ Result.value ~default:"?"

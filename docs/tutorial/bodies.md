@@ -223,9 +223,9 @@ Spindle.post Path.(s "sign-up") (Spindle.Returns.json account_json)
   server's `max_body`. Any other `Content-Type` is `415`.
 - A route reads one body: a form field beside `Spindle.json` is refused when
   the app is made.
-- **Files** are `Form.file`, `file_opt` and `files`, each with a `filename`
-  (text a person chose, never a path to trust), a `content_type` and the
-  `content`. An upload too large to hold in memory is read with
+- **Files** are `Form.File.required`, `optional` and `list`, each a
+  `Form.File.t` with a `filename` (text a person chose, never a path to
+  trust), a `content_type` and the `content`. An upload too large to hold in memory is read with
   `Spindle.multipart` ([large bodies](dependencies.md#large-bodies)).
 
 **No CSRF token is needed.** A cross-site `POST` is refused with `403

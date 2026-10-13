@@ -50,19 +50,24 @@ val checked : string -> bool Dep.t
     A form with a file in it is [multipart/form-data], read whole as the rest of
     a form is. A part with a [filename] is a file, and a file input left empty
     -- which a browser sends as a part with an empty filename and nothing in it
-    -- is no file. *)
+    -- is no file. A file is read as a field is, by its name:
+    [Spindle.Form.File.optional "avatar"]. *)
 
-type file = {
-  filename : string option;
-      (** text a person chose, and never a path: a route that saves a file names
-          it itself *)
-  content_type : Spindle_http.Media_type.t;
-      (** [text/plain] where the part names none (RFC 7578 §4.4) *)
-  content : string;
-}
+module File : sig
+  type t = {
+    filename : string option;
+        (** text a person chose, and never a path: a route that saves a file
+            names it itself *)
+    content_type : Spindle_http.Media_type.t;
+        (** [text/plain] where the part names none (RFC 7578 §4.4) *)
+    content : string;
+  }
 
-val file : string -> file Dep.t
-val file_opt : string -> file option Dep.t
+  val optional : string -> t option Dep.t
+  (** The first file given, if any. *)
 
-val files : string -> file list Dep.t
-(** Every file of one name, in order: a [multiple] file input. *)
+  val required : string -> t Dep.t
+
+  val list : string -> t list Dep.t
+  (** Every file of one name, in order: a [multiple] file input. *)
+end
