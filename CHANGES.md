@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `Spindle_client` sends a URL's path and query as the URL wrote them,
+  where it decoded them and encoded them again: `%3B` went as `;`, `%2F`
+  as `/` and `+` as `%20`, so a signed URL reached its server as one it
+  did not sign.
+
 - A WebSocket handler that raises is logged once, at `error`, with what
   was raised and where: a server's socket on its line saying how it
   ended, where `spindle.http` also logged a line of its own, and a

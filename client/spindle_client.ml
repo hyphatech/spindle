@@ -147,8 +147,8 @@ let with_owner t f =
 exception Unsent of string
 exception Unanswered
 
-(* [authority] is without userinfo (RFC 9110 §7.2); an empty path is "/"
-   (RFC 9112 §3.2.1). *)
+(* [authority] is without userinfo (RFC 9110 §7.2); [path] is the request
+   target, its path and query. *)
 type target = {
   https : bool;
   host : string;
@@ -157,7 +157,34 @@ type target = {
   path : string;
 }
 
-let target_of uri =
+(* The path and query as the URL wrote them, since Uri decodes both and
+   encodes them again its own way: [%3B] would go as [;], [+] as [%20], and
+   a signed URL would no longer be the one signed. Where they begin and end
+   is RFC 3986 Appendix B's -- after a scheme's [:] and an authority's
+   [//], up to a [#] -- and an empty path is "/" (RFC 9112 §3.2.1). *)
+let request_target url =
+  let n = String.length url in
+  let rec up_to i stops =
+    if i < n && not (String.contains stops url.[i]) then up_to (i + 1) stops
+    else i
+  in
+  let scheme_end = up_to 0 ":/?#" in
+  let path =
+    if scheme_end < n && Char.equal url.[scheme_end] ':' then scheme_end + 1
+    else 0
+  in
+  let path =
+    if
+      path + 1 < n && Char.equal url.[path] '/' && Char.equal url.[path + 1] '/'
+    then up_to (path + 2) "/?#"
+    else path
+  in
+  match String.sub url path (up_to path "#" - path) with
+  | "" -> "/"
+  | target when Char.equal target.[0] '?' -> "/" ^ target
+  | target -> target
+
+let target_of ~url uri =
   let https =
     match Uri.scheme uri with
     | Some "https" -> true
@@ -179,7 +206,7 @@ let target_of uri =
       (match Uri.port uri with
       | Some p -> bracketed ^ ":" ^ string_of_int p
       | None -> bracketed);
-    path = (match Uri.path_and_query uri with "" -> "/" | p -> p);
+    path = request_target url;
   }
 
 let pool_key target =
@@ -622,7 +649,8 @@ let call t ?timeout ?(headers = []) ?body meth url =
     match
       Eio.Time.Timeout.run (Eio.Time.Timeout.v t.clock deadline) (fun () ->
           with_owner t (fun sw ->
-              Ok (exchange ~sw t ~headers ~body meth (target_of uri) ~reused)))
+              Ok
+                (exchange ~sw t ~headers ~body meth (target_of ~url uri) ~reused)))
     with
     | Ok answer -> Ok answer
     | Error `Timeout -> Error (Timeout deadline)
@@ -751,7 +779,7 @@ let stream t ?timeout ?read_timeout ?(headers = []) ?body meth url f =
         Eio.Time.Mono.sleep_span t.clock deadline;
         Error `Timeout)
       (fun () ->
-        let target = target_of uri in
+        let target = target_of ~url uri in
         Ok (target, open_answer ~sw t ~headers ~body meth target))
   with
   | Error `Timeout ->
@@ -997,7 +1025,7 @@ let open_websocket t ?timeout ?(headers = []) ?keep_alive ?max_message protocol
            with
           | Some (n, _) -> fail "a request field the client writes itself: %s" n
           | None -> ());
-          let target = target_of (http_uri_of_ws (Uri.of_string url)) in
+          let target = target_of ~url (http_uri_of_ws (Uri.of_string url)) in
           let c = connect ~sw t target in
           let handshake =
             [

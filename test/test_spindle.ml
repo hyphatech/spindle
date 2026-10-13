@@ -3810,6 +3810,58 @@ let test_a_connection_that_cannot_be_watched_is_not_kept () =
   done;
   check_int "each call on a connection of its own" 2 !connections
 
+(* The request target is the URL's own bytes: a signed URL is signed over
+   them, and [%3B] is not [;] to the server that reads it (RFC 3986 §2.2),
+   nor [+] a space in a query, nor [%2F] a slash. The fragment stays with
+   the caller (RFC 9110 §7.1). *)
+let test_a_client_sends_the_url_as_it_was_given () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let listening, connect = In_memory.listen () in
+  let targets = ref [] in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      let rec accept () =
+        let flow, _ = Eio.Net.accept ~sw listening in
+        let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
+        (match Spindle_http.Head.Request.read ~max:65536 r with
+        | Error _ -> ()
+        | Ok head ->
+            targets := !targets @ [ head.target ];
+            Eio.Flow.copy_string
+              "HTTP/1.1 200 OK\r\n\
+               Content-Length: 0\r\n\
+               Connection: close\r\n\
+               \r\n"
+              flow);
+        accept ()
+      in
+      accept ());
+  let urls =
+    [
+      ( "http://t/p%3Bx/a+b?x=a;b&n=%2Fhome&q=a+b&sig=ab%3D%3D#part",
+        "/p%3Bx/a+b?x=a;b&n=%2Fhome&q=a+b&sig=ab%3D%3D" );
+      ("http://t", "/");
+      ("http://t?q=%2F", "/?q=%2F");
+      ("http://t:8080/a%2Fb?", "/a%2Fb?");
+    ]
+  in
+  let net = Eio_mock.Net.make "net" in
+  Eio_mock.Net.on_getaddrinfo net
+    (List.map (fun _ -> `Return [ `Tcp (Eio.Net.Ipaddr.V4.loopback, 80) ]) urls);
+  Eio_mock.Net.on_connect net
+    (List.map (fun _ -> `Run (fun () -> connect ~sw)) urls);
+  let client =
+    Spindle_client.create ~sw ~net ~mono_clock:(Eio.Stdenv.mono_clock env) ()
+  in
+  List.iter
+    (fun (url, _) ->
+      match Spindle_client.call client `GET url with
+      | Ok _ -> ()
+      | Error e -> Alcotest.fail (Spindle_client.error_to_string e))
+    urls;
+  Alcotest.(check (list string))
+    "each target as its URL wrote it" (List.map snd urls) !targets
+
 (* ------------------------------------------------------------------ *)
 (* The edges, over a real socket *)
 
@@ -8463,6 +8515,8 @@ let () =
             `Quick test_a_client_calls_through_the_network_it_is_given;
           Alcotest.test_case "a connection that cannot be watched is not kept"
             `Quick test_a_connection_that_cannot_be_watched_is_not_kept;
+          Alcotest.test_case "a client sends the URL as it was given" `Quick
+            test_a_client_sends_the_url_as_it_was_given;
         ] );
       ( "the edges",
         [
