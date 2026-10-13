@@ -306,6 +306,11 @@ let hand_over t r =
     ~finally:(fun () -> Atomic.set t.awaiting_handler false)
     (fun () -> Eio.Stream.add t.received r)
 
+(* A frame's length is what the peer claims, so a message's buffer starts
+   at most this large and grows as its bytes arrive: fourteen bytes would
+   otherwise hold [max_message]. *)
+let first_buffer_bytes = 4096
+
 let read_frames t ~side ~max_message ~on_frame reader =
   (* [partial] is a fragmented message still arriving, with its kind. *)
   let rec next partial =
@@ -338,7 +343,7 @@ let read_frames t ~side ~max_message ~on_frame reader =
                     fail t Protocol_error
                       "a new message before the last one ended"
                 | None ->
-                    let b = Buffer.create h.length in
+                    let b = Buffer.create (min h.length first_buffer_bytes) in
                     Frame.read_payload reader h b;
                     if h.fin then deliver h.opcode b
                     else next (Some (h.opcode, b)))

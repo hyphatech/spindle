@@ -346,6 +346,29 @@ let test_a_length_is_written_in_the_fewest_bytes () =
       written := Buffer.contents out);
   Alcotest.(check int) "126: a length in two bytes" 126 (Char.code !written.[1])
 
+(* 10.4: a frame's length is the peer's claim, and memory is held for the
+   bytes that arrive, never for the claim. Fourteen bytes declaring sixteen
+   MiB, under a limit that allows them, cost what fourteen declaring sixteen
+   bytes cost; counted in bytes allocated, so no clock decides it. *)
+let test_a_declared_length_holds_no_memory () =
+  let max_message = 16 * 1024 * 1024 in
+  let allocated length =
+    let header = frame ~length 2 "" in
+    let before = Gc.allocated_bytes () in
+    ignore
+      (over_raw Whole header (fun c -> Ws.run_server ~max_message bytes c echo)
+        : (unit, Ws.error) result * string);
+    Gc.allocated_bytes () -. before
+  in
+  ignore (allocated 16 : float);
+  let small = allocated 16 in
+  let large = allocated max_message in
+  Alcotest.(check bool)
+    (Printf.sprintf "%.0f bytes allocated for a 16 MiB claim, %.0f for 16" large
+       small)
+    true
+    (large -. small < 65_536.)
+
 (* ------------------------------------------------------------------ *)
 (* A client's frames *)
 
@@ -973,6 +996,8 @@ let () =
             Alcotest.test_case "5.2 a send cut off mid-frame ends the socket"
               `Quick
               (test_a_send_cut_off_mid_frame_ends_the_socket As_server);
+            Alcotest.test_case "10.4 a declared length holds no memory" `Quick
+              test_a_declared_length_holds_no_memory;
           ] );
       ( "a client's frames",
         each check_client client_rows (fun r -> r.c_rfc ^ " " ^ r.c_says)

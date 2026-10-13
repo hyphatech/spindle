@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- A WebSocket message's buffer grows as its bytes arrive, where it was
+  made as large as its first frame declared: fourteen bytes from a peer
+  held as much memory as `max_message` allows, a mebibyte by default,
+  for as long as the peer cared to send nothing more.
+
 - `Spindle_client` sends a URL's path and query as the URL wrote them,
   where it decoded them and encoded them again: `%3B` went as `;`, `%2F`
   as `/` and `+` as `%20`, so a signed URL reached its server as one it
