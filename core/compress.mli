@@ -13,7 +13,9 @@
     and is on a route that did not say {!never}. A [HEAD] gets the length its
     [GET] would. Every answer of a listed type says [Vary: Accept-Encoding],
     compressed or not, and an entity tag on a compressed one carries the coding
-    inside its quotes, so the two representations are never taken for one.
+    inside its quotes, so the two representations are never taken for one. A
+    [GET] or [HEAD] whose [If-None-Match] holds the compressed one's tag is
+    answered [304], with that tag and the [Vary].
 
     {b A stream is compressed as it goes}: every [send] reaches the client as a
     sync flush, so what it sent can be decoded when it arrives and an event is

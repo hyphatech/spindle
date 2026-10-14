@@ -14,3 +14,7 @@ val never : unit Meta.key
 
 val compressible : t -> string option -> bool
 (** Whether an answer of this [Content-Type] is one [t] compresses. *)
+
+val gzip_tag : Spindle_http.Etag.t -> Spindle_http.Etag.t
+(** The tag of a representation gzipped as it is answered: its own, marked
+    [-gzip], since a tag names one representation. *)

@@ -2162,6 +2162,35 @@ let test_an_answer_is_compressed_where_it_may_be () =
           ~headers:[ ("accept-encoding", "gzip") ])
        "content-encoding")
 
+(* A tag names one representation, so a compressed answer's is marked. A
+   client that sends the marked tag back holds that representation, and is
+   answered 304 with the tag and the Vary the whole answer carried (RFC
+   9110 §13.1.2, §15.4.5); one that sends another, or no longer takes
+   gzip, gets the whole answer. *)
+let test_a_compressed_answer_revalidates () =
+  let a =
+    Spindle.Test.app ~compress:Spindle.Compress.default compressed_routes
+  in
+  let get ?(accept = "gzip") ?(meth = `GET) tags =
+    Spindle.Test.call a meth "/large"
+      ~headers:[ ("accept-encoding", accept); ("if-none-match", tags) ]
+  in
+  let r = get {|"v1-gzip"|} in
+  check_status "the marked tag is not modified" 304 r.status;
+  check_header "repeating it" (Some {|"v1-gzip"|})
+    (Spindle.Test.header r "etag");
+  check_header "and what it varies by" (Some "Accept-Encoding")
+    (Spindle.Test.header r "vary");
+  check_string "with no body" "" r.body;
+  check_header "nor a coding" None (Spindle.Test.header r "content-encoding");
+  check_status "a weak one, compared weakly" 304 (get {|W/"v1-gzip"|}).status;
+  check_status "one among several" 304 (get {|"v0", "v1-gzip"|}).status;
+  check_status "any" 304 (get "*").status;
+  check_status "a HEAD as a GET" 304 (get ~meth:`HEAD {|"v1-gzip"|}).status;
+  check_status "another tag is the whole answer" 200 (get {|"v2-gzip"|}).status;
+  check_status "as is the marked tag where gzip is no longer taken" 200
+    (get ~accept:"identity" {|"v1-gzip"|}).status
+
 (* ---------------------------------------------------------------- *)
 (* Rate limits *)
 
@@ -7022,6 +7051,29 @@ let test_a_static_file's_precompressed_sibling_is_served () =
           ~headers:[ ("accept-encoding", "br") ])
        "vary")
 
+(* A static file compressed as it is answered revalidates by the tag it
+   was answered with, as one served as it is does. *)
+let test_a_compressed_static_file_revalidates () =
+  with_site [ ("page.txt", String.make 4096 'a') ] @@ fun root ->
+  let a =
+    Spindle.Test.app ~compress:Spindle.Compress.default
+      [ Spindle.Static.route (loaded root) ]
+  in
+  let get headers =
+    Spindle.Test.call a `GET "/page.txt"
+      ~headers:(("accept-encoding", "gzip") :: headers)
+  in
+  let first = get [] in
+  check_header "compressed" (Some "gzip")
+    (Spindle.Test.header first "content-encoding");
+  match Spindle.Test.header first "etag" with
+  | None -> Alcotest.fail "no tag"
+  | Some tag ->
+      let again = get [ ("if-none-match", tag) ] in
+      check_status "not modified" 304 again.status;
+      check_header "by the tag it was answered with" (Some tag)
+        (Spindle.Test.header again "etag")
+
 let test_a_file's_precompressed_sibling_is_served () =
   with_site (List.map (fun (n, b) -> ("files/" ^ n, b)) sibling_site)
   @@ fun root ->
@@ -8771,6 +8823,10 @@ let () =
             test_a_compression_that_cannot_be_is_refused;
           Alcotest.test_case "an answer is compressed where it may be" `Quick
             test_an_answer_is_compressed_where_it_may_be;
+          Alcotest.test_case "a compressed answer revalidates" `Quick
+            test_a_compressed_answer_revalidates;
+          Alcotest.test_case "a compressed static file revalidates" `Quick
+            test_a_compressed_static_file_revalidates;
           Alcotest.test_case "a stream compresses in process" `Quick
             test_a_stream_compresses_in_process;
           Alcotest.test_case "a static file's precompressed sibling is served"

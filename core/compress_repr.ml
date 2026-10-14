@@ -6,6 +6,9 @@ type t = { min_bytes : int; level : int; types : string list }
 
 let never : unit Meta.key = Meta.key ()
 
+(* A tag names one representation, so a gzipped one's is the tag marked. *)
+let gzip_tag (t : Spindle_http.Etag.t) = { t with opaque = t.opaque ^ "-gzip" }
+
 (* [type/subtype], [type/*], or [type/*+suffix], compared without case. *)
 let type_matches (m : Media_type.t) pattern =
   match String.split_on_char '/' (String.lowercase_ascii pattern) with

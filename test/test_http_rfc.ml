@@ -4274,6 +4274,69 @@ let test_a_representation_answers_as_the_rfc_says () =
            (call (List.map (fun (n, v) -> (n, fill v)) headers)).status))
     representation_rows
 
+(* A representation compressed as it is answered is another
+   representation, named by its own tag: revalidated by that tag, answered
+   304 with it and with its Vary, and never the identity's for a range. *)
+let compressed_rows =
+  let tag = "TAG" in
+  [
+    representation_row "9110 §13.1.2"
+      "If-None-Match by the tag a compressed answer carried"
+      [ ("if-none-match", tag) ]
+      304;
+    representation_row "9110 §13.1.2" "and weakly"
+      [ ("if-none-match", "W/" ^ tag) ]
+      304;
+    representation_row "9110 §13.1.5"
+      "If-Range by a compressed answer's tag is not the identity's"
+      [ ("range", "bytes=0-1"); ("if-range", tag) ]
+      200;
+  ]
+
+let test_a_compressed_representation_answers_as_the_rfc_says () =
+  Eio_main.run @@ fun env ->
+  let dir = Filename.temp_dir "spindle_rfc" "" in
+  let root = Eio.Path.(Eio.Stdenv.fs env / dir) in
+  Eio.Path.save ~create:(`Or_truncate 0o644)
+    Eio.Path.(root / "f.txt")
+    (String.make 4096 'a');
+  let site =
+    match Spindle.Static.load root with
+    | Ok site -> site
+    | Error m -> Alcotest.failf "the site was refused: %s" m
+  in
+  let app =
+    Spindle.Test.app ~compress:Spindle.Compress.default
+      [ Spindle.Static.route site ]
+  in
+  let call headers =
+    Spindle.Test.call
+      ~headers:(("accept-encoding", "gzip") :: headers)
+      app `GET "/f.txt"
+  in
+  let whole = call [] in
+  let tag = Option.value ~default:"" (Spindle.Test.header whole "etag") in
+  let fill v =
+    if String.equal v "TAG" then tag
+    else if String.equal v "W/TAG" then "W/" ^ tag
+    else v
+  in
+  List.iter
+    (fun (rfc, says, headers, status) ->
+      Alcotest.(check int)
+        (rfc ^ ": " ^ says)
+        status
+        (Status.to_int
+           (call (List.map (fun (n, v) -> (n, fill v)) headers)).status))
+    compressed_rows;
+  let not_modified = call [ ("if-none-match", tag) ] in
+  Alcotest.(check (option string))
+    "9110 §15.4.5: a 304 repeats the tag" (Some tag)
+    (Spindle.Test.header not_modified "etag");
+  Alcotest.(check (option string))
+    "9110 §15.4.5: and the Vary" (Some "Accept-Encoding")
+    (Spindle.Test.header not_modified "vary")
+
 module Forwarded = Spindle_http.Forwarded
 
 let show_node (n : Forwarded.node) =
@@ -4744,6 +4807,9 @@ let () =
             test_a_date_is_an_imf_fixdate;
           Alcotest.test_case "9110 §13, §14: a representation's answers" `Quick
             test_a_representation_answers_as_the_rfc_says;
+          Alcotest.test_case
+            "a compressed representation answers as the rfc says" `Quick
+            test_a_compressed_representation_answers_as_the_rfc_says;
           Alcotest.test_case
             "9110 §15.5.2: a 401 without a challenge is refused" `Quick
             test_a_401_without_a_challenge_is_refused;

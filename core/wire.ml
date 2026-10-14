@@ -75,7 +75,7 @@ let gzip_tag headers =
       if String.equal (String.lowercase_ascii k) "etag" then
         match
           Result.bind (Spindle_http.Etag.parse v) (fun t ->
-              Spindle_http.Etag.to_string { t with opaque = t.opaque ^ "-gzip" })
+              Spindle_http.Etag.to_string (Compress_repr.gzip_tag t))
         with
         | Ok tag -> (k, tag)
         | Error _ -> (k, v)

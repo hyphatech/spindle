@@ -807,6 +807,41 @@ let answer_resolution t ~body ~answered_route resolution req =
         | Some f -> with_raise_as_500 f req
         | None -> Response.refusal Refusal.not_found)
 
+(* The route compared the request's tags with the one it set, and a client
+   holding the gzipped representation sent that one's, marked: so
+   If-None-Match is asked again of what is answered (RFC 9110 §13.1.2), and
+   a 304 repeats the marked tag and the fields the whole answer carried that
+   a 304 does (§15.4.5). *)
+let held_gzipped req response =
+  let module Etag = Spindle_http.Etag in
+  let module Field = Spindle_http.Field in
+  let headers = Response.headers response in
+  match
+    ( Request.meth req,
+      Option.map Etag.parse (Field.find headers "etag"),
+      Field.all (Request.headers req) "if-none-match" )
+  with
+  | (`GET | `HEAD), Some (Ok tag), (_ :: _ as lines) -> (
+      let marked = Compress_repr.gzip_tag tag in
+      match
+        (Etag.condition (String.concat ", " lines), Etag.to_string marked)
+      with
+      | Ok condition, Ok written
+        when match condition with
+             | Etag.Any -> true
+             | Etag.Tags tags -> List.exists (Etag.weak_equal marked) tags ->
+          let repeated (k, _) =
+            List.mem (String.lowercase_ascii k)
+              [ "cache-control"; "content-location"; "expires"; "vary" ]
+          in
+          Some
+            (Response.empty ~status:`Not_modified
+               ~headers:(("etag", written) :: List.filter repeated headers)
+               ()
+            |> Response.add_cookies (Response.cookies response))
+      | (Ok _ | Error _), (Ok _ | Error _) -> None)
+  | _, _, _ -> None
+
 (* A compressible type always varies by Accept-Encoding, and is gzipped where
    the client takes gzip and nothing forbids it: a coding of its own,
    no-transform, a partial or empty status, a route that opted out, a body
@@ -883,7 +918,10 @@ let choose_gzip t req matched response =
         && (not (has_header "content-encoding"))
         && (not no_transform) && (not route_opted_out) && large_enough
         && is_whole
-      then (response, Some c.level)
+      then
+        match held_gzipped req response with
+        | Some not_modified -> (not_modified, None)
+        | None -> (response, Some c.level)
       else (response, None)
 
 (* A raise is caught at the route, so the access log names it, and again

@@ -17,6 +17,12 @@
   methods -- are now the document's `Error`, saying to give them one
   name, and so are the routes of one operation that answer in different
   ways or read different bodies.
+- A compressed answer revalidates: a `GET` whose `If-None-Match` holds
+  the tag a gzipped answer carried, marked `-gzip`, is answered `304`
+  with that tag and its `Vary: Accept-Encoding`, where it was the whole
+  answer again, since the route compared the request's tags with the one
+  it set before the answer was compressed. A static site served with
+  `compress` was downloaded whole on every visit.
 
 ## 0.4.0 (2026-10-13)
 
