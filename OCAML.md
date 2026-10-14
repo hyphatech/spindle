@@ -362,11 +362,11 @@ or aliased name defeats a text search.
 
 Nothing is on PATH. Every OCaml tool runs through the repository's opam
 switch, named `hypha-<name>` after the `(name)` its `dune-project`
-declares, as `opam exec --switch=hypha-<name> --` or through the
-Makefile, whose `SWITCH` names it; no `eval`. The checkout and every
-worktree of it use that one switch, by its name, so a worktree needs no
-setup of its own. `make setup` installs Merlin and `ocaml-lsp-server` with
-the rest.
+declares, as `opam exec --switch=hypha-<name> --` or through the Makefile,
+whose `SWITCH` names it and which the language server reads; no `eval`.
+The checkout and every worktree of it use that one switch, by its name, so
+a worktree needs no setup of its own. `make setup` installs Merlin and
+`ocaml-lsp-server` with the rest.
 
 **`ocamllsp` runs as the agent's language server**, from the repository's
 switch. It answers every edit to OCaml source with its type errors,
