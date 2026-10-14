@@ -44,5 +44,5 @@ jobs:
       - run: opam install . --deps-only --with-test -y
       - run: opam list --installed --columns=name,version
       - run: make db
-      - run: opam exec -- dune build --pkg disabled -p spindle,spindle-postgres,spindle-cli @install
+      - run: opam exec -- dune build -p spindle,spindle-postgres,spindle-cli @install
       - run: opam exec -- dune test --pkg disabled --force
