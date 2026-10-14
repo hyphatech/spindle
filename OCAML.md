@@ -165,6 +165,26 @@ the next where they expect it.
   for the same, every switch is that OCaml, and CI builds on it with the
   oldest versions the opam files allow. They move together, never one
   repository alone.
+- **opam resolves the dependencies; dune only builds.** A package's
+  dependencies are declared in `dune-project`, with ranges, and dune
+  writes the opam files from it. A Hypha library another depends on is
+  pinned in the `*.opam.template`'s `pin-depends`, at a release's tag on
+  GitHub, until the libraries are in opam-repository and the pins go.
+  `make setup` makes the checkout's switch, `./_opam`, and installs into
+  it with `opam install . --deps-only`, which resolves everything, the
+  pins included; a new release is taken by moving its tag and the bound
+  and running `make setup` again. An application commits its solution as
+  an opam lock (`make lock` after an upgrade); a library commits none,
+  its users solving their own. Why: it is how the libraries' users get
+  them, so the build every contributor runs is the one users run; and
+  dune's own package management (`dune pkg`, `(pkg enabled)`, `(pin)`)
+  is not final, as its documentation says, its lock directories not yet
+  stable -- tried here and taken back on 2026-10-14, when a
+  `dune-workspace` asking for a newer dune than the opam files broke
+  installing every library with opam. It is weighed again when dune
+  calls it final. Symptom: a `dune-workspace`, a `(pin)`, a pin of a
+  checkout by path, or a step that pins, upgrades or reinstalls a
+  package by hand.
 - **A library reaches only what it lists.** Every `dune-project` sets
   `(implicit_transitive_deps false)`, so a `dune` file's `libraries` are
   all its code can name, never a library it gets through another. Why: a
