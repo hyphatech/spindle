@@ -6,6 +6,8 @@ type t =
   | `PATCH
   | `DELETE
   | `OPTIONS
+  | `CONNECT
+  | `TRACE
   | `Other of string ]
 
 let to_string : t -> string = function
@@ -16,6 +18,8 @@ let to_string : t -> string = function
   | `PATCH -> "PATCH"
   | `DELETE -> "DELETE"
   | `OPTIONS -> "OPTIONS"
+  | `CONNECT -> "CONNECT"
+  | `TRACE -> "TRACE"
   | `Other m -> m
 
 let equal a b = String.equal (to_string a) (to_string b)

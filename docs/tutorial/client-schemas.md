@@ -23,7 +23,7 @@ bin/
 ```lisp title="bin/dune"
 (executables
  (names main notes)
- (libraries spindle spindle_cli eio_main)
+ (libraries spindle spindle-cli eio_main)
  (preprocess
   (pps ppx_wiretype)))
 ```
@@ -147,10 +147,11 @@ Spindle.Zod.module_ app   (* TypeScript: zod/mini *)
 
 It answers a `result`; its `Error` names two different types described
 under one name, two routes whose paths make one operation
-(`/a-b` and `/a_b`), and two whose paths differ only in a parameter's
-name (`/items/{id}` and `/items/{item}`). Routes told apart by a
-parameter's type are one entry, whose body and answer are either
-route's.
+(`/a-b` and `/a_b`), two whose paths differ only in a parameter's
+name (`/items/{id}` and `/items/{item}`), and routes told apart by a
+parameter's type that answer in different ways or read different bodies.
+Routes told apart by a parameter's type are one entry, whose body and
+answer are either route's.
 
 That is the tutorial. The [guides](../guide/pages.md) take each of the
 rest a page at a time.

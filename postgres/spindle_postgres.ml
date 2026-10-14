@@ -4,12 +4,10 @@ module Session = Session
 type error =
   [ Rowtype.error
   | Rowtype_postgres.Transaction.failure
-  | `Pool of [ `Busy | `Closed ] ]
+  | Rowtype_postgres.Pool.error ]
 
-let error_to_string : [< error ] -> string = function
-  | `Pool _ as e -> Rowtype_postgres.Pool.error_to_string e
-  | (#Rowtype_postgres.Transaction.failure | #Rowtype.error) as e ->
-      Rowtype_postgres.Transaction.error_to_string e
+let error_to_string : [< error ] -> string =
+ fun e -> Rowtype_postgres.error_to_string (e :> Rowtype_postgres.error)
 
 module L = (val Logs.src_log Source.src : Logs.LOG)
 
@@ -24,16 +22,19 @@ let refusal : [< error ] -> Spindle.Refusal.t = function
   | `Pool `Closed ->
       L.warn (fun m -> m "the database pool is closed");
       Spindle.Refusal.busy ()
+  | `Unsent detail ->
+      L.warn (fun m -> m "the database could not be reached: %s" detail);
+      Spindle.Refusal.busy ()
   | `Not_committed detail -> Spindle.Refusal.internal ~detail
   | `Not_serializable detail -> Spindle.Refusal.busy ~detail ()
   | #Rowtype.error as e ->
       Spindle.Refusal.internal ~detail:(Rowtype.error_to_string e)
 
 let connect ~sw ~net ~mono_clock:clock ?statement_timeout
-    ?idle_in_transaction_timeout ?connect_timeout ?parameters ?timeout
-    ?statement_cache target =
-  Result.bind
-    (Bounds.apply ?statement_timeout ?idle_in_transaction_timeout
-       ?connect_timeout ?parameters target) (fun (c, parameters) ->
-      Rowtype_postgres.connect ~sw ~net ~mono_clock:clock ~parameters
-        ~observe:Traced.observer ?timeout ?statement_cache c)
+    ?idle_in_transaction_timeout ?parameters ?timeout ?statement_cache target =
+  let c, parameters =
+    Bounds.apply ?statement_timeout ?idle_in_transaction_timeout ?parameters
+      target
+  in
+  Rowtype_postgres.connect ~sw ~net ~mono_clock:clock ~parameters
+    ~observe:Traced.observer ?timeout ?statement_cache c

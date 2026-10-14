@@ -72,11 +72,11 @@ let data s = s.data
 
 type error = Store of string | Unencodable of Wiretype.Unwritable.t
 
-let refusal = function
-  | Store detail -> Refusal.internal ~detail:("a session store: " ^ detail)
-  | Unencodable e ->
-      Refusal.internal
-        ~detail:("a session's data: " ^ Wiretype.Unwritable.to_string e)
+let error_to_string = function
+  | Store m -> "a session store: " ^ m
+  | Unencodable e -> "a session's data: " ^ Wiretype.Unwritable.to_string e
+
+let refusal e = Refusal.internal ~detail:(error_to_string e)
 
 (* The store knows a session by its id's digest, never by its id. *)
 let digest_of_id id = Digestif.SHA256.(to_hex (digest_string id))

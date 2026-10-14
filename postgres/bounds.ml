@@ -11,25 +11,25 @@ let milliseconds span =
        (Int64.add (Mtime.Span.to_uint64_ns span) 999_999L)
        1_000_000L)
 
+(* Ten seconds to connect where the target names no bound of its own, as a
+   server would rather say its database is unreachable than wait. *)
+let connect_timeout = Mtime.Span.(10 * s)
+
 let apply ?(statement_timeout = Mtime.Span.(10 * s))
-    ?(idle_in_transaction_timeout = Mtime.Span.(30 * s))
-    ?(connect_timeout = Mtime.Span.(10 * s)) ?(parameters = []) target =
-  Result.map
-    (fun (c : Pg.Conninfo.t) ->
-      (* DateStyle because an instant is read as the server writes it; the
-         timeouts so the server ends a hung statement or a forgotten
-         transaction rather than leaving it holding a pooled connection and
-         its locks. The application's parameters win. *)
-      let framework =
-        [
-          ("statement_timeout", milliseconds statement_timeout);
-          ( "idle_in_transaction_session_timeout",
-            milliseconds idle_in_transaction_timeout );
-          ("DateStyle", "ISO");
-        ]
-      in
-      ( Pg.Conninfo.with_connect_timeout c
-          (Option.value c.connect_timeout ~default:connect_timeout),
-        List.filter (fun (k, _) -> not (List.mem_assoc k parameters)) framework
-        @ parameters ))
-    (Pg.conninfo target)
+    ?(idle_in_transaction_timeout = Mtime.Span.(30 * s)) ?(parameters = [])
+    (c : Pg.Conninfo.t) =
+  (* The timeouts so the server ends a hung statement or a forgotten
+     transaction rather than leaving it holding a pooled connection and its
+     locks. The application's parameters win. *)
+  let framework =
+    [
+      ("statement_timeout", milliseconds statement_timeout);
+      ( "idle_in_transaction_session_timeout",
+        milliseconds idle_in_transaction_timeout );
+    ]
+  in
+  ( (match c.connect_timeout with
+    | Some _ -> c
+    | None -> Pg.Conninfo.with_connect_timeout c connect_timeout),
+    List.filter (fun (k, _) -> not (List.mem_assoc k parameters)) framework
+    @ parameters )

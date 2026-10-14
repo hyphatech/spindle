@@ -2,11 +2,33 @@
    two stages, and the identity its answer is shared by. *)
 
 type body =
-  | Raw : body
+  | Raw : { content_types : string list } -> body
   | Json : { description : 'a Wiretype.t; examples : 'a list } -> body
-  | Stream : body
+  | Stream : { content_types : string list } -> body
   | Form : body
   | Multipart : body
+
+(* RFC 8259 §11 defines no parameters. Anything else is refused because a
+   browser posts text/plain or a form cross-site without a preflight, and
+   JSON only with one. *)
+let json_types = [ "application/json"; "application/*+json" ]
+
+(* The types a body is read in, none for any. *)
+let content_types = function
+  | Raw { content_types } | Stream { content_types } -> content_types
+  | Json _ -> json_types
+  | Form | Multipart -> []
+
+(* A request that names no type is read; one that names another, or none
+   that can be read, is not. *)
+let takes_content_type content_types request =
+  match (content_types, Request_repr.header request "content-type") with
+  | [], _ | _ :: _, None -> true
+  | patterns, Some named -> (
+      match Spindle_http.Media_type.parse named with
+      | Ok m ->
+          List.exists (fun p -> Spindle_http.Media_type.matches p m) patterns
+      | Error _ -> false)
 
 type input = {
   name : string;

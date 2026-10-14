@@ -93,6 +93,10 @@ type error =
   | Unreadable of string
       (** a message its description could not read, in words for the log; the
           socket is still open *)
+  | Unwritable of string
+      (** a message its description could not write -- a value its JSON
+          description cannot encode, text that is not UTF-8 (§8.1) -- in words
+          for the log; nothing was sent, and the socket is still open *)
 
 val error_to_string : error -> string
 
@@ -103,20 +107,20 @@ val receive : ('i, _) t -> ('i, error) result
 val send : (_, 'o) t -> 'o -> (unit, error) result
 (** Answers once the message is written. A peer that takes nothing written for
     the connection's [send_timeout] makes it [Lost]; one still taking it,
-    however slowly, is sent the whole. A value its own description cannot encode
-    is our bug: logged as an error, and nothing is sent. A send cancelled -- by
-    a timeout, or an [Eio.Fiber.first] it lost -- may have written part of its
-    frame, which the peer would read the next frame into, so it ends the socket
-    as [Lost] and the cancellation goes on: every later send answers [Lost], and
-    nothing more is written. *)
+    however slowly, is sent the whole. A value its description cannot write --
+    one JSON cannot encode, text that is not UTF-8 -- is [Unwritable], and
+    nothing is sent. A send cancelled -- by a timeout, or an [Eio.Fiber.first]
+    it lost -- may have written part of its frame, which the peer would read the
+    next frame into, so it ends the socket as [Lost] and the cancellation goes
+    on: every later send answers [Lost], and nothing more is written. *)
 
 type 'o encoded
 (** A message encoded once, to be sent to many sockets: what a
     [Spindle.Broadcast] of sockets carries, so the publisher renders once. *)
 
 val encode : 'o message -> 'o -> 'o encoded
-(** A value its own description cannot encode is our bug: logged as an error
-    here, and the message sends nothing. *)
+(** A value its description cannot write makes a message every send of which
+    answers [Unwritable]. *)
 
 val send_encoded : (_, 'o) t -> 'o encoded -> (unit, error) result
 
@@ -153,11 +157,12 @@ val run_client :
   (('s, 'c) t -> ('a, error) result) ->
   ('a, error) result
 (** [f]'s result, once the socket is closed. How it ended decides the close:
-    [Ok] is [Normal], an [Unreadable] is [Invalid_data], and a socket already
-    closed or lost has nothing left to close; a close sent waits a second for
-    the peer's. [f] raising closes it with [Internal], and the raise goes on. A
-    ping goes when nothing has been heard for [keep_alive] (15 s), and a peer
-    silent for twice that is [Lost]; a message longer than [max_message] (1 MiB)
-    closes it with [Too_big]. [mask] makes each frame's four bytes of masking,
-    which must be unpredictable (§5.3); a mask of another length is our bug:
-    logged, and the send answers [Lost]. *)
+    [Ok] is [Normal], an [Unreadable] is [Invalid_data], an [Unwritable]
+    [Internal], and a socket already closed or lost has nothing left to close; a
+    close sent waits a second for the peer's. [f] raising closes it with
+    [Internal], and the raise goes on. A ping goes when nothing has been heard
+    for [keep_alive] (15 s), and a peer silent for twice that is [Lost]; a
+    message longer than [max_message] (1 MiB) closes it with [Too_big]. [mask]
+    makes each frame's four bytes of masking, which must be unpredictable
+    (§5.3); a mask of another length is our bug: logged, and the send answers
+    [Lost]. *)

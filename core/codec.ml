@@ -1,8 +1,14 @@
 include Codec_repr
 
+(* What a client is told for a text that is not what a codec reads. *)
+let not_one expects = "This is not " ^ expects ^ "."
+
+(* A built-in parser answering an option, told as [expects]. *)
+let told expects parse s = Option.to_result ~none:(not_one expects) (parse s)
+
 let string =
   {
-    parse = Option.some;
+    parse = (fun s -> Ok s);
     print = Fun.id;
     expects = "some text";
     shape = String;
@@ -24,7 +30,7 @@ let parse_decimal of_string s =
 
 let int =
   {
-    parse = parse_decimal int_of_string_opt;
+    parse = told "a whole number" (parse_decimal int_of_string_opt);
     print = string_of_int;
     expects = "a whole number";
     shape = Integer;
@@ -34,7 +40,7 @@ let int =
 
 let int64 =
   {
-    parse = parse_decimal Int64.of_string_opt;
+    parse = told "a whole number" (parse_decimal Int64.of_string_opt);
     print = Int64.to_string;
     expects = "a whole number";
     shape = Integer;
@@ -87,7 +93,7 @@ let shortest_float v =
 
 let float =
   {
-    parse = parse_float;
+    parse = told "a number" parse_float;
     print = shortest_float;
     expects = "a number";
     shape = Number;
@@ -102,8 +108,9 @@ let float =
 let of_kind ~expects format kind =
   let parse s =
     match Wiretype.encode Wiretype.string s with
-    | Ok json -> Result.to_option (Wiretype.decode kind json)
-    | Error _ -> None
+    | Ok json ->
+        Result.map_error (fun _ -> not_one expects) (Wiretype.decode kind json)
+    | Error _ -> Error (not_one expects)
   in
   let print v =
     match Wiretype.encode kind v with
@@ -122,7 +129,11 @@ let instant =
 
 let bool =
   {
-    parse = (function "true" -> Some true | "false" -> Some false | _ -> None);
+    parse =
+      (function
+      | "true" -> Ok true
+      | "false" -> Ok false
+      | _ -> Error (not_one "true or false"));
     print = string_of_bool;
     expects = "true or false";
     shape = Boolean;
@@ -130,24 +141,26 @@ let bool =
     list = false;
   }
 
-let enum ~kind to_string values =
+let enum ?kind to_string values =
   let words = List.map to_string values in
+  let expects = "one of " ^ String.concat ", " words in
   {
     parse =
-      (fun s -> List.find_opt (fun v -> String.equal (to_string v) s) values);
+      told expects (fun s ->
+          List.find_opt (fun v -> String.equal (to_string v) s) values);
     print = to_string;
-    expects = "one of " ^ String.concat ", " words;
+    expects;
     shape = Enum words;
-    kind = Some kind;
+    kind;
     list = false;
   }
 
-let custom ~kind ?expects ?(list = false) ~parse ~print () =
+let custom ~kind ?(list = false) ~parse ~print () =
   {
     parse;
     print;
     (* "a valid int64" reads as a sentence; "a int64" does not. *)
-    expects = Option.value expects ~default:("a valid " ^ kind);
+    expects = "a valid " ^ kind;
     shape = String;
     kind = Some kind;
     list;
@@ -162,7 +175,7 @@ let kind c = c.kind
 (* Parsed by spindle_http, never by the application. *)
 let structured ~list ~kind ~expects parse print =
   {
-    parse = (fun s -> Result.to_option (parse s));
+    parse = (fun s -> Result.map_error (fun _ -> not_one expects) (parse s));
     print;
     expects;
     shape = String;

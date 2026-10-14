@@ -37,15 +37,18 @@ let net () = Eio.Stdenv.net (fst (io ()))
 let mono () = Eio.Stdenv.mono_clock (fst (io ()))
 
 let server () =
-  match base with
+  match Option.map Rowtype_postgres.Conninfo.of_string base with
   | None -> Alcotest.fail "SPINDLE_TEST_PG is not set"
-  | Some server -> server
+  | Some (Ok server) -> server
+  | Some (Error m) -> Alcotest.failf "SPINDLE_TEST_PG: %s" m
 
-(* The server a URL names, with the database path replaced. *)
-let on_database name =
-  match Rowtype_postgres.on_database ~server:(server ()) name with
-  | Ok url -> url
-  | Error e -> Alcotest.failf "SPINDLE_TEST_PG: %s" (Rowtype.error_to_string e)
+let conninfo url =
+  match Rowtype_postgres.Conninfo.of_string url with
+  | Ok c -> c
+  | Error m -> Alcotest.failf "%s: %s" url m
+
+(* The server SPINDLE_TEST_PG names, with another database. *)
+let on_database name = Rowtype_postgres.Conninfo.with_database (server ()) name
 
 let connect url =
   match

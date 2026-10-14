@@ -86,14 +86,12 @@ let statements ~table =
   let s = statements_for ~table in
   S.[ Any s.find; Any s.save; Any s.delete; Any s.sweep ]
 
-let error_to_string = function
-  | `Pool _ as e -> Rowtype_postgres.Pool.error_to_string e
-  | #S.error as e -> S.error_to_string e
+let error_to_string e = Rowtype_postgres.error_to_string e
 
 let store pool ~table =
   let s = statements_for ~table in
   let run statement params =
-    Result.map_error error_to_string (Pool.query pool statement params)
+    Result.map_error error_to_string (Pool.exec pool statement params)
   in
   {
     Spindle.Session.find =

@@ -2,6 +2,163 @@
 
 ## Unreleased
 
+- A content type a route takes that is no `type/subtype`, `type/*` or
+  `type/*+suffix` -- `"json"`, `"application/ json"`, one with parameters
+  -- is refused by `App.make`, naming the route and the pattern, so
+  `Spindle.serve` and `Test.app` raise on it, where it matched nothing and
+  refused every body without a word. `Compress.make` raises
+  `Invalid_argument` for such a `~types` entry, which compressed nothing.
+  `Spindle_http.Media_type.is_pattern` is the test.
+- Through wiretype 0.5.0, an answer outside its description's bounds is
+  never written: the route's bug, a `500` logged with why. A read-only
+  member a request sends is not read, and a write-only one is never in an
+  answer, as the API's document already said.
+- Breaking: `spindle` needs wiretype 0.5.0, and depends on Uuidm.
+  `Spindle.Codec.uuid` is a `Uuidm.t`, where it was a `string`, as a UUID
+  is in a body and in a row, so one identifier crosses them as one type.
+- Breaking: a codec of your own is spelt as wiretype spells a kind:
+  `Codec.custom ~kind ~parse ~print ()`, whose `~parse` answers
+  `Ok` the value or `Error` the sentence a client is told, where it
+  answered an option and `?expects` ended a sentence the framework made.
+  `Codec.parse` answers the same `result`. `Codec.enum`'s `~kind` is
+  optional, as `Wiretype.enum`'s is.
+- Breaking: `spindle-postgres` needs rowtype 0.7.0 and postgres-eio 0.5.0.
+  A connection target is a `Rowtype_postgres.Conninfo.t` for
+  `Spindle_postgres.connect` and `Pool.create`, read from a connection
+  string by `Conninfo.of_string`; `Pool.run`, a program's entry point,
+  still takes the string and reads it once, a string that does not parse
+  ending the program as a database that refuses does. `?connect_timeout`
+  is gone: the target carries its own (`Conninfo.with_connect_timeout`),
+  and one that names none is still bounded at 10 s.
+- Breaking: `Spindle_postgres.Pool.query`, which runs one statement, is
+  `Pool.exec`, so it is not taken for rowtype's `run` beside `Pool.run`,
+  the program's pool. `Spindle_postgres.error` is
+  `` [ Rowtype.error | Rowtype_postgres.Transaction.failure
+  | Rowtype_postgres.Pool.error ] ``, and `error_to_string` is
+  `Rowtype_postgres.error_to_string`, the one printer for all of it.
+- rowtype's new `` `Unsent `` -- the database could not be reached, so
+  nothing was done -- is answered by `Spindle_postgres.refusal` as
+  `503 busy`, with `Retry-After: 1`, as `` `Pool `Busy `` is, and logged
+  as a warning.
+- `spindle-postgres` no longer sets `DateStyle`: the driver sets it, and
+  the other settings it reads text by, on every connection itself.
+- A closing connection's last bytes are read against the connection's
+  deadline, for `linger`, as every other wait on a client is, where a timer
+  of its own bounded them; a deadline's tick counts `linger` among the
+  limits it is a tenth of, so it is a tenth of a second at the defaults.
+- `Request.client` read from a trusted proxy's `X-Forwarded-For` is the
+  address alone, where an element written `1.2.3.4:5678` or
+  `[2001:db8::1]:4711` was taken whole: every connection was a client of
+  its own, and a `Rate.limit` keyed by the client limited nobody. A trusted
+  hop written with its port is passed over as one without.
+- A log line is UTF-8 and one line whatever it holds: each byte of a
+  message or a field that begins no character is written U+FFFD, as Go's
+  `encoding/json` writes it, where a JSON line copied it and was one a
+  shipper drops; and a `Pretty` line writes a line's end in its message or
+  a field as `\n` or `\r`, where a Postgres error's `DETAIL` began a line
+  of its own.
+- Breaking: an exception's message is never logged. `Spindle_http.Log.raised`
+  writes `error.kind` and `error.stack` and no longer `error.message`, and
+  the `500` a raise is answered with, a stream's failure, a background
+  job's and a connection's say the exception's kind, where each wrote
+  `Printexc.to_string` -- whatever the raiser wrote, a card number among
+  it. An I/O error's words, the operating system's, are still a failed
+  connection's.
+- Breaking: the packages `spindle_postgres` and `spindle_cli` are
+  `spindle-postgres` and `spindle-cli`, and so are their libraries, as
+  opam names a package; a `dune` file says `(libraries spindle-postgres)`.
+  The modules stay `Spindle_postgres` and `Spindle_cli`. The log source
+  `spindle_postgres` is `spindle-postgres`, the name a user installed.
+- Every public `error` type has its printer beside it: `Session`,
+  `Body`, `Multipart`, `Spindle_http.Head` and `Head.Response`, and
+  `Spindle_http.Multipart` have `error_to_string`, and `Test` has
+  `websocket_error_to_string`.
+- Breaking: `Cors.make`'s `?headers`, the request headers a preflight
+  allows, is `?allow_headers`, as `Access-Control-Allow-Headers` names
+  them: `~headers:["x-token"]` read as headers to send, as everywhere
+  else `?headers` is.
+- Breaking: `now` is always an instant. `Spindle.serve`'s `?now`,
+  `Server.run`'s and `Server.serve_on`'s `~now` and `Request.make`'s `~now`,
+  each a `unit -> Ptime.t`, are `read_clock`, where `Test.call ~now` and
+  `Session`'s `~now` stay a `Ptime.t`. `Spindle.clock_now clock ()` is
+  `Spindle.of_clock clock`, which is `Spindle_http.Instant.of_clock`.
+- Breaking: `Spindle.body_stream` takes `?content_types:string list`,
+  each `type/subtype`, `type/*` or `type/*+suffix`, where it took a
+  predicate on the raw `Content-Type`: the framework compares type and
+  subtype without case and ignores parameters, so
+  `application/octet-stream; charset=binary` is the type it names, and the
+  OpenAPI document lists them as the request body's content, where it
+  always said `application/octet-stream`. `Dep.of_body` loses
+  `?content_type`: the types are its `need`'s, `Dep.Raw { content_types }`
+  or `Dep.Json`'s, and `Dep.Raw` and `Dep.Stream` carry them.
+  `Spindle_http.Media_type.matches` is the comparison, which
+  `Compress.make`'s `types` use too.
+- Breaking: `Spindle_client.error` is
+  `` [ `Unsent of string | `Lost of string ] ``, the words every Hypha
+  library uses for what happened to the work, so a handler's one `let*`
+  runs over a client call and a database statement. `Unanswered` and
+  `Timeout`, which a caller handled alike since the server may have acted
+  on either, are both `` `Lost ``, a passed deadline's words saying so.
+  `websocket_error` is `` [ error | `Not_upgraded of response | `Websocket
+  of Spindle_http.Websocket.error ] ``, where it was `Failed`, `Refused`
+  and `Ended`; and `events_end`'s `Refused` is `Answered`, so the two no
+  longer share a constructor.
+- A client call's deadline covers looking its host's name up: eio_posix
+  looks a name up in a system thread no cancellation reaches, so a call
+  with a 200 ms timeout waited for a slow resolver for as long as it took.
+  One fiber of the client's, on its switch, now runs every lookup, and a
+  call abandons its wait at its deadline.
+- Under `compress`, every precondition sees through a compressed answer's
+  marked tag: a route is asked `If-Match` and `If-None-Match` with the
+  `-gzip` mark taken off -- `If-None-Match` where the request takes gzip --
+  so `If-Match` holding the tag a client was given passes, where it was
+  `412`, and an application's route compares the tags it set. A `304`
+  repeats the marked tag where the client sent it, and every `304` says
+  `Vary: Accept-Encoding` unless it names a type never compressed, as RFC
+  9110 §15.4.5 requires of the `Vary` its `200` would carry; a `304` from
+  `Static` or `Files` had none. `If-Range` still reads the tag as it came,
+  since a part is only ever of the uncompressed answer.
+- Breaking: `Spindle_http.Status.t` names every status RFC 9110 §15
+  defines, and 103, 425, 428, 451 and 511 -- `` `Continue ``,
+  `` `Early_hints ``, `` `Non_authoritative_information ``,
+  `` `Reset_content ``, `` `Multiple_choices ``, `` `Use_proxy ``,
+  `` `Payment_required ``, `` `Not_acceptable ``,
+  `` `Proxy_authentication_required ``, `` `Length_required ``,
+  `` `Expectation_failed ``, `` `Misdirected_request ``, `` `Too_early ``,
+  `` `Precondition_required ``, `` `Unavailable_for_legal_reasons `` and
+  `` `Network_authentication_required `` -- and `Spindle_http.Meth.t` names
+  `` `CONNECT `` and `` `TRACE ``, where each was `` `Code n `` or
+  `` `Other s ``. Both sets are closed at 1.0: a status or method
+  registered later stays `` `Code n `` or `` `Other s `` for every 1.x
+  release.
+- Breaking: `Spindle_http.Websocket.send` of a text message that is not
+  UTF-8 answers `Error (Unwritable _)`, a new constructor of `error`, and
+  sends nothing, where it went on the wire for the peer to fail the
+  connection with 1007 (RFC 6455 §8.1). A JSON value its description
+  cannot encode answers the same, where it was logged and answered
+  `Ok ()`. A handler that returns `Unwritable` closes its socket with 1011.
+- Breaking: `Spindle_http.Multipart.to_string` answers a `result`, and
+  refuses what its reader would not read back as itself: a boundary RFC
+  2046 does not allow, a content type that cannot be written, and content
+  holding the delimiter, which wrote a part of the caller's choosing into
+  the body. A part's `headers` are not written, as the `.mli` now says.
+- A takeover answered while the server stops is in flight from its route
+  to its socket, so it gets the drain to say goodbye, where it was
+  cancelled the moment its `101` had gone.
+- A body read still waiting when its route's handler returns -- in a fiber
+  the route left behind -- is stopped and answers `` `End ``, logged as the
+  route's bug, before the connection loop reads on. The two read the
+  connection at once, and the connection hung with no deadline.
+- A `426` names its `Upgrade` in `Connection` (`upgrade`, or `upgrade,
+  close` when the connection ends), as RFC 9110 §7.8 requires of every
+  sender of `Upgrade`; a WebSocket route's `426` sent `Upgrade` alone.
+- A client that asked for `100 Continue` and left before it was sent makes
+  the route's body read answer `Error (Unreadable _)`, where
+  `Eio.Buf_write.Flush_aborted` was raised into the route.
+- A stream's `send` answers `Error Gone` once its producer has returned or
+  raised, and logs it as the route's bug, where a fiber that kept `send`
+  wrote its bytes between that answer and the next one on a kept
+  connection.
 - Breaking: a path parameter's `?or_not_found:()` is
   `?unparsed:Next_route`, which says what it does -- another route whose
   path matches is asked -- where the old name read as a `404`. Its

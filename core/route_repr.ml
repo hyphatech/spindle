@@ -191,7 +191,9 @@ let framework_codes (i : info) =
     List.exists (function Dep.Body _ -> true | _ -> false) i.needs
   in
   let is_unsafe =
-    match i.meth with `GET | `HEAD | `OPTIONS -> false | _ -> true
+    match i.meth with
+    | `GET | `HEAD | `OPTIONS | `TRACE -> false
+    | `POST | `PUT | `PATCH | `DELETE | `CONNECT | `Other _ -> true
   in
   let is_websocket =
     match i.returns with

@@ -6,22 +6,23 @@ module Pg = Rowtype_postgres
 type t = { pool : Pg.Pool.t; closed : bool Atomic.t }
 
 let create ~sw ~net ~mono_clock:clock ?size ?wait ?statement_timeout
-    ?idle_in_transaction_timeout ?connect_timeout ?parameters ?timeout
-    ?statement_cache ?reset ?max_lifetime ?idle_check target =
-  Result.bind
-    (Bounds.apply ?statement_timeout ?idle_in_transaction_timeout
-       ?connect_timeout ?parameters target) (fun (c, parameters) ->
-      Result.map
-        (fun pool -> { pool; closed = Atomic.make false })
-        (Pg.Pool.create ~sw ~net ~mono_clock:clock ~parameters
-           ~observe:Traced.observer ?timeout ?statement_cache ?size ?wait ?reset
-           ?max_lifetime ?idle_check c))
+    ?idle_in_transaction_timeout ?parameters ?timeout ?statement_cache ?reset
+    ?max_lifetime ?idle_check target =
+  let c, parameters =
+    Bounds.apply ?statement_timeout ?idle_in_transaction_timeout ?parameters
+      target
+  in
+  Result.map
+    (fun pool -> { pool; closed = Atomic.make false })
+    (Pg.Pool.create ~sw ~net ~mono_clock:clock ~parameters
+       ~observe:Traced.observer ?timeout ?statement_cache ?size ?wait ?reset
+       ?max_lifetime ?idle_check c)
 
 module L = (val Logs.src_log Source.src : Logs.LOG)
 
 let use ?wait t work = Result.join (Pg.Pool.use ?wait t.pool work)
 
-let query ?wait t statement args =
+let exec ?wait t statement args =
   use ?wait t (fun db -> Pg.run db statement args)
 
 type stats = Pg.Pool.stats = {
@@ -59,7 +60,7 @@ let check ?(name = "postgres") t =
         match use t (fun db -> Pg.exec_raw db "select 1") with
         | Ok () -> Ok ()
         | Error (`Pool `Busy) -> Ok ()
-        | Error (`Pool `Closed as e) -> Error (Pg.Pool.error_to_string e)
+        | Error (`Pool `Closed as e) -> Error (Pg.error_to_string e)
         | Error (#Rowtype.error as e) -> Error (Rowtype.error_to_string e))
 
 let transaction ?wait ?keep ?isolation ?retries t work =
@@ -75,16 +76,21 @@ let close t =
    a cancelled fiber cannot, and would raise its cancellation as
    [Fun.Finally_raised]. Its connections end with the switch. A database that
    refuses ends the program, saying why. *)
-let run ?size ?wait ?statement_timeout ?idle_in_transaction_timeout
-    ?connect_timeout ?parameters ?timeout ?statement_cache ?reset ?max_lifetime
-    ?idle_check env target f =
+let run ?size ?wait ?statement_timeout ?idle_in_transaction_timeout ?parameters
+    ?timeout ?statement_cache ?reset ?max_lifetime ?idle_check env target f =
   Eio.Switch.run @@ fun sw ->
   match
-    create ~sw ~net:(Eio.Stdenv.net env)
-      ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ?size ?wait ?statement_timeout ?idle_in_transaction_timeout
-      ?connect_timeout ?parameters ?timeout ?statement_cache ?reset
-      ?max_lifetime ?idle_check target
+    Result.bind
+      (Result.map_error
+         (fun m -> "a connection string that does not parse: " ^ m)
+         (Pg.Conninfo.of_string target))
+      (fun target ->
+        Result.map_error Rowtype.error_to_string
+          (create ~sw ~net:(Eio.Stdenv.net env)
+             ~mono_clock:(Eio.Stdenv.mono_clock env)
+             ?size ?wait ?statement_timeout ?idle_in_transaction_timeout
+             ?parameters ?timeout ?statement_cache ?reset ?max_lifetime
+             ?idle_check target))
   with
   | Ok pool -> (
       match f pool with
@@ -96,7 +102,6 @@ let run ?size ?wait ?statement_timeout ?idle_in_transaction_timeout
           let bt = Printexc.get_raw_backtrace () in
           close pool;
           Printexc.raise_with_backtrace ex bt)
-  | Error e ->
-      L.err (fun m ->
-          m "the pool could not be opened: %s" (Rowtype.error_to_string e));
+  | Error m ->
+      L.err (fun f -> f "the pool could not be opened: %s" m);
       exit 1

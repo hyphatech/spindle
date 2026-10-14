@@ -54,10 +54,6 @@ let input_dep ?default source name codec ~required ~many =
       ]
 
 let input_path source name = source.where ^ "." ^ name
-
-let malformed ~at codec =
-  Dep.problem ~at ~code:"malformed" ("This is not " ^ Codec.expects codec ^ ".")
-
 let missing ~at = Dep.problem ~at ~code:"required" "This is required."
 
 (* Text that is not UTF-8 is no text a codec reads, and could not be written
@@ -65,7 +61,10 @@ let missing ~at = Dep.problem ~at ~code:"required" "This is required."
 let parse ~at codec v =
   if not (String.is_valid_utf_8 v) then
     Error (Dep.problem ~at ~code:"malformed" "This is not text.")
-  else Option.to_result ~none:(malformed ~at codec) (Codec.parse codec v)
+  else
+    Result.map_error
+      (fun sentence -> Dep.problem ~at ~code:"malformed" sentence)
+      (Codec.parse codec v)
 
 let parse_value source name codec v = parse ~at:(input_path source name) codec v
 

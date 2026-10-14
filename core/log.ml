@@ -53,10 +53,44 @@ let local_clock_time () =
   in
   Printf.sprintf "%02d:%02d:%02d.%03d" hh mm ss ms
 
+(* Text an application logged may be any bytes -- a decoded %E9 -- and a
+   line that is not UTF-8 is one a shipper drops: each byte that begins no
+   character is written U+FFFD, as Go's encoding/json and log/slog write it.
+   [escape] writes a character that is not replaced. *)
+let add_utf_8 b ~escape s =
+  let rec from i =
+    if i < String.length s then
+      let d = String.get_utf_8_uchar s i in
+      if Uchar.utf_decode_is_valid d then (
+        escape b (Uchar.utf_decode_uchar d);
+        from (i + Uchar.utf_decode_length d))
+      else (
+        Buffer.add_utf_8_uchar b Uchar.rep;
+        from (i + 1))
+  in
+  from 0
+
+let valid_utf_8 s =
+  if String.is_valid_utf_8 s then s
+  else
+    let b = Buffer.create (String.length s + 8) in
+    add_utf_8 b ~escape:Buffer.add_utf_8_uchar s;
+    Buffer.contents b
+
+let add_json_string b s = Text.string b (valid_utf_8 s)
+
+(* A pretty line is one line: a line's end inside it is written escaped. *)
+let add_pretty_text b s =
+  add_utf_8 b s ~escape:(fun b u ->
+      match Uchar.to_int u with
+      | 0x0A -> Buffer.add_string b "\\n"
+      | 0x0D -> Buffer.add_string b "\\r"
+      | _ -> Buffer.add_utf_8_uchar b u)
+
 (* An integer past 2^53 is written as a string: a reader holding numbers as
    doubles would round it. *)
 let add_json_value b : value -> unit = function
-  | `String s -> Text.string b s
+  | `String s -> add_json_string b s
   | `Int n when n >= -(1 lsl 53) && n <= 1 lsl 53 ->
       Buffer.add_string b (string_of_int n)
   | `Int n -> Text.string b (string_of_int n)
@@ -76,7 +110,7 @@ let add_json_line b ~level ~src ~msg ~id ~trace ~span ~fields =
   add_iso_time b;
   member "level" Text.string (level_name level);
   member "logger.name" Text.string src;
-  member "message" Text.string msg;
+  member "message" add_json_string msg;
   Option.iter (member "request_id" Text.string) id;
   Option.iter (member "trace_id" Text.string) trace;
   Option.iter (member "span_id" Text.string) span;
@@ -93,9 +127,16 @@ let add_pretty_line b ~level ~src ~msg ~id ~trace:_ ~span:_ ~fields =
   | Some id -> Buffer.add_string b (" [" ^ id ^ "]")
   | None -> ());
   Buffer.add_char b ' ';
-  Buffer.add_string b msg;
+  add_pretty_text b msg;
   List.iter
-    (fun (k, v) -> Buffer.add_string b (Format.asprintf "  %s=%a" k pp_value v))
+    (fun (k, v) ->
+      Buffer.add_string b "  ";
+      Buffer.add_string b k;
+      Buffer.add_char b '=';
+      match v with
+      | `String s -> add_pretty_text b s
+      | (`Int _ | `Float _ | `Bool _) as v ->
+          Buffer.add_string b (Format.asprintf "%a" pp_value v))
     fields
 
 (* ------------------------------------------------------------------ *)

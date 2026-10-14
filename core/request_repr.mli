@@ -23,13 +23,16 @@ val make :
   ?version:Spindle_http.Head.version ->
   ?host:string ->
   ?headers:(string * string) list ->
-  now:(unit -> Ptime.t) ->
+  read_clock:(unit -> Ptime.t) ->
   Spindle_http.Meth.t ->
   string ->
   t
 
 val with_matched : matched -> t -> t
 (** The request, once the route table has chosen. *)
+
+val with_headers : (string * string) list -> t -> t
+(** The request with these headers in place of its own. *)
 
 val matched : t -> matched option
 val client_gone : t -> unit Eio.Promise.t

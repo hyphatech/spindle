@@ -34,6 +34,9 @@ type 'e error =
   | Head_too_large  (** a part's head past [max_head] *)
   | Source of 'e  (** [pull] failed *)
 
+val error_to_string : ('e -> string) -> 'e error -> string
+(** [error_to_string source e], [source] printing what [pull] failed with. *)
+
 type 'e t
 
 val boundary : Media_type.t -> string option
@@ -61,12 +64,16 @@ val read : 'e t -> ([ `Data of string | `End ], 'e error) result
 (** The current part's content as it arrives, [`End] where it ends -- and before
     {!next} has been asked, or after the last part. *)
 
-val to_string : boundary:string -> (part * string) list -> string
+val to_string :
+  boundary:string -> (part * string) list -> (string, string) result
 (** A body of these parts and their contents, as a browser writes one: each
     part's [Content-Disposition] from its [name] and [filename], each a quoted
     string -- its quotes and backslashes escaped, and a CR or an LF, which no
     quoted string holds, written [%0D] and [%0A] as the HTML standard has a
     browser write them -- and its [Content-Type] unless it is [text/plain],
-    which a part with none is, or is one {!Media_type.to_string} refuses.
-    [create] reads it back as itself, a CR or an LF in a name or a filename
-    aside. *)
+    which a part with none is. A part's [headers] are what a reader found, and
+    are not written. {!create} reads it back as itself, a CR or an LF in a name
+    or a filename written as above; what it would not is an [Error]: a boundary
+    {!val-boundary} would refuse, a content type {!Media_type.to_string}
+    refuses, and content holding the delimiter that would end its part early --
+    a line's end, [--] and the boundary. *)

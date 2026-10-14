@@ -30,7 +30,10 @@ type body =
       (** a form: an object of its fields, each its codec's, and a repeated one
           a list of them; and its files, which only a multipart body holds *)
   | Parts_body  (** a body read a part at a time *)
-  | Raw_body  (** read as it arrived, so an empty one is read too *)
+  | Raw_body of string list
+      (** read as it arrived, so an empty one is read too, in one of these types
+          -- each [type/subtype], [type/*] or [type/*+suffix] -- or any where
+          none is named *)
 
 type located = In_path | In_query | In_header | In_cookie
 

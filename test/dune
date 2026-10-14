@@ -16,13 +16,13 @@
   test_structured
   test_spindle_postgres
   test_cli)
- (package spindle_postgres)
+ (package spindle-postgres)
  (modules :standard \ cli_app test_docs)
  (libraries
   spindle
   spindle.http
   spindle.client
-  spindle_postgres
+  spindle-postgres
   rowtype
   rowtype-postgres
   wiretype
@@ -66,7 +66,7 @@
 (executable
  (name cli_app)
  (modules cli_app)
- (libraries spindle spindle_cli eio_main))
+ (libraries spindle spindle-cli eio_main))
 
 ; Every example the build makes is on a page of the documentation site.
 

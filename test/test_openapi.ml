@@ -619,8 +619,8 @@ let test_a_body_refused_for_its_type_says_415 () =
         true,
         route "stream"
           (Spindle.Dep.map ignore
-             (Spindle.body_stream ~content_type:(String.equal "text/csv")
-                ~max:1024 ())) );
+             (Spindle.body_stream ~content_types:[ "text/csv" ] ~max:1024 ()))
+      );
       ("raw", false, route "raw" (Spindle.Dep.map ignore Spindle.body));
     ]
   in
@@ -641,7 +641,20 @@ let test_a_body_refused_for_its_type_says_415 () =
                 ~headers:[ ("content-type", "text/plain") ]
                 ~body:"x")
                .status))
-    routes
+    routes;
+  Alcotest.(check (list string))
+    "a stream's types are its body's content" [ "text/csv" ]
+    (match
+       member [ "paths"; "/stream"; "post"; "requestBody"; "content" ] doc
+     with
+    | `Assoc members -> List.map fst members
+    | _ -> []);
+  Alcotest.(check (list string))
+    "and a raw body's, of any type, is bytes"
+    [ "application/octet-stream" ]
+    (match member [ "paths"; "/raw"; "post"; "requestBody"; "content" ] doc with
+    | `Assoc members -> List.map fst members
+    | _ -> [])
 
 (* Nothing is described as its status alone, in the document and the
    module alike, where a response of the route's own could say only that it
@@ -784,9 +797,136 @@ let test_a_stream_is_described_by_its_events () =
         (str [ "properties"; "data"; "type" ] item)
   | _ -> Alcotest.fail "expected two events"
 
+(* ------------------------------------------------------------------ *)
+(* What a description says holds through the framework *)
+
+(* A member the server gives is never read from a request, and one the
+   client gives never written into an answer -- through a route as through
+   wiretype, and in the document alike. *)
+type user = { id : int; name : string; password : string }
+
+let user_json =
+  Wiretype.Object.(
+    map ~kind:"user" (fun id name password -> { id; name; password })
+    |> mem "id" Wiretype.int ~absent:0
+         ~enc:(fun u -> u.id)
+         ~access:Wiretype.Shape.Read_only
+    |> mem "name" Wiretype.string ~enc:(fun u -> u.name)
+    |> mem "password" Wiretype.string ~absent:""
+         ~enc:(fun u -> u.password)
+         ~access:Wiretype.Shape.Write_only
+    |> finish)
+
+let test_a_member_s_access_holds_through_a_route () =
+  let seen = ref None in
+  let add =
+    Spindle.post
+      Spindle.Path.(s "users")
+      (Spindle.Returns.json ~status:`Created user_json)
+      (let+ u = Spindle.json user_json in
+       seen := Some u;
+       Ok { u with id = 7 })
+  in
+  let a = Spindle.Test.app [ add ] in
+  let r =
+    Spindle.Test.call a `POST "/users"
+      ~headers:[ ("content-type", "application/json") ]
+      ~body:{|{"id":99,"name":"kim","password":"s3cret"}|}
+  in
+  Alcotest.(check int) "created" 201 (Spindle_http.Status.to_int r.status);
+  (match !seen with
+  | Some u ->
+      Alcotest.(check int) "the id a request sent is not read" 0 u.id;
+      Alcotest.(check string) "the password is" "s3cret" u.password
+  | None -> Alcotest.fail "the route never ran");
+  Alcotest.(check string)
+    "the answer holds the server's id and never the password"
+    {|{"id":7,"name":"kim"}|} r.body;
+  let doc = json_of_doc a in
+  let properties path =
+    match member (path @ [ "properties" ]) doc with
+    | `Assoc members -> List.map fst members
+    | _ -> []
+  in
+  let schema_of ref_path =
+    (* A component, or a schema written in place. *)
+    match member ref_path doc with
+    | `Assoc members -> (
+        match List.assoc_opt "$ref" members with
+        | Some (`String r) -> (
+            match String.split_on_char '/' r with
+            | [ "#"; "components"; "schemas"; name ] ->
+                [ "components"; "schemas"; name ]
+            | _ -> ref_path)
+        | _ -> ref_path)
+    | _ -> ref_path
+  in
+  let request =
+    schema_of
+      [
+        "paths";
+        "/users";
+        "post";
+        "requestBody";
+        "content";
+        "application/json";
+        "schema";
+      ]
+  in
+  let answer =
+    schema_of
+      [
+        "paths";
+        "/users";
+        "post";
+        "responses";
+        "201";
+        "content";
+        "application/json";
+        "schema";
+      ]
+  in
+  Alcotest.(check (list string))
+    "the request's schema has no id" [ "name"; "password" ] (properties request);
+  Alcotest.(check (list string))
+    "the answer's has no password" [ "id"; "name" ] (properties answer)
+
+(* A value outside its description's bounds is one decode would refuse, so
+   it is never written: the route's bug, answered 500 and logged so. *)
+let test_a_value_outside_its_bounds_is_the_route_s_bug () =
+  let lines = ref [] in
+  Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
+    ~out:(fun l -> lines := l :: !lines)
+    ();
+  let few = Wiretype.int_bounded ~max:10 () in
+  let count =
+    Spindle.get
+      Spindle.Path.(s "count")
+      (Spindle.Returns.json few)
+      (Spindle.Dep.return (Ok 11))
+  in
+  let r = Spindle.Test.call (Spindle.Test.app [ count ]) `GET "/count" in
+  Alcotest.(check int) "500" 500 (Spindle_http.Status.to_int r.status);
+  Alcotest.(check bool)
+    "nothing of the value answered" false
+    (contains ~sub:"11" r.body);
+  Alcotest.(check bool)
+    "an error line saying why" true
+    (List.exists
+       (fun l ->
+         contains ~sub:{|"level":"error"|} l && contains ~sub:"out_of_bounds" l)
+       !lines)
+
 let () =
   Alcotest.run "openapi"
     [
+      ( "what a description says",
+        [
+          Alcotest.test_case "a member's access holds through a route" `Quick
+            test_a_member_s_access_holds_through_a_route;
+          Alcotest.test_case "a value outside its bounds is the route's bug"
+            `Quick test_a_value_outside_its_bounds_is_the_route_s_bug;
+        ] );
       ( "the document",
         [
           Alcotest.test_case "each status is a response" `Quick

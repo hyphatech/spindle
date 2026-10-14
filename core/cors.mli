@@ -43,16 +43,17 @@ type t = Cors_repr.t
 
 val make :
   ?credentials:bool ->
-  ?headers:string list ->
+  ?allow_headers:string list ->
   ?expose:string list ->
   ?max_age_s:int ->
   ?routes:(Route.info -> bool) ->
   origins ->
   t
 (** [credentials] (false) lets the browser send cookies and read the answer;
-    [headers] are those a request may send ([authorization] and [content-type]
-    unless given); [expose] those script may read (none); [max_age_s] how long a
-    browser keeps a preflight's answer (600); [routes] which routes it covers
-    (every one), for an app whose API is public and whose pages are not. Raises
-    [Invalid_argument] for [Any] beside [~credentials:true], which the Fetch
-    standard does not allow, since a policy is a constant written in source. *)
+    [allow_headers] are those a request may send ([authorization] and
+    [content-type] unless given); [expose] those script may read (none);
+    [max_age_s] how long a browser keeps a preflight's answer (600); [routes]
+    which routes it covers (every one), for an app whose API is public and whose
+    pages are not. Raises [Invalid_argument] for [Any] beside
+    [~credentials:true], which the Fetch standard does not allow, since a policy
+    is a constant written in source. *)

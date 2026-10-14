@@ -17,13 +17,12 @@ let fields =
 
 let tags l = Logs.Tag.add fields l Logs.Tag.empty
 
+(* An exception's message is whatever its raiser wrote, a card number or a
+   token among it, so a raise is told by its kind and its stack alone. *)
 let raised ex bt =
   let stack = String.trim (Printexc.raw_backtrace_to_string bt) in
-  [
-    ("error.kind", `String (Printexc.exn_slot_name ex));
-    ("error.message", `String (Printexc.to_string ex));
-  ]
-  @ if String.equal stack "" then [] else [ ("error.stack", `String stack) ]
+  ("error.kind", `String (Printexc.exn_slot_name ex))
+  :: (if String.equal stack "" then [] else [ ("error.stack", `String stack) ])
 
 (* ------------------------------------------------------------------ *)
 (* The request a fiber runs for, which is [Context]'s *)

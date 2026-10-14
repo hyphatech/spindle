@@ -37,6 +37,8 @@ type error =
   | Head_too_large  (** a part's head past the route's [max_head] *)
   | Body of Body.error  (** the body's own failure *)
 
+val error_to_string : error -> string
+
 val next : t -> (part option, error) result
 (** The next part's head; [None] after the last. *)
 

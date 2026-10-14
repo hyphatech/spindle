@@ -50,8 +50,8 @@ let need_to_string = function
         (if many then "s" else "")
   | Dep.Body Dep.Form -> "body, as a form"
   | Dep.Body Dep.Multipart -> "body, a part at a time"
-  | Dep.Body Dep.Raw -> "body"
-  | Dep.Body Dep.Stream -> "body, as it arrives"
+  | Dep.Body (Dep.Raw _) -> "body"
+  | Dep.Body (Dep.Stream _) -> "body, as it arrives"
   | Dep.Body (Dep.Json { description; examples = _ }) ->
       "body " ^ Wiretype.name description
   | Dep.Custom { name; doc = _ } -> name

@@ -481,6 +481,26 @@ let test_a_close_sends_no_reason_it_cannot_carry () =
       ("nor one that is not UTF-8", "\xff", "");
     ]
 
+(* §8.1: a text message is UTF-8, and a peer fails the connection on one
+   that is not. One a handler hands over is answered as a value, and none
+   of it is written. *)
+let test_a_text_message_that_is_not_utf_8_is_not_sent () =
+  let got, written =
+    over_raw Whole (close ~mask:None 1000) (fun c ->
+        Ws.run_client
+          ~mask:(fun () -> a_mask)
+          texts c
+          (fun ws ->
+            match Ws.send ws "caf\xe9" with
+            | Error (Ws.Unwritable _) -> Ok "unwritable"
+            | Error e -> Error e
+            | Ok () -> Ok "sent"))
+  in
+  Alcotest.(check (result string string))
+    "answered as unwritable" (Ok "unwritable") (shown got);
+  Alcotest.(check string)
+    "and nothing written but the close" (close 1000) written
+
 (* §5.3: a masking key is four bytes. One of another length is our bug,
    answered as a value rather than raised, and nothing a peer would misread
    is written. *)
@@ -748,7 +768,7 @@ let check_handshake (r : handshake_row) delivery =
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         [ listening ] app;
       `Stop_daemon);
   let flow = connect ~sw in
@@ -911,13 +931,13 @@ let opening ?extra key =
 
 let outcome = function
   | Ok said -> "opened: " ^ said
-  | Error (Spindle_client.Refused r) ->
+  | Error (`Not_upgraded (r : Spindle_client.response)) ->
       Printf.sprintf "refused %d: %s"
         (Spindle_http.Status.to_int r.status)
         r.body
-  | Error (Spindle_client.Failed e) ->
+  | Error (#Spindle_client.error as e) ->
       "failed: " ^ Spindle_client.error_to_string e
-  | Error (Spindle_client.Ended e) -> "ended: " ^ Ws.error_to_string e
+  | Error (`Websocket e) -> "ended: " ^ Ws.error_to_string e
 
 let test_a_client_asks_as_the_rfc_says () =
   let got, heard = scripted Whole opening (fun open_ -> open_ texts receive) in
@@ -1118,6 +1138,9 @@ let () =
               `Quick test_a_close_sends_no_reason_it_cannot_carry;
             Alcotest.test_case "5.3 a mask of another length writes nothing"
               `Quick test_a_mask_of_another_length_writes_nothing;
+            Alcotest.test_case
+              "8.1 a text message that is not UTF-8 is not sent" `Quick
+              test_a_text_message_that_is_not_utf_8_is_not_sent;
             Alcotest.test_case "5.2 a send cut off mid-frame ends the socket"
               `Quick
               (test_a_send_cut_off_mid_frame_ends_the_socket As_client);

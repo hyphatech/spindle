@@ -66,8 +66,8 @@ This installs its three packages and everything they need:
 | Package | Library | What for |
 |---|---|---|
 | `spindle` | `spindle` | The framework, and `spindle.client` for calling other servers |
-| `spindle_postgres` | `spindle_postgres` | [Database](tutorial/database.md) |
-| `spindle_cli` | `spindle_cli` | [Client schemas](tutorial/client-schemas.md#setting-up-the-command-line) |
+| `spindle-postgres` | `spindle-postgres` | [Database](tutorial/database.md) |
+| `spindle-cli` | `spindle-cli` | [Client schemas](tutorial/client-schemas.md#setting-up-the-command-line) |
 
 ## Check it worked
 

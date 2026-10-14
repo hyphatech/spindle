@@ -12,18 +12,17 @@ val create :
   ?wait:Mtime.Span.t ->
   ?statement_timeout:Mtime.Span.t ->
   ?idle_in_transaction_timeout:Mtime.Span.t ->
-  ?connect_timeout:Mtime.Span.t ->
   ?parameters:(string * string) list ->
   ?timeout:Mtime.Span.t ->
   ?statement_cache:int ->
   ?reset:bool ->
   ?max_lifetime:Mtime.Span.t ->
   ?idle_check:Mtime.Span.t ->
-  string ->
+  Rowtype_postgres.Conninfo.t ->
   (t, [> Rowtype.error ]) result
-(** The pool [Rowtype_postgres.Pool.create] makes, to the database the
-    connection string names, every option but the bounds passed through. The
-    bounds and [parameters] are {!Spindle_postgres.connect}'s. *)
+(** The pool [Rowtype_postgres.Pool.create] makes, to the database [target]
+    names, every option but the bounds passed through. The bounds and
+    [parameters] are {!Spindle_postgres.connect}'s. *)
 
 val use :
   ?wait:Mtime.Span.t ->
@@ -38,17 +37,18 @@ val use :
     pool closed or closing under the borrow, which will never lend again;
     {!Spindle_postgres.refusal} words both. *)
 
-val query :
+val exec :
   ?wait:Mtime.Span.t ->
   t ->
   ('p, 'r) Rowtype.statement ->
   'p ->
   ('r, [> `Pool of [ `Busy | `Closed ] | Rowtype.error ]) result
 (** One statement on a borrowed connection: {!use} around
-    [Rowtype_postgres.run], for the read that is the whole of its work.
+    [Rowtype_postgres.run], for the read that is the whole of its work. It is
+    not [run], which is the pool's own bracket ({!val-run}).
 
     {[
-    Spindle_postgres.Pool.query pool all_users ()
+    Spindle_postgres.Pool.exec pool all_users ()
     |> Result.map_error Spindle_postgres.refusal
     ]} *)
 
@@ -117,7 +117,6 @@ val run :
   ?wait:Mtime.Span.t ->
   ?statement_timeout:Mtime.Span.t ->
   ?idle_in_transaction_timeout:Mtime.Span.t ->
-  ?connect_timeout:Mtime.Span.t ->
   ?parameters:(string * string) list ->
   ?timeout:Mtime.Span.t ->
   ?statement_cache:int ->
@@ -139,8 +138,10 @@ val run :
     Spindle.serve env (routes pool)
     ]}
 
-    Every option is {!create}'s. A pool that cannot be opened -- a database that
-    refuses, a connection string that does not parse -- is an [error] line on
-    [spindle_postgres] saying why, and the program exits with status 1, because
-    a server that cannot reach its database has nothing to serve. A program that
-    would rather go on without one calls {!create}. *)
+    [target] is a connection string, a [postgres://] URL or a keyword list, read
+    once by [Rowtype_postgres.Conninfo.of_string]. Every option is {!create}'s.
+    A pool that cannot be opened -- a database that refuses, a connection string
+    that does not parse -- is an [error] line on [spindle-postgres] saying why,
+    and the program exits with status 1, because a server that cannot reach its
+    database has nothing to serve. A program that would rather go on without one
+    calls {!create}. *)

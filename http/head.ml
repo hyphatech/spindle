@@ -1,6 +1,11 @@
 type version = Http_1_0 | Http_1_1
 type error = Closed | Refused of Status.t * string
 
+let error_to_string = function
+  | Closed -> "the connection ended before a whole head"
+  | Refused (status, m) ->
+      Printf.sprintf "a head refused with %d: %s" (Status.to_int status) m
+
 (* Raised inside this module only; [read] answers it as a value. *)
 exception Refuse of Status.t * string
 
@@ -243,6 +248,8 @@ module Request = struct
     | "PATCH" -> `PATCH
     | "DELETE" -> `DELETE
     | "OPTIONS" -> `OPTIONS
+    | "CONNECT" -> `CONNECT
+    | "TRACE" -> `TRACE
     | m -> `Other m
 
   let is_scheme_char = function
@@ -292,7 +299,7 @@ module Request = struct
      OPTIONS, and any other target that is not a path is absolute. *)
   let target_form meth target =
     match (meth, target) with
-    | `Other "CONNECT", t -> (
+    | `CONNECT, t -> (
         match parse_authority t with
         | Some (host, Some port)
           when not (String.equal host "" || String.equal port "") ->
@@ -359,6 +366,10 @@ end
 
 module Response = struct
   type error = Closed | Malformed of string
+
+  let error_to_string = function
+    | Closed -> "the connection ended before a head"
+    | Malformed m -> "a head that could not be read: " ^ m
 
   type t = {
     version : version;

@@ -62,7 +62,7 @@ let call ?(now = Ptime.epoch) ?(peer = "127.0.0.1") ?proxied ?proxy_header
     ?version ?(headers = []) ?body app meth target =
   let req =
     Request.make ~peer ?proxied ?proxy_header ?version ~headers
-      ~now:(fun () -> now)
+      ~read_clock:(fun () -> now)
       meth target
   in
   (* As the server hands it over: whole, or in parts, too large before any is
@@ -260,7 +260,7 @@ let events ?(now = Ptime.epoch) ?(headers = []) app target f =
   let req =
     Request.make ~peer:"127.0.0.1"
       ~headers:(("accept", "text/event-stream") :: headers)
-      ~now:(fun () -> now)
+      ~read_clock:(fun () -> now)
       `GET target
   in
   let wire = answer_checked app req ~body:no_body in
@@ -303,6 +303,12 @@ let events ?(now = Ptime.epoch) ?(headers = []) app target f =
 
 type websocket_error = Refused of response | Ended of Websocket.error
 
+let websocket_error_to_string = function
+  | Refused r ->
+      Printf.sprintf "answered %d, which opens no socket"
+        (Status.to_int r.status)
+  | Ended e -> Websocket.error_to_string e
+
 (* Over a socket pair, on a clock that never moves, so a keep-alive or a
    limit fires only in a test that moves it. *)
 let websocket ?(now = Ptime.epoch) ?(headers = []) app protocol target f =
@@ -323,7 +329,7 @@ let websocket ?(now = Ptime.epoch) ?(headers = []) app protocol target f =
             ("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==");
           ]
         @ offered)
-      ~now:(fun () -> now)
+      ~read_clock:(fun () -> now)
       `GET target
   in
   let wire = answer_checked app req ~body:no_body in

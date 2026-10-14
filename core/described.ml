@@ -21,7 +21,7 @@ type body =
   | Json_body of { schema : S.t; examples : string list; required : bool }
   | Form_body of { fields : S.t; files : Dep.file list }
   | Parts_body
-  | Raw_body
+  | Raw_body of string list
 
 type located = In_path | In_query | In_header | In_cookie
 type default = Bare of string | Quoted of string
@@ -182,7 +182,8 @@ let body_of ctx (i : Route.info) =
                      i.needs;
                })
       | Dep.Body Dep.Multipart -> Some Parts_body
-      | Dep.Body (Dep.Raw | Dep.Stream) -> Some Raw_body
+      | Dep.Body (Dep.Raw { content_types } | Dep.Stream { content_types }) ->
+          Some (Raw_body content_types)
       | Dep.Body (Dep.Json { description; examples = vs }) ->
           Some
             (Json_body
@@ -401,8 +402,10 @@ let merged_body a b =
     when same_schema x.fields y.fields && List.equal same_file x.files y.files
     ->
       Some a
-  | Some Parts_body, Some Parts_body | Some Raw_body, Some Raw_body -> Some a
-  | Some (Json_body _ | Form_body _ | Parts_body | Raw_body), Some _ -> None
+  | Some Parts_body, Some Parts_body -> Some a
+  | Some (Raw_body x), Some (Raw_body y) when List.equal String.equal x y ->
+      Some a
+  | Some (Json_body _ | Form_body _ | Parts_body | Raw_body _), Some _ -> None
 
 let joined sep texts =
   match distinct String.equal (List.filter_map Fun.id texts) with

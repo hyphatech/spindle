@@ -50,9 +50,49 @@ type connection = {
   mutable stop_watch : unit Eio.Promise.u option;
 }
 
+(* eio_posix looks a name up in a system thread no cancellation reaches, so
+   a call's deadline would wait for a slow resolver. One fiber on the
+   client's switch takes lookups from any domain and runs each in a daemon
+   of its own: a call abandons its wait at its deadline, and the lookup
+   ends in the background. *)
+module Resolver = struct
+  type request = {
+    host : string;
+    port : int;
+    answer : (Eio.Net.Sockaddr.stream list, exn) result Eio.Promise.u;
+  }
+
+  type t = request Eio.Stream.t
+
+  let create ~sw net =
+    let requests = Eio.Stream.create max_int in
+    Eio.Fiber.fork_daemon ~sw (fun () ->
+        let rec serve () =
+          let { host; port; answer } = Eio.Stream.take requests in
+          Eio.Fiber.fork_daemon ~sw (fun () ->
+              Eio.Promise.resolve answer
+                (match
+                   Eio.Net.getaddrinfo_stream net host
+                     ~service:(string_of_int port)
+                 with
+                | addresses -> Ok addresses
+                | exception (Eio.Io _ as ex) -> Error ex);
+              `Stop_daemon);
+          serve ()
+        in
+        serve ());
+    requests
+
+  let lookup t host ~port =
+    let answer, resolved = Eio.Promise.create () in
+    Eio.Stream.add t { host; port; answer = resolved };
+    Eio.Promise.await answer
+end
+
 type t = {
   sw : Eio.Switch.t;
   net : [ `Generic ] Eio.Net.ty Eio.Resource.t;
+  resolver : Resolver.t;
   tls : (Tls.Config.client, string) result;
       (** [Error] without a usable trust store; carried rather than raised, so
           {!create} is total and the failure arrives from {!call} like any other
@@ -74,11 +114,14 @@ type response = {
   body : string;
 }
 
-type error = Unsent of string | Unanswered of string | Timeout of Mtime.Span.t
+type error = [ `Unsent of string | `Lost of string ]
 
-let error_to_string = function
-  | Unsent m | Unanswered m -> m
-  | Timeout span -> Format.asprintf "no answer within %a" Mtime.Span.pp span
+let error_to_string : error -> string = function `Unsent m | `Lost m -> m
+
+(* Whether the request went out or not, a deadline that passed may have
+   been after it did. *)
+let timed_out span =
+  `Lost (Format.asprintf "no answer within %a" Mtime.Span.pp span)
 
 (* Four times what the server allows a request's head. *)
 let max_head = 65_536
@@ -108,9 +151,11 @@ let fail fmt = Printf.ksprintf (fun m -> raise (Failed m)) fmt
 let create ~sw ~net ~mono_clock:clock ?(timeout = Mtime.Span.(30 * s))
     ?(max_body = 16_777_216) ?(per_host = 4)
     ?(idle_timeout = Mtime.Span.(15 * s)) ?authenticator () =
+  let net = (net :> [ `Generic ] Eio.Net.ty Eio.Resource.t) in
   {
     sw;
-    net :> [ `Generic ] Eio.Net.ty Eio.Resource.t;
+    net;
+    resolver = Resolver.create ~sw net;
     tls = tls ~authenticator;
     clock :> Eio.Time.Mono.ty Eio.Resource.t;
     timeout;
@@ -303,13 +348,13 @@ let connect ~sw t target =
             connect_first rest)
   in
   let socket, switch, release =
-    match
-      connect_first
-        (Eio.Net.getaddrinfo_stream t.net target.host
-           ~service:(string_of_int target.port))
-    with
-    | opened -> opened
-    | exception (Eio.Io _ as ex) -> cannot_send "%s" (Printexc.to_string ex)
+    match Resolver.lookup t.resolver target.host ~port:target.port with
+    | Error ex -> cannot_send "%s" (Printexc.to_string ex)
+    | Ok addresses -> (
+        match connect_first addresses with
+        | opened -> opened
+        | exception (Eio.Io _ as ex) -> cannot_send "%s" (Printexc.to_string ex)
+        )
   in
   let flow, secure =
     match identity with
@@ -454,12 +499,13 @@ let length_header meth body =
   match (body, meth) with
   | Some b, _ -> [ ("Content-Length", string_of_int (String.length b)) ]
   | None, (`POST | `PUT | `PATCH) -> [ ("Content-Length", "0") ]
-  | None, (`GET | `HEAD | `DELETE | `OPTIONS | `Other _) -> []
+  | None, (`GET | `HEAD | `DELETE | `OPTIONS | `CONNECT | `TRACE | `Other _) ->
+      []
 
 (* RFC 9110 §9.2.2. *)
 let is_idempotent = function
-  | `GET | `HEAD | `PUT | `DELETE | `OPTIONS -> true
-  | `POST | `PATCH | `Other _ -> false
+  | `GET | `HEAD | `PUT | `DELETE | `OPTIONS | `TRACE -> true
+  | `POST | `PATCH | `CONNECT | `Other _ -> false
 
 (* Passes the trace on: [tracestate] only beside its [traceparent], and
    neither where the caller wrote its own. *)
@@ -610,14 +656,14 @@ let exchange ~sw t ~headers ~body meth target ~reused =
   attempt ~fresh:false
 
 let error_of_exn = function
-  | Cannot_send m -> Some (Unsent m)
-  | Write_failed m -> Some (Unsent ("the request could not be written: " ^ m))
-  | Failed m -> Some (Unanswered m)
+  | Cannot_send m -> Some (`Unsent m)
+  | Write_failed m -> Some (`Unsent ("the request could not be written: " ^ m))
+  | Failed m -> Some (`Lost m)
   | Closed_unanswered ->
-      Some (Unanswered "the server closed the connection without answering")
+      Some (`Lost "the server closed the connection without answering")
   | (Eio.Io _ | End_of_file | Tls_eio.Tls_alert _ | Tls_eio.Tls_failure _) as ex
     ->
-      Some (Unanswered (Printexc.to_string ex))
+      Some (`Lost (Printexc.to_string ex))
   | _ -> None
 
 (* Named by method, as OpenTelemetry names a client span, [HTTP] for any
@@ -626,7 +672,8 @@ let error_of_exn = function
 let within_client_span meth uri f =
   let name =
     match meth with
-    | (`GET | `HEAD | `POST | `PUT | `DELETE | `OPTIONS | `PATCH) as m ->
+    | ( `GET | `HEAD | `POST | `PUT | `DELETE | `OPTIONS | `PATCH | `CONNECT
+      | `TRACE ) as m ->
         Spindle_http.Meth.to_string m
     | `Other _ -> "HTTP"
   in
@@ -649,10 +696,9 @@ let within_client_span meth uri f =
         let status = Status.to_int status in
         Trace.add span [ ("http.response.status_code", `Int status) ];
         if status >= 400 then Trace.fail span (string_of_int status)
-      and failed = function
-        | Unsent _ -> Trace.fail span "unsent"
-        | Unanswered _ -> Trace.fail span "unanswered"
-        | Timeout _ -> Trace.fail span "timeout"
+      and failed : error -> unit = function
+        | `Unsent _ -> Trace.fail span "unsent"
+        | `Lost _ -> Trace.fail span "lost"
       in
       f ~answered ~failed)
 
@@ -670,7 +716,7 @@ let call t ?timeout ?(headers = []) ?body meth url =
                 (exchange ~sw t ~headers ~body meth (target_of ~url uri) ~reused)))
     with
     | Ok answer -> Ok answer
-    | Error `Timeout -> Error (Timeout deadline)
+    | Error `Timeout -> Error (timed_out deadline)
     | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
     | exception ex -> (
         match error_of_exn ex with Some e -> Error e | None -> raise ex)
@@ -725,15 +771,15 @@ module Body = struct
                   (Framing.read_some b.reader ~max:max_int ~reserve:(fun _ ->
                        true)))
           with
-          | Error `Timeout -> failed (Timeout b.wait)
+          | Error `Timeout -> failed (timed_out b.wait)
           | Ok (Ok (`Data s)) -> Ok (`Data s)
           | Ok (Ok `End) ->
               b.state <- Ended;
               Ok `End
           | Ok (Error (`Unreadable m)) ->
-              failed (Unanswered ("an answer cut short: " ^ m))
+              failed (`Lost ("an answer cut short: " ^ m))
           | Ok (Error (`Too_large | `Over_budget)) ->
-              failed (Unanswered "an answer that could not be held")
+              failed (`Lost "an answer that could not be held")
           | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
           | exception ex -> (
               match error_of_exn ex with Some e -> failed e | None -> raise ex))
@@ -804,8 +850,9 @@ let stream t ?timeout ?read_timeout ?(headers = []) ?body meth url f =
         Ok (target, open_answer ~sw t ~headers ~body meth target))
   with
   | Error `Timeout ->
-      failed (Timeout deadline);
-      Error (Timeout deadline)
+      let e = timed_out deadline in
+      failed e;
+      Error e
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
   | exception ex -> (
       match error_of_exn ex with
@@ -818,7 +865,7 @@ let stream t ?timeout ?read_timeout ?(headers = []) ?body meth url f =
       match Framing.of_response ~request_meth:meth head with
       | Error m ->
           close_connection c;
-          Error (Unanswered ("a response whose length cannot be told: " ^ m))
+          Error (`Lost ("a response whose length cannot be told: " ^ m))
       | Ok framing ->
           let b =
             {
@@ -854,7 +901,7 @@ let stream t ?timeout ?read_timeout ?(headers = []) ?body meth url f =
 type events_end =
   | Finished of string option
   | Stopped of string option
-  | Refused of response
+  | Answered of response
 
 let is_event_stream headers =
   match
@@ -883,13 +930,13 @@ let events t ?timeout ?read_timeout ?(headers = []) ?last_event_id url on_event
                  Buffer.add_string b s;
                  if Buffer.length b > t.max_body then
                    Error
-                     (Unanswered
+                     (`Lost
                         (Printf.sprintf "a response longer than %d bytes"
                            t.max_body))
                  else whole ()
              | Ok `End ->
                  Ok
-                   (Refused
+                   (Answered
                       {
                         status = a.status;
                         headers = a.headers;
@@ -919,7 +966,7 @@ let events t ?timeout ?read_timeout ?(headers = []) ?last_event_id url on_event
                  in
                  match Spindle_http.Event_stream.feed r s with
                  | Ok events -> each events
-                 | Error m -> Error (Unanswered m))
+                 | Error m -> Error (`Lost m))
            in
            next ()))
 
@@ -927,16 +974,14 @@ let events t ?timeout ?read_timeout ?(headers = []) ?last_event_id url on_event
 (* A WebSocket *)
 
 type websocket_error =
-  | Failed of error
-  | Refused of response
-  | Ended of Websocket.error
+  [ error | `Not_upgraded of response | `Websocket of Websocket.error ]
 
-let websocket_error_to_string = function
-  | Failed e -> error_to_string e
-  | Refused r ->
+let websocket_error_to_string : websocket_error -> string = function
+  | #error as e -> error_to_string e
+  | `Not_upgraded r ->
       Printf.sprintf "answered %d, which opens no socket"
         (Status.to_int r.status)
-  | Ended e -> Websocket.error_to_string e
+  | `Websocket e -> Websocket.error_to_string e
 
 (* A caller's own beside one of these would be a second answer. *)
 let handshake_fields =
@@ -1077,18 +1122,18 @@ let open_websocket t ?timeout ?(headers = []) ?keep_alive ?max_message protocol
               raise ex)
     with
     | Ok opened -> Ok opened
-    | Error `Timeout -> Error (Failed (Timeout deadline))
+    | Error `Timeout -> Error (timed_out deadline :> websocket_error)
     | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
     | exception ex -> (
         match error_of_exn ex with
-        | Some e -> Error (Failed e)
+        | Some e -> Error (e :> websocket_error)
         | None -> raise ex)
   in
   match opened with
   | Error _ as e -> e
   | Ok (`Refused (head, body)) ->
       Error
-        (Refused
+        (`Not_upgraded
            {
              status = head.status;
              headers =
@@ -1101,7 +1146,7 @@ let open_websocket t ?timeout ?(headers = []) ?keep_alive ?max_message protocol
       match check_upgrade ~key protocol head with
       | Error m ->
           close_connection c;
-          Error (Failed (Unanswered m))
+          Error (`Lost m)
       | Ok () ->
           let ended =
             with_socket_writer t ~send_timeout:deadline c (fun writer ->
@@ -1118,7 +1163,7 @@ let open_websocket t ?timeout ?(headers = []) ?keep_alive ?max_message protocol
                   f)
           in
           close_connection c;
-          Result.map_error (fun e -> Ended e) ended)
+          Result.map_error (fun e -> `Websocket e) ended)
 
 (* One line when it ends: a warning when it never opened or did not end
    cleanly, and an error, with what was raised, when its handler raised.
@@ -1154,11 +1199,11 @@ let websocket t ?timeout ?headers ?keep_alive ?max_message protocol url f =
   | Error e as result ->
       let level =
         match e with
-        | Ended
+        | `Websocket
             (Websocket.Closed
                { code = Websocket.Normal | Websocket.Going_away; _ }) ->
             Logs.Info
-        | Failed _ | Refused _ | Ended _ -> Logs.Warning
+        | `Unsent _ | `Lost _ | `Not_upgraded _ | `Websocket _ -> Logs.Warning
       in
       log_end level (websocket_error_to_string e);
       result

@@ -42,7 +42,8 @@ data: 42
   `Event.text "token"` for plain text. The stream's own type (`counting`)
   stops you sending another stream's events.
 - **`send` answers `Error Gone` once the client has gone**, so a loop
-  written with `let*` ends there.
+  written with `let*` ends there. It answers the same once the producer has
+  returned: a fiber that kept `send` sends nothing after the stream ended.
 - **Resuming:** give each event an id (`Event.make ~id`). A browser sends
   the last one back as `Last-Event-ID` when it reconnects.
 - A quiet stream gets a `: keep-alive` comment every 15 seconds

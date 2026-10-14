@@ -42,6 +42,30 @@ let to_string t =
   | Ok read when equal read t -> Ok s
   | Ok _ | Error _ -> Error "a media type its reader would not read back"
 
+(* A wildcard is a whole type or subtype, or a suffix's: anything else
+   with a star in it would be compared as it is spelt. *)
+let is_pattern p =
+  let starless s = Field.is_token s && not (String.contains s '*') in
+  match String.split_on_char '/' p with
+  | [ ty; sub ] ->
+      starless ty
+      && (String.equal sub "*"
+         || String.starts_with ~prefix:"*+" sub
+            && starless (String.sub sub 2 (String.length sub - 2))
+         || starless sub)
+  | _ -> false
+
+let matches pattern (t : t) =
+  match String.split_on_char '/' (String.lowercase_ascii pattern) with
+  | [ ty; "*" ] -> String.equal ty t.type_
+  | [ ty; sub ] when String.starts_with ~prefix:"*+" sub ->
+      String.equal ty t.type_
+      && String.ends_with
+           ~suffix:(String.sub sub 1 (String.length sub - 1))
+           t.subtype
+  | [ ty; sub ] -> String.equal ty t.type_ && String.equal sub t.subtype
+  | _ -> false
+
 let parameter t name =
   let name = String.lowercase_ascii name in
   List.find_map

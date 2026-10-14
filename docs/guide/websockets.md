@@ -17,7 +17,8 @@ end gets a socket typed from its own side.
   dependency answers `Ok handler`, or a refusal before the upgrade.
 - The handler calls `Ws.receive` and `Ws.send` and returns a `result`. A
   `let*` loop stops at the first error: `Closed` (with its code and reason),
-  `Lost` or `Unreadable`.
+  `Lost`, `Unreadable`, or `Unwritable` for a message that cannot be sent --
+  JSON its description cannot encode, or text that is not UTF-8.
 
 A plain request to the route is refused, and so is an upgrade from another
 site's page, since the browser sends that page's cookies:
@@ -52,9 +53,10 @@ heard: goodbye
 
 `Spindle_client.websocket client protocol url f` opens a `ws://` or `wss://`
 URL, runs `f` on the socket and closes it when `f` returns. It answers `f`'s
-result, or `Failed` (the handshake could not be made), `Refused` (the server
-answered without a `101`, with that answer) or `Ended` (how the socket
-ended). `~timeout` bounds the handshake and each write.
+result, or a call's `` `Unsent `` or `` `Lost `` (the handshake could not be
+made), `` `Not_upgraded `` (the server answered without a `101`, with that
+answer) or `` `Websocket `` (how the socket ended). `~timeout` bounds the
+handshake and each write.
 
 Both programs declare the same protocol. When the two ends are separate
 programs, put it in a library both link so they cannot drift apart.
@@ -67,6 +69,7 @@ How the handler's loop ended is the close code:
 |---|---|
 | returns `Ok` | 1000 |
 | got a message its description could not read | 1007 |
+| had a message its description could not write | 1011 |
 | raised (logged as a bug) | 1011 |
 
 To close with another code, call `Ws.close ~code ~reason ws` and return.

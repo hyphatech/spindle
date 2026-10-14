@@ -85,6 +85,8 @@ type error =
   | Unencodable of Wiretype.Unwritable.t
       (** the data's description could not write it, and where *)
 
+val error_to_string : error -> string
+
 val refusal : error -> Refusal.t
 (** {!Refusal.internal}, the detail in the log. *)
 

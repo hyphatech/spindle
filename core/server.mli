@@ -13,7 +13,7 @@ val run :
   sw:Eio.Switch.t ->
   net:_ Eio.Net.t ->
   mono_clock:_ Eio.Time.Mono.t ->
-  now:(unit -> Ptime.t) ->
+  read_clock:(unit -> Ptime.t) ->
   domain_mgr:_ Eio.Domain_manager.t ->
   ?domains:int ->
   port:int ->
@@ -75,7 +75,7 @@ val run :
     are collected young rather than promoted; [OCAMLRUNPARAM]'s [s] asks for
     more.
 
-    [now] is the application's clock, and the only one a handler sees.
+    [read_clock] reads the application's clock, the only one a handler sees.
     [mono_clock] measures every duration the server keeps or reports -- the
     timeouts, the drain and the access log's [duration] -- and is monotonic, so
     a wall clock that jumps moves none of them.
@@ -114,14 +114,17 @@ val run :
     near: a megabyte at the floor still arrives in about half an hour. A body
     that falls behind is unreadable, and its connection closed after the answer;
     holding a slot then costs bandwidth rather than nothing, and an address that
-    pays it is the per-address limit's to stop, which is a proxy's.
+    pays it is the per-address limit's to stop, which is a proxy's. A server
+    that closes a connection reads what is still arriving against it too, for
+    [linger]. A deadline passes up to a tick late, and a tick is a tenth of the
+    shortest of these limits.
 
-    {b Answers.} Every 2xx, 3xx and 4xx carries [Date], from [now]. A write the
-    client does not read for [send_timeout] (30 s) -- a head, a body, a stream's
-    event -- closes the connection, and a stream ends as its client having
-    stopped reading: a client that never reads would otherwise hold a fiber and
-    a connection slot for as long as the process lives. A takeover's writes are
-    the route's own ({!Response.takeover}).
+    {b Answers.} Every 2xx, 3xx and 4xx carries [Date], from [read_clock]. A
+    write the client does not read for [send_timeout] (30 s) -- a head, a body,
+    a stream's event -- closes the connection, and a stream ends as its client
+    having stopped reading: a client that never reads would otherwise hold a
+    fiber and a connection slot for as long as the process lives. A takeover's
+    writes are the route's own ({!Response.takeover}).
 
     {b HTTP/1.0.} A client speaking it is answered as RFC 9112 asks of one: a
     stream is written as it happens and ended by closing the connection, since
@@ -182,7 +185,7 @@ val run :
 
 val serve_on :
   mono_clock:_ Eio.Time.Mono.t ->
-  now:(unit -> Ptime.t) ->
+  read_clock:(unit -> Ptime.t) ->
   domain_mgr:_ Eio.Domain_manager.t ->
   ?domains:int ->
   ?max_body:int ->

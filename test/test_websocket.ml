@@ -100,7 +100,8 @@ let test_a_handler_that_raises_is_closed_with_1011 () =
     (Error "closed, 1011: Something went wrong at our end.") (outcome got)
 
 (* The raise is our bug, so the socket's line says so at error, with what
-   was raised and where, as a stream's or a background job's does. *)
+   was raised and where, as a stream's or a background job's does -- by its
+   kind, never its message. *)
 let test_a_handler_that_raises_is_logged_as_an_error () =
   let lines = ref [] in
   Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
@@ -126,8 +127,10 @@ let test_a_handler_that_raises_is_logged_as_an_error () =
         true
         (has "socket on /raises ended" line);
       Alcotest.(check bool)
-        "with what was raised" true
-        (has {|a bug|} line && has {|"error.stack":"|} line)
+        "with what was raised, by its kind" true
+        (has {|"error.kind":"|} line
+        && has {|"error.stack":"|} line
+        && not (has {|a bug|} line))
   | lines -> Alcotest.failf "%d error lines for one raise" (List.length lines)
 
 let test_another_sites_page_cannot_open_one () =
@@ -185,7 +188,7 @@ let serve ~sw env ?stop routes =
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         ?stop
         ~drain:Mtime.Span.(100 * ms)
         [ socket ] (Spindle.Test.app routes);
@@ -377,7 +380,7 @@ let test_a_socket_whose_tls_breaks_is_lost env () =
         let* back = Ws.receive ws in
         Ok back.text)
   with
-  | Error (Spindle_client.Ended (Ws.Lost _)) -> ()
+  | Error (`Websocket (Ws.Lost _)) -> ()
   | got ->
       Alcotest.failf "lost, not %s"
         (match called got with Ok s -> "answered " ^ s | Error m -> m)
@@ -424,7 +427,7 @@ let test_a_socket_whose_server_stopped_reading_is_lost () =
       chat "ws://t/flood"
       (fun ws -> Ws.send ws { text = String.make 200_000 'x' })
   with
-  | Error (Spindle_client.Ended (Ws.Lost _)) -> ()
+  | Error (`Websocket (Ws.Lost _)) -> ()
   | got ->
       Alcotest.failf "lost, not %s"
         (match called got with Ok () -> "sent" | Error m -> m)
@@ -508,7 +511,7 @@ let test_a_silent_peer_is_pinged_then_dropped () =
       Spindle.Server.serve_on ~mono_clock:clock
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         [ listening ] (Spindle.Test.app routes);
       `Stop_daemon);
   let flow = connect ~sw in
@@ -556,7 +559,7 @@ let test_a_peer_sending_slowly_is_heard () =
       Spindle.Server.serve_on ~mono_clock:clock
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         [ listening ] (Spindle.Test.app routes);
       `Stop_daemon);
   let flow = connect ~sw in
@@ -613,7 +616,7 @@ let test_a_peer_reading_slowly_is_sent_the_whole_message () =
       Spindle.Server.serve_on ~mono_clock:clock
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1 ~send_timeout:Mtime.Span.s
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         [ listening ]
         (Spindle.Test.app [ large ]);
       `Stop_daemon);
@@ -688,7 +691,7 @@ let test_a_socket_whose_peer_stopped_reading_gives_back_its_slot () =
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1 ~max_connections:1 ~send_timeout:Mtime.Span.s
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         [ listening ]
         (Spindle.Test.app [ flood; hello ]);
       `Stop_daemon);

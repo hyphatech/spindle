@@ -299,7 +299,11 @@ let test_what_is_written_reads_back =
           parts
       in
       let boundary = "spindle-boundary-7f3a" in
-      let body = M.to_string ~boundary parts in
+      let body =
+        match M.to_string ~boundary parts with
+        | Ok body -> body
+        | Error m -> QCheck.Test.fail_reportf "refused: %s" m
+      in
       let written name =
         String.concat ""
           (List.map
@@ -316,21 +320,63 @@ let test_what_is_written_reads_back =
       String.equal got owed
       || QCheck.Test.fail_reportf "owed %S, read %S" owed got)
 
-(* A type that could end its line is not written, so whoever chose it starts
-   no field of their own. *)
-let test_a_written_type_starts_no_field () =
-  let part content_type =
-    ({ M.name = "a"; filename = None; content_type; headers = [] }, "x")
-  in
+let part ?(name = "a") ?filename ?(content_type = text_plain) content =
+  ({ M.name; filename; content_type; headers = [] }, content)
+
+let written ~boundary parts =
+  match M.to_string ~boundary parts with
+  | Ok body -> read ~boundary Whole body
+  | Error _ -> "refused"
+
+(* What the writer writes, its reader reads back as it was written, or the
+   writer refuses it: no part a caller made becomes two, or a field of
+   their choosing. *)
+let test_the_writer_writes_what_reads_back () =
   let media subtype = { text_plain with subtype } in
-  let body =
-    M.to_string ~boundary:"b"
-      [ part (media "plain\r\nX-Evil: 1"); part (media "csv") ]
-  in
-  Alcotest.(check string)
-    "the one with a line end is left out, the other written"
-    "a|-|text/plain|x ; a|-|text/csv|x"
-    (read ~boundary:"b" Whole body)
+  List.iter
+    (fun (says, boundary, parts, owed) ->
+      Alcotest.(check string) says owed (written ~boundary parts))
+    [
+      ( "7578 §4.1: each part as it was",
+        "b",
+        [
+          part "one";
+          part ~name:"f" ~filename:"a.csv" ~content_type:(media "csv") "two";
+        ],
+        "a|-|text/plain|one ; f|a.csv|text/csv|two" );
+      ( "2046 §5.1.1: content may hold the boundary inside a line",
+        "b",
+        [ part "x--b\r\n-b" ],
+        "a|-|text/plain|x--b\r\n-b" );
+      ( "2046 §5.1.1: content holding the delimiter is refused",
+        "b",
+        [
+          part
+            "x\r\n--b\r\nContent-Disposition: form-data; name=\"evil\"\r\n\r\ny";
+        ],
+        "refused" );
+      ( "2046 §5.1.1: and so is content that is the closing delimiter",
+        "b",
+        [ part "\r\n--b--" ],
+        "refused" );
+      ( "6838 §4.2: a type that could end its line is refused",
+        "b",
+        [ part ~content_type:(media "plain\r\nX-Evil: 1") "x" ],
+        "refused" );
+      ("2046 §5.1.1: an empty boundary is refused", "", [ part "x" ], "refused");
+      ( "2046 §5.1.1: a boundary holding a line's end is refused",
+        "b\r\nX-Evil: 1",
+        [ part "x" ],
+        "refused" );
+      ( "2046 §5.1.1: a boundary past seventy is refused",
+        String.make 71 'b',
+        [ part "x" ],
+        "refused" );
+      ( "2046 §5.1.1: a boundary ending in a space is refused",
+        "b ",
+        [ part "x" ],
+        "refused" );
+    ]
 
 let () =
   Alcotest.run "multipart_rfc"
@@ -340,8 +386,8 @@ let () =
         [
           QCheck_alcotest.to_alcotest test_every_row_holds_at_any_cut;
           QCheck_alcotest.to_alcotest test_what_is_written_reads_back;
-          Alcotest.test_case "a written type starts no field" `Quick
-            test_a_written_type_starts_no_field;
+          Alcotest.test_case "the writer writes what reads back" `Quick
+            test_the_writer_writes_what_reads_back;
           Alcotest.test_case "7578 §4.8: a head past its limit is refused"
             `Quick test_a_head_past_its_limit_is_refused;
           Alcotest.test_case "2046 §5.1.1: a boundary is what it allows" `Quick

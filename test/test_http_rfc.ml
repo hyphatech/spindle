@@ -328,6 +328,14 @@ let routes =
       (Spindle.Dep.return
          (Ok (Spindle.Response.takeover ~protocol:"echo" (fun _ -> ()))));
     Spindle.get
+      Spindle.Path.(s "upgrade-required")
+      Spindle.Returns.response
+      (Spindle.Dep.return
+         (Ok
+            (Spindle.Response.make ~status:`Upgrade_required
+               ~headers:[ ("upgrade", "echo") ]
+               "Ask for echo.")));
+    Spindle.get
       Spindle.Path.(s "host")
       Spindle.Returns.response
       (Spindle.Dep.map
@@ -366,7 +374,7 @@ let serve ~sw env =
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:4
-        ~now:(fun () -> example_instant)
+        ~read_clock:(fun () -> example_instant)
         ~max_body:max_body_on_the_server
         ~max_header_bytes:max_head_on_the_server
         ~discard_limit:discard_on_the_server [ listening ] app;
@@ -1079,6 +1087,31 @@ let server =
       (request ~line:"GET /upgrade HTTP/1.0"
          [ "Connection: upgrade"; "Upgrade: echo" ])
       (Answers ([ answer 500 ], Closed));
+    row "9110 §7.8" "a 426's Upgrade is named in Connection"
+      (get "/upgrade-required")
+      (Answers
+         ( [
+             answer
+               ~headers:
+                 [ ("upgrade", Only "echo"); ("connection", Only "upgrade") ]
+               426;
+           ],
+           Open ));
+    row "9110 §7.8" "and beside a close"
+      (request ~line:"GET /upgrade-required HTTP/1.1"
+         [ "Host: t"; "Connection: close" ]
+      ^ smuggled)
+      (Answers
+         ( [
+             answer
+               ~headers:
+                 [
+                   ("upgrade", Only "echo");
+                   ("connection", Only "upgrade, close");
+                 ]
+               426;
+           ],
+           Closed ));
     row "9110 §9.1" "a method nothing here implements is 501"
       (request ~line:"PROPFIND /id/a HTTP/1.1" [ "Host: t" ])
       (Answers ([ answer 501 ], Open));
@@ -1411,7 +1444,7 @@ let responses =
     rrow "9112 §6.3" "a 304 has no body, whatever its length says"
       (status_line ~reason:"Not Modified" 304 ok_fields "hello")
       (response ~reason:"Not Modified" 304 ok_headers);
-    rrow ~meth:(`Other "CONNECT") "9112 §6.3"
+    rrow ~meth:`CONNECT "9112 §6.3"
       "a 2xx to CONNECT has no body: the connection is a tunnel"
       (status_line 200 [] "tunnelled")
       (response 200 []);
@@ -2596,7 +2629,17 @@ let gen_field =
 
 let gen_meth =
   G.oneof_list
-    [ `GET; `HEAD; `POST; `PUT; `PATCH; `DELETE; `OPTIONS; `Other "PROPFIND" ]
+    [
+      `GET;
+      `HEAD;
+      `POST;
+      `PUT;
+      `PATCH;
+      `DELETE;
+      `OPTIONS;
+      `TRACE;
+      `Other "PROPFIND";
+    ]
 
 let gen_target =
   G.(map (fun s -> "/" ^ s) (string_size ~gen:visible_char (0 -- 16)))
@@ -4287,6 +4330,13 @@ let compressed_rows =
     representation_row "9110 §13.1.2" "and weakly"
       [ ("if-none-match", "W/" ^ tag) ]
       304;
+    representation_row "9110 §13.1.1"
+      "If-Match by the tag a compressed answer carried"
+      [ ("if-match", tag) ]
+      200;
+    representation_row "9110 §13.1.1" "If-Match and If-None-Match both by it"
+      [ ("if-match", tag); ("if-none-match", tag) ]
+      304;
     representation_row "9110 §13.1.5"
       "If-Range by a compressed answer's tag is not the identity's"
       [ ("range", "bytes=0-1"); ("if-range", tag) ]
@@ -4335,7 +4385,54 @@ let test_a_compressed_representation_answers_as_the_rfc_says () =
     (Spindle.Test.header not_modified "etag");
   Alcotest.(check (option string))
     "9110 §15.4.5: and the Vary" (Some "Accept-Encoding")
-    (Spindle.Test.header not_modified "vary")
+    (Spindle.Test.header not_modified "vary");
+  let identity = Spindle.Test.call app `GET "/f.txt" in
+  let identity_tag =
+    Option.value ~default:"" (Spindle.Test.header identity "etag")
+  in
+  let plain_304 =
+    Spindle.Test.call
+      ~headers:[ ("if-none-match", identity_tag) ]
+      app `GET "/f.txt"
+  in
+  Alcotest.(check int)
+    "9110 §13.1.2: the identity's tag revalidates the identity" 304
+    (Status.to_int plain_304.status);
+  Alcotest.(check (option string))
+    "9110 §15.4.5: a 304 of the identity has the Vary its 200 has"
+    (Spindle.Test.header identity "vary")
+    (Spindle.Test.header plain_304 "vary");
+  Alcotest.(check (option string))
+    "9110 §15.4.5: and the identity's tag" (Some identity_tag)
+    (Spindle.Test.header plain_304 "etag");
+  (* A route that compares tags itself sees the ones it set. *)
+  let seen =
+    Spindle.get
+      Spindle.Path.(s "seen")
+      Spindle.Returns.response
+      (let+ if_match = Spindle.Header.optional "if-match" Spindle.Codec.string
+       and+ if_none_match =
+         Spindle.Header.optional "if-none-match" Spindle.Codec.string
+       in
+       Ok
+         (Spindle.Response.make
+            (Printf.sprintf "%s %s"
+               (Option.value if_match ~default:"-")
+               (Option.value if_none_match ~default:"-"))))
+  in
+  let app = Spindle.Test.app ~compress:Spindle.Compress.default [ seen ] in
+  Alcotest.(check string)
+    "9110 §13.1.1, §13.1.2: a route sees the tags it set, not their marks"
+    {|"v1" "v1", W/"v2"|}
+    (Spindle.Test.call
+       ~headers:
+         [
+           ("accept-encoding", "gzip");
+           ("if-match", {|"v1-gzip"|});
+           ("if-none-match", {|"v1-gzip", W/"v2-gzip"|});
+         ]
+       app `GET "/seen")
+      .body
 
 module Forwarded = Spindle_http.Forwarded
 

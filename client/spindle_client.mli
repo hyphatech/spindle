@@ -24,19 +24,22 @@
     each address the host's name resolves to there, in the order the resolver
     gives them, until one connects.
 
-    A call has a deadline, which covers all of it, and one whose deadline passes
-    closes its connection rather than give it back. A request is sent a second
-    time only where that cannot be wrong: one that could not be written on a
-    kept connection, and one that means the same done twice -- [GET], [HEAD],
-    [PUT], [DELETE], [OPTIONS] -- that met a kept connection's end before a byte
-    of its answer. A [POST] that went out is never sent twice; it fails, and the
-    caller decides: an error says whether the request went out, {!Unsent} or
-    {!Unanswered}, since only one that did not can be sent again blind.
+    A call has a deadline, which covers all of it -- the name's lookup included,
+    which one fiber of the client's, on [sw], runs for every domain, so a lookup
+    the system will not cancel is left to end in the background -- and one whose
+    deadline passes closes its connection rather than give it back. A request is
+    sent a second time only where that cannot be wrong: one that could not be
+    written on a kept connection, and one that means the same done twice --
+    [GET], [HEAD], [PUT], [DELETE], [OPTIONS], [TRACE] -- that met a kept
+    connection's end before a byte of its answer. A [POST] that went out is
+    never sent twice; it fails, and the caller decides: an error says whether
+    the request went out, [`Unsent] or [`Lost], since only one that did not can
+    be sent again blind.
 
     HTTPS is TLS against the system's certificates, set up once per client. A
     machine with no usable trust store cannot verify anybody, and the honest
     answer is that the call cannot be made, not that it is trusted anyway:
-    {!Unsent}, on every https call, and plain http unaffected.
+    [`Unsent], on every https call, and plain http unaffected.
 
     Cancellation is never an error here. It is how Eio stops work nobody is
     waiting for, and it passes through. *)
@@ -98,25 +101,25 @@ type response = {
 }
 
 type error =
-  | Unsent of string
-      (** the request did not go out whole, so the server cannot have acted on
-          it and it may be sent again: a URL with no host, or a scheme other
-          than [http] and [https]; a host with no address, or none of whose
-          addresses connects; no usable trust store, an [https] host that is
-          neither a name nor an address, or a TLS handshake that failed; a
-          request target or field that cannot be written, or a field the client
-          writes itself; and a request the connection would not take. In words
-          for the log. *)
-  | Unanswered of string
-      (** the request went out and no whole answer came back, so the server may
-          have acted on it: the connection closing or failing before the answer
-          ended; an answer that cannot be read, whose length cannot be told,
-          that is cut short or is longer than [max_body], or an event longer
-          than it; and, for a WebSocket, a [101] that does not accept the
-          handshake. In words for the log. *)
-  | Timeout of Mtime.Span.t
-      (** the deadline that passed, which may have been before the request went
-          out or after: like {!Unanswered}, it may have been acted on *)
+  [ `Unsent of string
+    (** the request did not go out whole, so the server cannot have acted on it
+        and it may be sent again: a URL with no host, or a scheme other than
+        [http] and [https]; a host with no address, or none of whose addresses
+        connects; no usable trust store, an [https] host that is neither a name
+        nor an address, or a TLS handshake that failed; a request target or
+        field that cannot be written, or a field the client writes itself; and a
+        request the connection would not take. In words for the log. *)
+  | `Lost of string
+    (** the request may have gone out and no whole answer came back, so the
+        server may have acted on it and it is never sent again blind: the
+        deadline passing, before the request went out or after -- its words say
+        which deadline; the connection closing or failing before the answer
+        ended; an answer that cannot be read, whose length cannot be told, that
+        is cut short or is longer than [max_body], or an event longer than it;
+        and, for a WebSocket, a [101] that does not accept the handshake. In
+        words for the log. *) ]
+(** The words every Hypha library uses for what happened to the work, so a
+    handler's one [let*] runs over a call here and a statement there. *)
 
 val error_to_string : error -> string
 
@@ -180,8 +183,9 @@ type events_end =
   | Finished of string option
       (** the server ended it: the last event id it set, to carry on from *)
   | Stopped of string option  (** the function stopped it, at that id *)
-  | Refused of response
-      (** the answer was not a [200] [text/event-stream]: it, read whole *)
+  | Answered of response
+      (** the server answered with something other than a [200]
+          [text/event-stream]: that answer, read whole *)
 
 val events :
   t ->
@@ -201,10 +205,11 @@ val events :
 (** {1 A WebSocket} *)
 
 type websocket_error =
-  | Failed of error  (** the handshake could not be made, as a call's *)
-  | Refused of response  (** the server answered, without a [101] *)
-  | Ended of Spindle_http.Websocket.error
-      (** how the function's socket ended *)
+  [ error
+  | `Not_upgraded of response  (** the server answered, without a [101] *)
+  | `Websocket of Spindle_http.Websocket.error
+    (** how the function's socket ended *) ]
+(** A handshake that could not be made is a call's {!error}. *)
 
 val websocket_error_to_string : websocket_error -> string
 

@@ -34,7 +34,7 @@ module Cookie = struct
             match
               Option.bind
                 (Cookie.Named.unseal c ~now:(Request.now r) raw)
-                (Codec.parse codec)
+                (fun v -> Result.to_option (Codec.parse codec v))
             with
             | Some v -> Ok (Some v)
             | None ->
@@ -60,8 +60,11 @@ module Cookie = struct
       Input.required Input.cookie (Cookie.Named.name c) (Cookie.Named.codec c)
 
   let encoded =
-    Codec.custom ~kind:"encoded" ~expects:"a value this server wrote"
-      ~parse:Cookie_repr.decode ~print:Cookie_repr.encode ()
+    Codec.custom ~kind:"encoded"
+      ~parse:(fun s ->
+        Option.to_result ~none:"This is not a value this server wrote."
+          (Cookie_repr.decode s))
+      ~print:Cookie_repr.encode ()
 end
 
 (* Binding operators only, so opening it brings no other name into scope. *)
@@ -123,20 +126,20 @@ let peer = Dep.of_request ~needs:[] (fun r -> Ok (Request.peer r))
 let client = Dep.of_request ~needs:[] (fun r -> Ok (Request.client r))
 let request_id = Dep.of_request ~needs:[] (fun r -> Ok (Request.id r))
 let client_gone = Dep.of_request ~needs:[] (fun r -> Ok (Request.client_gone r))
-let body = Dep.of_body ~need:Dep.Raw (fun s -> Ok s)
+let body = Dep.of_body ~need:(Dep.Raw { content_types = [] }) (fun s -> Ok s)
 
-let body_stream ?content_type ~max () : Body.t Dep.t =
+let body_stream ?(content_types = []) ~max () : Body.t Dep.t =
   let codes =
-    match content_type with
-    | Some _ -> [ Refusal.Code.unsupported_media_type ]
-    | None -> []
+    match content_types with
+    | [] -> []
+    | _ :: _ -> [ Refusal.Code.unsupported_media_type ]
   in
-  Dep_repr.make ~codes ~needs:[ Body Stream ] (fun (c : Dep_repr.context) ->
-      match (content_type, Request.header c.request "content-type") with
-      | Some accepts, Some named when not (accepts named) ->
-          Now (Error Refusal.unsupported_media_type)
-      | (Some _ | None), (Some _ | None) ->
-          Later (fun held -> Ok (Body_repr.stream held ~max)))
+  Dep_repr.make ~codes
+    ~needs:[ Body (Stream { content_types }) ]
+    (fun (c : Dep_repr.context) ->
+      if not (Dep_repr.takes_content_type content_types c.request) then
+        Now (Error Refusal.unsupported_media_type)
+      else Later (fun held -> Ok (Body_repr.stream held ~max)))
 
 (* The content type is checked before the body is read. *)
 let multipart ?max_head ~max () : Multipart.t Dep.t =
@@ -193,15 +196,6 @@ let add_header =
   outgoing_setter (fun (o : Dep_repr.outgoing) h ->
       o.headers <- o.headers @ [ h ])
 
-(* application/json or application/...+json; RFC 8259 §11 defines no
-   parameters. Anything else is refused because a browser posts text/plain
-   or a form cross-site without a preflight, and JSON only with one. *)
-let is_json content_type =
-  match Spindle_http.Media_type.parse content_type with
-  | Ok { type_ = "application"; subtype; parameters = _ } ->
-      String.equal subtype "json" || String.ends_with ~suffix:"+json" subtype
-  | Ok _ | Error _ -> false
-
 (* Each at its path as a client writes it, [body.items[2].count]. *)
 let body_problems problems =
   List.map
@@ -214,7 +208,7 @@ let body_problems problems =
     problems
 
 let json ?refusal ?(examples = []) t =
-  Dep.of_body ~content_type:is_json
+  Dep.of_body
     ?refuses:(Option.map (fun (code, _) -> [ code ]) refusal)
     ~need:(Dep.Json { description = t; examples })
     (fun s ->
@@ -231,17 +225,17 @@ let json ?refusal ?(examples = []) t =
               Error (Refusal.make ~detail code sentence)
           | None -> Error (Refusal.invalid (body_problems problems))))
 
-let clock_now clock () = Spindle_http.Instant.of_clock clock
+let of_clock = Spindle_http.Instant.of_clock
 let until = Spindle_http.Instant.until
 
 (* A route table [App.make] refuses is a constant in source, so it raises:
    the program ends before it listens, saying why. *)
 let serve ?(port = 8080) ?host ?domains ?middleware ?codes ?not_found ?cors
-    ?compress ?check_origin ?trusted_origins ?trailing_slash ?now ?max_body
-    ?max_header_bytes ?head_timeout ?idle_timeout ?body_timeout ?min_body_rate
-    ?send_timeout ?discard_limit ?linger ?body_budget ?trusted_proxies
-    ?proxy_header ?backlog ?max_connections ?stop ?drain ?on_stop ?ready ?trace
-    ?metrics env routes =
+    ?compress ?check_origin ?trusted_origins ?trailing_slash ?read_clock
+    ?max_body ?max_header_bytes ?head_timeout ?idle_timeout ?body_timeout
+    ?min_body_rate ?send_timeout ?discard_limit ?linger ?body_budget
+    ?trusted_proxies ?proxy_header ?backlog ?max_connections ?stop ?drain
+    ?on_stop ?ready ?trace ?metrics env routes =
   let app =
     match
       App.make ?middleware ?codes ?not_found ?cors ?compress ?check_origin
@@ -257,7 +251,11 @@ let serve ?(port = 8080) ?host ?domains ?middleware ?codes ?not_found ?cors
       L.err (fun f -> f "cannot start: %s" m);
       exit 1);
   Eio.Switch.run @@ fun sw ->
-  let now = Option.value now ~default:(clock_now (Eio.Stdenv.clock env)) in
+  let read_clock =
+    match read_clock with
+    | Some read -> read
+    | None -> fun () -> of_clock (Eio.Stdenv.clock env)
+  in
   let stop =
     match stop with Some s -> s | None -> Server.stop_on_signals ~sw ()
   in
@@ -272,7 +270,7 @@ let serve ?(port = 8080) ?host ?domains ?middleware ?codes ?not_found ?cors
   in
   Server.run ~sw ~net:(Eio.Stdenv.net env)
     ~mono_clock:(Eio.Stdenv.mono_clock env)
-    ~now
+    ~read_clock
     ~domain_mgr:(Eio.Stdenv.domain_mgr env)
     ?domains ~port ?host ?max_body ?max_header_bytes ?head_timeout ?idle_timeout
     ?body_timeout ?min_body_rate ?send_timeout ?discard_limit ?linger

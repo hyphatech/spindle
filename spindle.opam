@@ -11,8 +11,9 @@ bug-reports: "https://github.com/hyphatech/spindle/issues"
 depends: [
   "dune" {>= "3.18"}
   "ocaml" {>= "5.5"}
-  "wiretype" {>= "0.4.0"}
-  "ppx_wiretype" {>= "0.4.0"}
+  "wiretype" {>= "0.5.0"}
+  "uuidm" {>= "0.9.10"}
+  "ppx_wiretype" {>= "0.5.0"}
   "eio" {>= "1.6"}
   "eio_main" {>= "1.6"}
   "uri" {>= "4.4.0"}
@@ -65,6 +66,6 @@ build: [
 dev-repo: "git+https://github.com/hyphatech/spindle.git"
 x-maintenance-intent: ["(latest)"]
 pin-depends: [
-  [ "wiretype.0.4.0" "git+https://github.com/hyphatech/wiretype.git#0.4.0" ]
-  [ "ppx_wiretype.0.4.0" "git+https://github.com/hyphatech/wiretype.git#0.4.0" ]
+  [ "wiretype.0.5.0" "git+https://github.com/hyphatech/wiretype.git#0.5.0" ]
+  [ "ppx_wiretype.0.5.0" "git+https://github.com/hyphatech/wiretype.git#0.5.0" ]
 ]

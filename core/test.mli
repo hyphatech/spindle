@@ -122,6 +122,8 @@ type websocket_error =
   | Ended of Spindle_http.Websocket.error
       (** how the function's socket ended *)
 
+val websocket_error_to_string : websocket_error -> string
+
 val websocket :
   ?now:Ptime.t ->
   ?headers:(string * string) list ->

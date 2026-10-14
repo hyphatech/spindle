@@ -45,6 +45,7 @@
   ptime.clock.os
   uri
   wiretype
+  uuidm
   ipaddr
   digestif
   mirage-crypto

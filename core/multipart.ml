@@ -16,6 +16,11 @@ let of_http_error = function
   | M.Head_too_large -> Head_too_large
   | M.Source e -> Body e
 
+let error_to_string = function
+  | Malformed m -> "not a multipart form: " ^ m
+  | Head_too_large -> "a part's head longer than its limit"
+  | Body e -> Body.error_to_string e
+
 let next t = Result.map_error of_http_error (M.next t)
 let read t = Result.map_error of_http_error (M.read t)
 

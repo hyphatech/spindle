@@ -38,5 +38,5 @@ jobs:
           ocaml-compiler: "5.5"
       - run: opam install . --deps-only --with-test -y
       - run: opam list --installed --columns=name,version
-      - run: opam exec -- dune build -p spindle,spindle_postgres,spindle_cli @install
+      - run: opam exec -- dune build -p spindle,spindle-postgres,spindle-cli @install
       - run: make test OPAM="opam exec --"

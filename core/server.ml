@@ -93,10 +93,19 @@ let is_trusted proxies who =
           | Peer peer -> String.equal peer who)
         proxies
 
+(* An element as a proxy may write it -- [1.2.3.4:5678], [[2001:db8::1]:80],
+   [[2001:db8::1]] -- is its address alone, as Forwarded's node is: a client
+   is one client whichever port it came from, or a rate limit keyed by it
+   would limit nobody. One that is no address is kept as it came. *)
+let address_of_element e =
+  match Ipaddr.with_port_of_string ~default:0 e with
+  | Ok (address, _) -> Ipaddr.to_string address
+  | Error (`Msg _) -> e
+
 (* The rightmost address not a trusted proxy's: everything to its left was
    written by the client. *)
 let forwarded_for ~trusted value =
-  List.rev (Field.elements value)
+  List.rev_map address_of_element (Field.elements value)
   |> List.find_opt (fun a -> not (is_trusted trusted a))
 
 (* The same walk through Forwarded's [for] nodes; an unknown or hidden hop
@@ -185,7 +194,7 @@ let make_instruments metrics state =
         "spindle.server.open_connections";
   }
 
-let make_request ~now ~limits ~peer (head : Head.Request.t) =
+let make_request ~read_clock ~limits ~peer (head : Head.Request.t) =
   let header = Field.find head.headers in
   let proxied = is_trusted limits.trusted_proxies peer in
   let id =
@@ -210,8 +219,8 @@ let make_request ~now ~limits ~peer (head : Head.Request.t) =
     | (Request.X_forwarded_for | Request.Forwarded), _ -> peer
   in
   Request.make ~id ~peer ~client ~proxied ~proxy_header:limits.proxy_header
-    ~version:head.version ?host:head.host ~headers:head.headers ~now head.meth
-    head.target
+    ~version:head.version ?host:head.host ~headers:head.headers ~read_clock
+    head.meth head.target
 
 let elapsed clock since = Mtime.span since (Eio.Time.Mono.now clock)
 
@@ -222,7 +231,8 @@ let nanoseconds span = Int64.to_int (Mtime.Span.to_uint64_ns span)
    other, since every label value is a series kept for the process's life. *)
 let meth_label ~other req =
   match Request.meth req with
-  | (`GET | `HEAD | `POST | `PUT | `DELETE | `OPTIONS | `PATCH) as m ->
+  | ( `GET | `HEAD | `POST | `PUT | `DELETE | `OPTIONS | `PATCH | `CONNECT
+    | `TRACE ) as m ->
       Meth.to_string m
   | `Other _ -> other
 
@@ -399,11 +409,23 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
      one wait at a time, so a second flush beside the first would leave one
      of them waiting on a client that stopped reading, for ever. *)
   let lock = Eio.Mutex.create () and last_sent = ref started in
+  (* Once [produce] has returned the connection is the loop's again, and a
+     byte sent then -- from a fiber the route left behind -- lands between
+     this answer and the next. *)
+  let produced = ref false in
   let send s =
     Eio.Mutex.use_ro lock (fun () ->
-        let sent = send s in
-        last_sent := Eio.Time.Mono.now clock;
-        sent)
+        if !produced then (
+          L.warn (fun m ->
+              m
+                "%s sent on its stream after its producer had returned, which \
+                 sent nothing"
+                (Request.path req));
+          Error Response.Gone)
+        else
+          let sent = send s in
+          last_sent := Eio.Time.Mono.now clock;
+          sent)
   in
   (* A filler that cannot be written stops, and says the client has gone, so
      a producer waiting on [Request.client_gone] ends now; one that is not
@@ -425,7 +447,11 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
         Eio.Fiber.first (fun () -> stream.produce send) fill
   in
   match
-    Fun.protect ~finally:(fun () -> Request_repr.mark_client_gone req) produce
+    Fun.protect
+      ~finally:(fun () ->
+        produced := true;
+        Request_repr.mark_client_gone req)
+      produce
   with
   | Ok () | Error Response.Gone -> (
       match !failure with
@@ -470,7 +496,8 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
   | exception ex ->
       let bt = Printexc.get_raw_backtrace () in
       L.err (fun m ->
-          m "stream on %s failed: %s" (Request.path req) (Printexc.to_string ex)
+          m "stream on %s failed: raised %s" (Request.path req)
+            (Printexc.exn_slot_name ex)
             ~tags:
               (Log.tags
                  (("url.path", `String (Request.path req)) :: Log.raised ex bt)));
@@ -478,11 +505,12 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
 
 (* Nothing after a head that could not be read can be trusted to be where it
    seems, so the connection closes. *)
-let refuse_head ~now ~limits ~deadline oc status detail =
+let refuse_head ~read_clock ~limits ~deadline oc status detail =
   L.info (fun m ->
       m "refused a request head: %d %s" (Status.to_int status) detail);
   let date =
-    if Status.to_int status < 500 then [ ("date", Write.date (now ())) ] else []
+    if Status.to_int status < 500 then [ ("date", Write.date (read_clock ())) ]
+    else []
   in
   write_head oc status
     (("content-length", "0") :: ("connection", "close") :: date);
@@ -533,21 +561,28 @@ let release_budget ~state progress n =
       : int);
   progress.reserved <- progress.reserved - n
 
-let request_body ~limits ~state ~deadline ~framing ~reader ic oc progress =
+let request_body ~limits ~state ~deadline ~framing ~reader ~req ic oc progress =
+  (* A [100 Continue] the client cannot be sent is a body that will never
+     come: a value for the route, as any body that stops arriving is. *)
   let continue_if_asked ~max =
     let too_large =
       match framing with
       | Framing.Fixed n -> n > max
       | Framing.No_body | Framing.Chunked | Framing.Until_close -> false
     in
-    if progress.cleared_to_send || too_large then true
+    if progress.cleared_to_send || too_large then Ok ()
     else (
       Write.continue oc;
       match flush ~limits ~deadline oc with
       | () ->
           progress.cleared_to_send <- true;
-          true
-      | exception Stalled -> false)
+          Ok ()
+      | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
+      | exception Stalled ->
+          Error (Body.Unreadable "the client stopped reading")
+      | exception _ ->
+          Request_repr.mark_client_gone req;
+          Error (Body.Unreadable "the client has gone"))
   in
   let failed = function
     | `Too_large -> Error Body.Too_large
@@ -571,78 +606,115 @@ let request_body ~limits ~state ~deadline ~framing ~reader ic oc progress =
       | Framing.No_body | Framing.Chunked | Framing.Until_close -> false
     in
     if no_room then failed `Over_budget
-    else if not (continue_if_asked ~max:limits.max_body) then
-      Error (Body.Unreadable "the client stopped reading")
     else
-      match
-        within_body_deadline ~limits ~deadline ic (fun () ->
-            Framing.read reader ~max:limits.max_body
-              ~reserve:(reserve_budget ~limits ~state progress))
-      with
-      | Ok s -> Ok s
-      | Error e -> failed e
+      match continue_if_asked ~max:limits.max_body with
+      | Error e -> Error e
+      | Ok () -> (
+          match
+            within_body_deadline ~limits ~deadline ic (fun () ->
+                Framing.read reader ~max:limits.max_body
+                  ~reserve:(reserve_budget ~limits ~state progress))
+          with
+          | Ok s -> Ok s
+          | Error e -> failed e)
   in
   (* One allowance for the whole body, spent only while a read waits. A part
      holds the budget until the next read; what the route keeps after that
      is its own. *)
   let allowance_left = ref None and part_reserved = ref 0 in
+  (* A fiber the handler left behind may still be waiting in a read when
+     it returns: [stop_reading] stops it, and the loop reads on only once it
+     has let go of the connection. *)
+  let returned, handler_returned = Eio.Promise.create () in
+  let reading = ref None in
+  let stop_reading () =
+    Eio.Promise.resolve handler_returned ();
+    Option.iter
+      (fun unwound -> Eio.Cancel.protect (fun () -> Eio.Promise.await unwound))
+      !reading
+  in
   let part ~max =
     release_budget ~state progress !part_reserved;
     part_reserved := 0;
-    if not (continue_if_asked ~max) then
-      Error (Body.Unreadable "the client stopped reading")
-    else
-      let per_byte = per_byte limits in
-      let allowance =
-        match !allowance_left with
-        | Some left -> left
-        | None ->
-            Mtime.Span.add limits.body_timeout
-              Mtime.Span.(Eio.Buf_read.buffered_bytes ic * per_byte)
-      in
-      Deadline.arm deadline ~per_byte allowance;
-      let read =
-        Fun.protect
-          ~finally:(fun () ->
-            allowance_left :=
-              Some
-                (Option.value
-                   (Deadline.remaining deadline)
-                   ~default:Mtime.Span.zero);
-            Deadline.clear deadline)
-          (fun () ->
-            Framing.read_some reader ~max ~reserve:(fun n ->
-                reserve_budget ~limits ~state progress n
-                && begin
-                  part_reserved := n;
-                  true
-                end))
-      in
-      match read with Ok part -> Ok part | Error e -> failed e
+    match continue_if_asked ~max with
+    | Error e -> Error e
+    | Ok () -> (
+        let per_byte = per_byte limits in
+        let allowance =
+          match !allowance_left with
+          | Some left -> left
+          | None ->
+              Mtime.Span.add limits.body_timeout
+                Mtime.Span.(Eio.Buf_read.buffered_bytes ic * per_byte)
+        in
+        Deadline.arm deadline ~per_byte allowance;
+        let unwound, unwind = Eio.Promise.create () in
+        reading := Some unwound;
+        let read =
+          Fun.protect
+            ~finally:(fun () ->
+              allowance_left :=
+                Some
+                  (Option.value
+                     (Deadline.remaining deadline)
+                     ~default:Mtime.Span.zero);
+              Deadline.clear deadline;
+              reading := None;
+              Eio.Promise.resolve unwind ())
+            (fun () ->
+              Eio.Fiber.first
+                (fun () ->
+                  Framing.read_some reader ~max ~reserve:(fun n ->
+                      reserve_budget ~limits ~state progress n
+                      && begin
+                        part_reserved := n;
+                        true
+                      end))
+                (fun () ->
+                  Eio.Promise.await returned;
+                  L.warn (fun m ->
+                      m
+                        "%s was still reading its body when its handler \
+                         returned, which read nothing"
+                        (Request.path req));
+                  Ok `End))
+        in
+        match read with Ok part -> Ok part | Error e -> failed e)
   in
-  { Body.whole; part }
+  ({ Body.whole; part }, stop_reading)
 
 (* ------------------------------------------------------------------ *)
 (* One exchange *)
 
 (* The server decides: close whenever it will close, a stopping server
    included, and keep-alive only to an HTTP/1.0 client it keeps (RFC 9112
-   §9.3). A takeover's is the upgrade its 101 names. *)
+   §9.3). An answer that sends Upgrade -- a 426 -- names it as an option
+   too (RFC 9110 §7.8). A takeover's is the upgrade its 101 names. *)
 let connection_headers ~keep ~is_http_1_0 (wire : Wire.t) =
   match wire.body with
   | Wire.Connection _ -> wire.headers
   | Wire.Nothing | Wire.Bytes _ | Wire.Chunks _ | Wire.Counted _
-  | Wire.Until_close _ ->
-      if not keep then wire.headers @ [ ("connection", "close") ]
-      else if is_http_1_0 then wire.headers @ [ ("connection", "keep-alive") ]
-      else wire.headers
+  | Wire.Until_close _ -> (
+      let upgrade =
+        if Option.is_some (Field.find wire.headers "upgrade") then [ "upgrade" ]
+        else []
+      in
+      let lasting =
+        if not keep then [ "close" ]
+        else if is_http_1_0 then [ "keep-alive" ]
+        else []
+      in
+      match upgrade @ lasting with
+      | [] -> wire.headers
+      | options -> wire.headers @ [ ("connection", String.concat ", " options) ]
+      )
 
 (* Answers whether the connection may carry another request. *)
-let exchange ~clock ~now ~limits ~trace ~instruments ~state ~deadline app ic oc
-    peer head =
+let exchange ~clock ~read_clock ~limits ~trace ~instruments ~state ~deadline app
+    ic oc peer head =
   match Framing.of_request head with
   | Error (status, detail) ->
-      refuse_head ~now ~limits ~deadline oc status detail;
+      refuse_head ~read_clock ~limits ~deadline oc status detail;
       false
   | Ok framing ->
       let reader =
@@ -671,10 +743,11 @@ let exchange ~clock ~now ~limits ~trace ~instruments ~state ~deadline app ic oc
           over_budget = false;
         }
       in
-      let body =
-        request_body ~limits ~state ~deadline ~framing ~reader ic oc progress
+      let req = make_request ~read_clock ~limits ~peer head in
+      let body, stop_reading =
+        request_body ~limits ~state ~deadline ~framing ~reader ~req ic oc
+          progress
       in
-      let req = make_request ~now ~limits ~peer head in
       let traceparent =
         match Field.all (Request.headers req) "traceparent" with
         | [ v ] -> Some v
@@ -714,21 +787,17 @@ let exchange ~clock ~now ~limits ~trace ~instruments ~state ~deadline app ic oc
                 : bool);
             false
         | Wire.Connection handle ->
-            (* In flight while it lasts, so a drain gives it time to say
-               goodbye. *)
-            while_in_flight state (fun () ->
-                handle
-                  {
-                    Response.reader = ic;
-                    writer = oc;
-                    clock :> Eio.Time.Mono.ty Eio.Resource.t;
-                    send_timeout = limits.send_timeout;
-                    stopping = state.stop_begun;
-                  });
+            handle
+              {
+                Response.reader = ic;
+                writer = oc;
+                clock :> Eio.Time.Mono.ty Eio.Resource.t;
+                send_timeout = limits.send_timeout;
+                stopping = state.stop_begun;
+              };
             false
       in
-      let sent =
-        while_in_flight state @@ fun () ->
+      let answer () =
         Option.iter (fun i -> Metrics.add i.active [] 1) instruments;
         Fun.protect
           ~finally:(fun () ->
@@ -737,6 +806,7 @@ let exchange ~clock ~now ~limits ~trace ~instruments ~state ~deadline app ic oc
           (fun () ->
             let started = Eio.Time.Mono.now clock in
             let response, answered = App.handle app req ~body in
+            stop_reading ();
             (* The body is the route's once it returns, so its budget is
                given back before the answer is written. *)
             release_budget ~state progress progress.reserved;
@@ -783,6 +853,16 @@ let exchange ~clock ~now ~limits ~trace ~instruments ~state ~deadline app ic oc
             | Wire.Nothing | Wire.Bytes _ | Wire.Chunks _ | Wire.Until_close _
             | Wire.Connection _ ->
                 Either.Right answer)
+      in
+      (* A takeover is in flight while it lasts, from its route on with no
+         moment out between, so a drain that begins as its 101 goes still
+         gives it time to say goodbye. It is no request being answered. *)
+      let sent =
+        while_in_flight state @@ fun () ->
+        match answer () with
+        | Either.Right ((Wire.Connection _, _, _) as taken_over) ->
+            Either.Left (send_body taken_over)
+        | (Either.Left _ | Either.Right _) as sent -> sent
       in
       Either.fold ~left:Fun.id ~right:send_body sent
 
@@ -850,11 +930,12 @@ let with_writer ~limits ~deadline flow f =
 (* RFC 9112 §9.6: shut the write side, read and drop what still arrives for
    a while, then close. Closing with unread bytes has the kernel answer with
    a reset, which can overtake the answer -- a 413 above all, sent while the
-   body is still arriving. *)
-let close_lingering ~clock ~limits flow =
+   body is still arriving. The while is the connection's deadline, as every
+   other wait on the client is. *)
+let close_lingering ~limits ~deadline flow =
   match Eio.Flow.shutdown flow `Send with
   | exception Eio.Io _ -> ()
-  | () -> (
+  | () ->
       let buf = Cstruct.create io_buffer_bytes in
       let rec drop left =
         if left > 0 then
@@ -862,14 +943,14 @@ let close_lingering ~clock ~limits flow =
           | n -> drop (left - n)
           | exception (End_of_file | Eio.Io _) -> ()
       in
-      match
-        Timeout.run (Timeout.v clock limits.linger) (fun () ->
-            Ok (drop limits.discard_limit))
-      with
-      | Ok () | Error `Timeout -> ())
+      Deadline.arm deadline limits.linger;
+      ignore
+        (Deadline.wait deadline (fun () -> drop limits.discard_limit)
+          : unit option);
+      Deadline.clear deadline
 
-let serve_connection ~clock ~now ~limits ~trace ~instruments ~state ~sweep app
-    flow addr =
+let serve_connection ~clock ~read_clock ~limits ~trace ~instruments ~state
+    ~sweep app flow addr =
   let peer = peer_of_address addr in
   Deadline.run sweep @@ fun deadline ->
   let ic =
@@ -884,18 +965,18 @@ let serve_connection ~clock ~now ~limits ~trace ~instruments ~state ~sweep app
     match read_next_head ~limits ~deadline ic with
     | `Gone -> `Client_ended
     | `Refuse (status, detail) ->
-        refuse_head ~now ~limits ~deadline oc status detail;
+        refuse_head ~read_clock ~limits ~deadline oc status detail;
         `Server_ended
     | `Request head ->
         if
-          exchange ~clock ~now ~limits ~trace ~instruments ~state ~deadline app
-            ic oc peer head
+          exchange ~clock ~read_clock ~limits ~trace ~instruments ~state
+            ~deadline app ic oc peer head
         then loop oc
         else `Server_ended
   in
   try
     match with_writer ~limits ~deadline flow loop with
-    | `Server_ended -> close_lingering ~clock ~limits flow
+    | `Server_ended -> close_lingering ~limits ~deadline flow
     | `Client_ended -> ()
   with
   | Stalled ->
@@ -979,8 +1060,8 @@ let settings ?domains ?(max_body = 1_048_576) ?(max_header_bytes = 16_384)
   in
   { limits; domains; max_connections; drain }
 
-let serve settings ~mono_clock:clock ~now ~domain_mgr ?stop ?(on_stop = ignore)
-    ?trace ?metrics sockets app =
+let serve settings ~mono_clock:clock ~read_clock ~domain_mgr ?stop
+    ?(on_stop = ignore) ?trace ?metrics sockets app =
   let { limits; domains; max_connections; drain } = settings in
   let state =
     let drained, resolve_drained = Eio.Promise.create () in
@@ -997,13 +1078,17 @@ let serve settings ~mono_clock:clock ~now ~domain_mgr ?stop ?(on_stop = ignore)
   in
   let instruments = Option.map (fun m -> make_instruments m state) metrics in
   (* A deadline passes up to a tick late, and a tick is a tenth of the
-     shortest limit: once a second at the defaults. *)
+     shortest limit -- a linger of none is no wait -- so a tenth of a second
+     at the defaults. *)
   let tick =
     let shortest =
       List.fold_left
         (fun a b -> if Mtime.Span.is_shorter b ~than:a then b else a)
         limits.head_timeout
-        [ limits.idle_timeout; limits.body_timeout; limits.send_timeout ]
+        ([ limits.idle_timeout; limits.body_timeout; limits.send_timeout ]
+        @
+        if Mtime.Span.equal limits.linger Mtime.Span.zero then []
+        else [ limits.linger ])
     in
     let tenth =
       Mtime.Span.of_uint64_ns
@@ -1021,9 +1106,15 @@ let serve settings ~mono_clock:clock ~now ~domain_mgr ?stop ?(on_stop = ignore)
      which closes the socket first: another fiber's raise during that close
      would replace the backtrace. *)
   let log_connection_failure ex bt =
+    (* An I/O error's words are the operating system's; any other raise,
+       a takeover's handler's, is told by its kind. *)
+    let why =
+      match ex with
+      | Eio.Io _ -> Printexc.to_string ex
+      | _ -> "raised " ^ Printexc.exn_slot_name ex
+    in
     L.warn (fun m ->
-        m "connection failed: %s" (Printexc.to_string ex)
-          ~tags:(Log.tags (Log.raised ex bt)))
+        m "connection failed: %s" why ~tags:(Log.tags (Log.raised ex bt)))
   in
   let on_error ex = log_connection_failure ex (Printexc.get_callstack 0) in
   (* Accepting stops only after [on_stop] has run, so nothing the
@@ -1055,8 +1146,8 @@ let serve settings ~mono_clock:clock ~now ~domain_mgr ?stop ?(on_stop = ignore)
                 Eio.Semaphore.release slots)
               (fun () ->
                 match
-                  serve_connection ~clock ~now ~limits ~trace ~instruments
-                    ~state ~sweep app flow addr
+                  serve_connection ~clock ~read_clock ~limits ~trace
+                    ~instruments ~state ~sweep app flow addr
                 with
                 | () -> ()
                 | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
@@ -1114,17 +1205,19 @@ let serve settings ~mono_clock:clock ~now ~domain_mgr ?stop ?(on_stop = ignore)
           Eio.Promise.resolve stop_accepting ();
           wait_for_drain ~clock state ~drain)
 
-let serve_on ~mono_clock ~now ~domain_mgr ?domains ?max_body ?max_header_bytes
-    ?head_timeout ?idle_timeout ?body_timeout ?min_body_rate ?send_timeout
-    ?discard_limit ?linger ?body_budget ?trusted_proxies ?proxy_header
-    ?max_connections ?stop ?drain ?on_stop ?trace ?metrics sockets app =
+let serve_on ~mono_clock ~read_clock ~domain_mgr ?domains ?max_body
+    ?max_header_bytes ?head_timeout ?idle_timeout ?body_timeout ?min_body_rate
+    ?send_timeout ?discard_limit ?linger ?body_budget ?trusted_proxies
+    ?proxy_header ?max_connections ?stop ?drain ?on_stop ?trace ?metrics sockets
+    app =
   serve
     (settings ?domains ?max_body ?max_header_bytes ?head_timeout ?idle_timeout
        ?body_timeout ?min_body_rate ?send_timeout ?discard_limit ?linger
        ?body_budget ?trusted_proxies ?proxy_header ?max_connections ?drain ())
-    ~mono_clock ~now ~domain_mgr ?stop ?on_stop ?trace ?metrics sockets app
+    ~mono_clock ~read_clock ~domain_mgr ?stop ?on_stop ?trace ?metrics sockets
+    app
 
-let run ~sw ~net ~mono_clock:clock ~now ~domain_mgr ?domains ~port
+let run ~sw ~net ~mono_clock:clock ~read_clock ~domain_mgr ?domains ~port
     ?(host = "localhost") ?max_body ?max_header_bytes ?head_timeout
     ?idle_timeout ?body_timeout ?min_body_rate ?send_timeout ?discard_limit
     ?linger ?body_budget ?trusted_proxies ?proxy_header ?(backlog = 128)
@@ -1207,7 +1300,7 @@ let run ~sw ~net ~mono_clock:clock ~now ~domain_mgr ?domains ~port
           String.concat " and " (List.map address_to_string addrs) )
   in
   ready bound_to;
-  serve settings ~mono_clock:clock ~now ~domain_mgr ?stop ?on_stop ?trace
+  serve settings ~mono_clock:clock ~read_clock ~domain_mgr ?stop ?on_stop ?trace
     ?metrics sockets app
 
 let stop_on_signals ~sw () =

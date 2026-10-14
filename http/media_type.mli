@@ -32,5 +32,15 @@ val to_string : t -> (string, string) result
 val equal : t -> t -> bool
 (** The same type, subtype and parameters, in the same order. *)
 
+val is_pattern : string -> bool
+(** Whether a text is one {!matches} reads: [type/subtype], [type/*] or
+    [type/*+suffix], each a token, and no parameters. *)
+
+val matches : string -> t -> bool
+(** [matches pattern t]: whether [t] is of [pattern] -- [type/subtype], [type/*]
+    or [type/*+suffix], [application/*+json] for [application/ld+json] --
+    compared without case, its parameters not compared. A pattern of none of
+    these forms matches nothing. *)
+
 val parameter : t -> string -> string option
 (** The first value of the parameter named, whatever the name's case. *)

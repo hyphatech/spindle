@@ -39,7 +39,7 @@ in
 
 - `Alarm.create ~background ~mono_clock ()`, then
   `Alarm.set t ~key ~after ~what f`: run `f` once the span `after` has gone
-  by (plus `?slack`, 50 ms by default).
+  by, plus the alarm's slack (`Alarm.create ?slack`, 50 ms by default).
 - A wake-up at an instant -- a deadline kept as a `Ptime.t` -- is set for the
   wait until it, `~after:(Spindle.until ~now deadline)`: the span from now,
   and zero once the deadline has passed, so a late one fires at once.

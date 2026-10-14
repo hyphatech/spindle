@@ -105,6 +105,37 @@ let test_a_closed_pool_answers_busy () =
     (Spindle_http.Status.to_int
        (Spindle.Refusal.status (Spindle_postgres.refusal (`Pool `Closed))))
 
+(* A database nobody answers for did nothing, so asking again is what may
+   succeed: 503 busy, as a busy pool is, and the client told when. *)
+let test_an_unreachable_database_answers_busy () =
+  let port =
+    let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+    Fun.protect
+      ~finally:(fun () -> Unix.close s)
+      (fun () ->
+        Unix.bind s (Unix.ADDR_INET (Unix.inet_addr_loopback, 0));
+        match Unix.getsockname s with
+        | Unix.ADDR_INET (_, p) -> p
+        | Unix.ADDR_UNIX _ -> Alcotest.fail "expected a TCP socket")
+  in
+  match
+    Spindle_postgres.connect ~sw:(Db_target.sw ()) ~net:(Db_target.net ())
+      ~mono_clock:(Db_target.mono ())
+      (Db_target.conninfo
+         (Printf.sprintf "postgres://nobody@127.0.0.1:%d/none?sslmode=disable"
+            port))
+  with
+  | Ok _ -> Alcotest.fail "connected to nothing"
+  | Error e ->
+      Alcotest.(check bool)
+        "unsent" true
+        (match e with `Unsent _ -> true | _ -> false);
+      let r = Spindle_postgres.refusal e in
+      Alcotest.(check int)
+        "503" 503
+        (Spindle_http.Status.to_int (Spindle.Refusal.status r));
+      Alcotest.(check string) "busy" "busy" (Spindle.Refusal.Code.name r.code)
+
 (* A statement on a connection its owner closed sent nothing, and is the
    server's own fault: a 500 with why in the log, not a 503 that asks the
    client to come back. *)
@@ -202,7 +233,7 @@ let test_a_closed_pool_answers_closed_at_once () =
       let pool = pool ~wait:Mtime.Span.(10 * min) target in
       Spindle_postgres.Pool.close pool;
       match
-        Spindle_postgres.Pool.query pool (S.exec ~params:S.unit "select 1") ()
+        Spindle_postgres.Pool.exec pool (S.exec ~params:S.unit "select 1") ()
       with
       | Error (`Pool `Closed) -> ()
       | Error (`Pool `Busy) -> Alcotest.fail "a closed pool answered busy"
@@ -214,9 +245,10 @@ let test_a_run_pool_is_closed_after () =
   Db_target.with_postgres (fun target ->
       let env = fst (Db_target.io ()) in
       let answer, pool =
-        Spindle_postgres.Pool.run env target ~size:2 (fun pool ->
+        Spindle_postgres.Pool.run env (Pg.Conninfo.to_url target) ~size:2
+          (fun pool ->
             let answer =
-              Spindle_postgres.Pool.query pool
+              Spindle_postgres.Pool.exec pool
                 (S.find_opt ~params:S.unit ~row:S.int "select 1")
                 ()
             in
@@ -238,7 +270,8 @@ let test_a_cancelled_run_pool_passes_the_cancellation_on () =
       let winner =
         Eio.Fiber.first
           (fun () ->
-            Spindle_postgres.Pool.run env target ~size:3 (fun _ ->
+            Spindle_postgres.Pool.run env (Pg.Conninfo.to_url target) ~size:3
+              (fun _ ->
                 Eio.Promise.resolve opening ();
                 Eio.Fiber.await_cancel ()))
           (fun () ->
@@ -398,8 +431,8 @@ let test_a_closed_pool_is_not_ready () =
 let test_the_log_source_is_the_librarys_name () =
   let names = List.map Logs.Src.name (Logs.Src.list ()) in
   Alcotest.(check bool)
-    "spindle_postgres is a source" true
-    (List.exists (String.equal "spindle_postgres") names);
+    "spindle-postgres is a source" true
+    (List.exists (String.equal "spindle-postgres") names);
   Alcotest.(check bool)
     "spindle.postgres is not" false
     (List.exists (String.equal "spindle.postgres") names)
@@ -527,7 +560,7 @@ let test_a_revived_connection_keeps_its_bounds () =
                   : bool list));
           ignore (Pg.exec_raw db "select 1" : (unit, S.error) result);
           ok (Pg.revive db);
-          (match Pg.exec_raw db "select pg_sleep(1)" with
+          (match Pg.exec_raw db "select pg_sleep(3600)" with
           | Error _ -> ()
           | Ok () -> Alcotest.fail "the revived connection lost its bound");
           ok (Pg.exec_raw db "select 1")))
@@ -644,9 +677,11 @@ let test_a_silent_server_is_given_up_on () =
       in
       match
         Spindle_postgres.connect ~sw:(Db_target.sw ()) ~net:(Db_target.net ())
-          ~mono_clock:(Db_target.mono ()) ~connect_timeout:Mtime.Span.s
-          (Printf.sprintf "postgres://nobody@127.0.0.1:%d/none?sslmode=disable"
-             port)
+          ~mono_clock:(Db_target.mono ())
+          (Db_target.conninfo
+             (Printf.sprintf
+                "postgres://nobody@127.0.0.1:%d/none?sslmode=disable&connect_timeout=1"
+                port))
       with
       | Error _ -> ()
       | Ok _ -> Alcotest.fail "connected to nothing")
@@ -673,7 +708,7 @@ let with_counter_pool f =
 
 let counted pool =
   match
-    Spindle_postgres.Pool.query pool
+    Spindle_postgres.Pool.exec pool
       (S.find_opt ~params:S.unit ~row:S.int "select n from counter")
       ()
   with
@@ -815,7 +850,7 @@ let test_a_deferred_conflict_answers_as_a_statement's_does () =
                     checked 409
                     (Spindle_http.Status.to_int r.status);
                   match
-                    Spindle_postgres.Pool.query pool
+                    Spindle_postgres.Pool.exec pool
                       (S.find ~params:S.unit ~row:S.int
                          "select count(*)::int from names")
                       ()
@@ -843,7 +878,7 @@ let test_a_stores_busy_pool_reads_as_the_pools_words () =
       | Ok (Error m) ->
           Alcotest.(check string)
             "the pool's words"
-            (Pg.Pool.error_to_string (`Pool `Busy))
+            (Pg.error_to_string (`Pool `Busy))
             m
       | Ok (Ok _) -> Alcotest.fail "the store found a connection"
       | Error _ -> Alcotest.fail "the test's own borrow failed")
@@ -963,11 +998,11 @@ let test_the_longest_name_is_a_table's_name () =
             [ 52; 53; 63 ]))
 
 let () =
-  Db_target.required ~suite:"spindle_postgres";
+  Db_target.required ~suite:"spindle-postgres";
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   Db_target.eio env ~sw;
-  Alcotest.run ~and_exit:false "spindle_postgres"
+  Alcotest.run ~and_exit:false "spindle-postgres"
     [
       ( "transactions",
         [
@@ -1041,6 +1076,8 @@ let () =
         [
           Alcotest.test_case "every failure has its words" `Quick
             test_every_failure_has_its_words;
+          Alcotest.test_case "an unreachable database answers busy" `Quick
+            test_an_unreachable_database_answers_busy;
         ] );
       ( "logs",
         [

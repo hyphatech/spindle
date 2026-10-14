@@ -167,9 +167,10 @@ Spindle.Query.list "tag" Codec.string            (* ?tag=a&tag=b *)
 Spindle.Header.optional "x-count" Codec.int      (* name matched without case *)
 ```
 
-- **Codecs**: `string`, `int`, `int64`, `float`, `bool`, `uuid`, `date`,
-  `instant` (a `Ptime.t`), `enum ~kind to_string values`, and `custom` for a type of your
-  own.
+- **Codecs**: `string`, `int`, `int64`, `float`, `bool`, `uuid` (a
+  `Uuidm.t`, as a JSON body's and a row's), `date`, `instant` (a
+  `Ptime.t`), `enum ~kind to_string values`, and `custom` for a type of
+  your own.
 - **Structured headers** have codecs that parse them: `media_type`,
   `accept`, `weighted`, `credentials`, `cache_control`, `forwarded`, and
   `structured_item`, `structured_list`, `structured_dictionary`.
@@ -208,7 +209,10 @@ are on [their own page](../guide/cookies.md).
 - **`Spindle.body_stream ~max ()`** hands the handler a `Spindle.Body.t`,
   limited to the route's own `max` bytes. Read it a part at a time with
   `Body.read`; a failure (too large, stopped arriving) is a value you can
-  answer with `Body.refusal`.
+  answer with `Body.refusal`. `~content_types:[ "text/csv" ]` takes those
+  types alone -- each `type/subtype`, `type/*` or `type/*+suffix`, compared
+  without case or parameters -- and answers any other `415` before a byte
+  is read; the API's document lists them as the body's.
 - **`Spindle.multipart ~max ()`** is the same body, split into the parts of
   a `multipart/form-data` upload. `Multipart.next` gives a part's head (its
   `name`, `filename` and content type), `Multipart.read` its bytes. Nothing

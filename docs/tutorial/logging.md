@@ -73,8 +73,9 @@ and `?format`.
   passes it on to the servers it calls.
 - **Field names**: put your own under a prefix (`shop.pence`), since keys
   like `status`, `host` and `service` mean something to a collector.
-- **Failures**: Spindle logs what a handler raises with `error.kind`,
-  `error.message` and `error.stack`. Your own catch-all does the same with
+- **Failures**: Spindle logs what a handler raises with `error.kind` and
+  `error.stack`, never its message, which is whatever the raiser wrote -- a
+  card number, a token. Your own catch-all does the same with
   `~tags:(Spindle.Log.tags (Spindle.Log.raised exn bt))`, taking
   `bt = Printexc.get_raw_backtrace ()` first thing.
 - **Levels**: `error` is a bug, `warn` handled but degraded, `info` what

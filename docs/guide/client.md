@@ -29,12 +29,13 @@ its connections when `f` returns.
 `call client meth url` answers `Ok` with the `status`, a
 `Spindle_http.Status.t` as a route answers with, the `headers` (names
 lower-cased) and the whole `body` -- **any status is an answer**, so a
-`` `Not_found `` is `Ok`. `Error` says whether the request went out: `Unsent` (no
-connection, bad TLS, a URL it cannot call -- the server never saw it, so
-sending it again is safe), `Unanswered` (it went, and the answer was cut
-short, unreadable, or never came -- the server may have acted on it) or
-`Timeout`, which is to be taken as `Unanswered`. Send a body with `~body`
-and `~headers`:
+`` `Not_found `` is `Ok`. `Error` says whether the request went out:
+`` `Unsent `` (no connection, bad TLS, a URL it cannot call -- the server never
+saw it, so sending it again is safe) or `` `Lost `` (it may have gone, and the
+answer was cut short, unreadable, or never came before the deadline -- the
+server may have acted on it). They are the words every Hypha library uses, so
+a handler's one `let*` runs over a call and a database statement alike. Send a
+body with `~body` and `~headers`:
 
 ```ocaml
 match
@@ -84,9 +85,9 @@ Good to know:
   Limiting how many calls run at once is up to you.
 - A request is retried only when that is safe: one that could not be written
   on a reused connection, or an idempotent one (`GET`, `HEAD`, `PUT`,
-  `DELETE`, `OPTIONS`) whose reused connection closed before any answer. A
-  `POST` that went out is never sent twice; it fails with `Unanswered`, and
-  you decide.
+  `DELETE`, `OPTIONS`, `TRACE`) whose reused connection closed before any
+  answer. A `POST` that went out is never sent twice; it fails with
+  `` `Lost ``, and you decide.
 - Each call logs one `debug` line on `spindle.client`, never its headers or
   body.
 
@@ -117,7 +118,7 @@ read. To stop early, return: the connection is then closed.
 `Spindle_client.events client url f` asks for `text/event-stream` and hands
 each event (its `name`, `data`, `id` and `retry_ms`) to `f`, which answers
 `` `Continue `` or `` `Stop ``. It answers `Finished` (the server ended it) or
-`Stopped`, each with the last event id, or `Refused` with the answer when it
+`Stopped`, each with the last event id, or `Answered` with the answer when it
 was not an event stream. To reconnect, call it again with
 `~last_event_id`.
 

@@ -16,8 +16,13 @@ include module type of struct
   include Spindle_http.Log
 end
 
+(** Either is UTF-8 whatever was logged: each byte of the message or a field
+    that begins no character is written U+FFFD, as Go's [encoding/json] writes
+    it, so no shipper drops the line. *)
 type format =
-  | Pretty  (** for a terminal *)
+  | Pretty
+      (** for a terminal: one line, a line's end in the message or a field
+          written [\n] or [\r] *)
   | Json  (** one object per line, for whatever collects them *)
 
 val setup :

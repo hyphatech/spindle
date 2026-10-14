@@ -62,10 +62,16 @@ type 'a t = 'a Dep_repr.t
 
 (** What a dependency reads of a request. *)
 type body = Dep_repr.body =
-  | Raw : body
+  | Raw : { content_types : string list } -> body
+      (** read whole, as it arrived, of one of [content_types] -- each
+          [type/subtype], [type/*] or [type/*+suffix] -- or of any type where it
+          names none *)
   | Json : { description : 'a Wiretype.t; examples : 'a list } -> body
-      (** decoded by [description]; [examples] are for whoever documents it *)
-  | Stream : body  (** read as it arrives, by {!Spindle.body_stream} *)
+      (** decoded by [description], [application/json] or [application/*+json];
+          [examples] are for whoever documents it *)
+  | Stream : { content_types : string list } -> body
+      (** read as it arrives, by {!Spindle.body_stream}, of one of
+          [content_types] as [Raw]'s *)
   | Form : body
       (** read whole, as a form: its fields are {!Field}s and its files {!File}s
           ({!Spindle.Form}) *)
@@ -108,16 +114,17 @@ val of_request :
     [refuses] is the codes it may refuse with. *)
 
 val of_body :
-  ?content_type:(string -> bool) ->
   ?refuses:Refusal.Code.t list ->
   need:body ->
   (string -> ('a, Refusal.t) result) ->
   'a t
 (** A dependency on the body, run in the second stage with the body as it
     arrived. A body the server could not read -- past its limit, broken, or with
-    no room to hold it -- has already been refused by then. [content_type] is
-    asked of the request's [Content-Type] in the first stage, when it names one:
-    [false] is {!Refusal.unsupported_media_type}, with the body never read. *)
+    no room to hold it -- has already been refused by then. A request whose
+    [Content-Type] is none of the types [need] names -- [Raw]'s [content_types],
+    [Json]'s -- is {!Refusal.unsupported_media_type} in the first stage, its
+    body never read; one that names no [Content-Type] is read. Its type and
+    subtype are compared without case, and its parameters are not compared. *)
 
 val return : 'a -> 'a t
 (** A value that reads nothing: what a route with no inputs is given, as

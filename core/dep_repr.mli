@@ -3,11 +3,18 @@
     underneath; the types {!Dep} names are documented there. *)
 
 type body =
-  | Raw : body
+  | Raw : { content_types : string list } -> body
   | Json : { description : 'a Wiretype.t; examples : 'a list } -> body
-  | Stream : body
+  | Stream : { content_types : string list } -> body
   | Form : body
   | Multipart : body
+
+val content_types : body -> string list
+(** The types a body is read in, each [type/subtype], [type/*] or
+    [type/*+suffix]; none for any. *)
+
+val takes_content_type : string list -> Request_repr.t -> bool
+(** Whether a request names one of these types, or none. *)
 
 type input = {
   name : string;

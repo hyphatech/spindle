@@ -56,9 +56,7 @@ let of_request (head : Head.Request.t) =
    tunnel, then the fields. *)
 let of_response ~request_meth (head : Head.Response.t) =
   let code = Status.to_int head.status in
-  let is_connect =
-    match request_meth with `Other "CONNECT" -> true | _ -> false
-  in
+  let is_connect = Meth.equal request_meth `CONNECT in
   let all = Field.all head.headers in
   if Meth.equal request_meth `HEAD || code < 200 || code = 204 || code = 304
   then Ok No_body

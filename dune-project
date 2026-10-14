@@ -37,12 +37,15 @@
   (ocaml
    (>= 5.5))
   (wiretype
-   (>= 0.4.0))
+   (>= 0.5.0))
+  ; A UUID is Uuidm's, in a path or a query as in a body and a row.
+  (uuidm
+   (>= 0.9.10))
   ; The deriver every application describes its JSON with, installed with
   ; the framework so one package is the whole of starting; no library here
   ; links it.
   (ppx_wiretype
-   (>= 0.4.0))
+   (>= 0.5.0))
   (eio
    (>= 1.6))
   (eio_main
@@ -135,7 +138,7 @@
     (>= 1.5.4)))))
 
 (package
- (name spindle_postgres)
+ (name spindle-postgres)
  (synopsis "Postgres for a Spindle server: bounded connections, a pool and its probe, and a failure's refusal")
  (depends
   (ocaml
@@ -143,13 +146,13 @@
   (spindle
    (= :version))
   (rowtype
-   (>= 0.6.0))
+   (>= 0.7.0))
   (rowtype-postgres
-   (>= 0.6.0))
+   (>= 0.7.0))
   ; Linked through rowtype-postgres alone, and named so that its pin is
   ; one of this package's dependencies.
   (postgres-eio
-   (>= 0.4.0))
+   (>= 0.5.0))
   (ptime
    (>= 1.2.0))
   (mtime
@@ -159,7 +162,7 @@
   (logs
    (>= 0.10.0))
   ; The suites are this package's, since they reach every library.
-  (spindle_cli
+  (spindle-cli
    (and
     :with-test
     (= :version)))
@@ -182,7 +185,7 @@
   (wiretype
    (and
     :with-test
-    (>= 0.4.0)))
+    (>= 0.5.0)))
   (uri
    (and
     :with-test
@@ -240,7 +243,7 @@
     (>= 1.2.0)))))
 
 (package
- (name spindle_cli)
+ (name spindle-cli)
  (synopsis "An application's command line: its API, described from the routes")
  (depends
   (ocaml

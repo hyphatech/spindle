@@ -30,8 +30,8 @@
  (libraries
   spindle
   spindle.client
-  spindle_cli
-  spindle_postgres
+  spindle-cli
+  spindle-postgres
   rowtype
   rowtype-postgres
   eio

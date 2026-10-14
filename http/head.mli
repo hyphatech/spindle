@@ -15,6 +15,8 @@ type error =
       (** a head that cannot be read: the status it owes, and what was wrong,
           for a log *)
 
+val error_to_string : error -> string
+
 (** A request's head, as a server reads it. *)
 module Request : sig
   (** The request-target's form (RFC 9112 §3.2). *)
@@ -92,6 +94,8 @@ module Response : sig
     | Malformed of string
         (** anything else that is not a head, one cut short included, in words
             for a log *)
+
+  val error_to_string : error -> string
 
   val read : max:int -> Eio.Buf_read.t -> (t, error) result
   (** The next head.

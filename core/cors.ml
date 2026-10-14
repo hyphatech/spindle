@@ -1,7 +1,8 @@
 include Cors_repr
 
-let make ?(credentials = false) ?(headers = [ "authorization"; "content-type" ])
-    ?(expose = []) ?(max_age_s = 600) ?(routes = fun _ -> true) origins =
+let make ?(credentials = false)
+    ?(allow_headers = [ "authorization"; "content-type" ]) ?(expose = [])
+    ?(max_age_s = 600) ?(routes = fun _ -> true) origins =
   match (origins, credentials) with
   | Any, true ->
       invalid_arg
@@ -11,7 +12,7 @@ let make ?(credentials = false) ?(headers = [ "authorization"; "content-type" ])
       {
         origins;
         credentials;
-        headers = List.map String.lowercase_ascii headers;
+        headers = List.map String.lowercase_ascii allow_headers;
         expose;
         max_age_s;
         routes;

@@ -17,7 +17,7 @@ let databases =
 (* A borrow that waits past the pool's limit is [`Pool `Busy], which [refusal]
    answers 503: an overloaded server says so rather than answering late. *)
 let list_databases pool =
-  Spindle_postgres.Pool.query pool databases ()
+  Spindle_postgres.Pool.exec pool databases ()
   |> Result.map_error Spindle_postgres.refusal
 (* --8<-- [end:query] *)
 

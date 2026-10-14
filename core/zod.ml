@@ -72,7 +72,7 @@ let route_entry (r : D.route) =
                   ^ if f.required then one else "z.optional(" ^ one ^ ")")
                 files))
     | Some D.Parts_body -> "z.instanceof(FormData)"
-    | Some D.Raw_body -> "z.string()"
+    | Some (D.Raw_body _) -> "z.string()"
     | None -> "null"
   in
   Printf.sprintf "  %s: {\n    body: %s,\n    answer: %s,\n  },\n"

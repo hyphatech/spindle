@@ -299,6 +299,9 @@ let test_a_raise_is_500_and_says_nothing_of_it () =
   Alcotest.(check bool)
     "the exception is not in the body" false
     (contains ~sub:"hunter2" r.body);
+  Alcotest.(check bool)
+    "nor in the log" false
+    (List.exists (contains ~sub:"hunter2") !lines);
   (* The line an error tracker groups by: what was raised, and where. *)
   match List.find_opt (contains ~sub:{|"error.kind":|}) !lines with
   | None -> Alcotest.fail "no line says what was raised"
@@ -308,7 +311,6 @@ let test_a_raise_is_500_and_says_nothing_of_it () =
         [
           {|"level":"error"|};
           {|Boom"|};
-          {|"error.message":"|};
           {|"error.stack":"|};
           {|"url.path":"/boom"|};
           {|"http.route":"/boom"|};
@@ -518,7 +520,7 @@ let test_a_refusal_before_the_body_never_reads_it () =
       (Spindle.App.handle
          (Spindle.Test.app [ route ])
          (Spindle.Request.make ~headers
-            ~now:(fun () -> Ptime.epoch)
+            ~read_clock:(fun () -> Ptime.epoch)
             `POST "/post")
          ~body)
   in
@@ -565,9 +567,9 @@ let test_a_dependency_says_what_it_reads () =
         | Spindle.Dep.File f -> "file " ^ f.name
         | Spindle.Dep.Body Spindle.Dep.Form -> "form"
         | Spindle.Dep.Body Spindle.Dep.Multipart -> "parts"
-        | Spindle.Dep.Body Spindle.Dep.Raw -> "body"
+        | Spindle.Dep.Body (Spindle.Dep.Raw _) -> "body"
         | Spindle.Dep.Body (Spindle.Dep.Json _) -> "json"
-        | Spindle.Dep.Body Spindle.Dep.Stream -> "stream"
+        | Spindle.Dep.Body (Spindle.Dep.Stream _) -> "stream"
         | Spindle.Dep.Custom { name; _ } -> name)
       (Spindle.Dep.needs listed)
   in
@@ -644,7 +646,9 @@ let test_uncached_runs_at_every_use () =
 let test_a_body_dependency_is_read_once () =
   let parsed = ref 0 in
   let upper =
-    Spindle.Dep.of_body ~need:Spindle.Dep.Raw (fun s ->
+    Spindle.Dep.of_body
+      ~need:(Spindle.Dep.Raw { content_types = [] })
+      (fun s ->
         incr parsed;
         Ok (String.uppercase_ascii s))
   in
@@ -796,7 +800,7 @@ let test_a_query_is_read_as_a_form () =
 let test_a_header_sent_on_several_lines () =
   let tags =
     Spindle.Codec.custom ~kind:"tags" ~list:true
-      ~parse:(fun s -> Some (List.map String.trim (String.split_on_char ',' s)))
+      ~parse:(fun s -> Ok (List.map String.trim (String.split_on_char ',' s)))
       ~print:(String.concat ", ") ()
   in
   let route =
@@ -1608,7 +1612,7 @@ let test_a_form_is_read_once_and_only_as_a_form () =
     fst
       (Spindle.App.handle a
          (Spindle.Request.make ~headers
-            ~now:(fun () -> Ptime.epoch)
+            ~read_clock:(fun () -> Ptime.epoch)
             `POST "/profile")
          ~body:
            {
@@ -1711,12 +1715,21 @@ let multipart_body parts =
     | Ok m -> m
     | Error e -> Alcotest.fail e
   in
-  M.to_string ~boundary:"XyZ"
-    (List.map
-       (fun (name, filename, content_type, content) ->
-         ( { M.name; filename; content_type = media content_type; headers = [] },
-           content ))
-       parts)
+  match
+    M.to_string ~boundary:"XyZ"
+      (List.map
+         (fun (name, filename, content_type, content) ->
+           ( {
+               M.name;
+               filename;
+               content_type = media content_type;
+               headers = [];
+             },
+             content ))
+         parts)
+  with
+  | Ok body -> body
+  | Error e -> Alcotest.fail e
 
 let multipart_headers =
   [ ("content-type", {|multipart/form-data; boundary="XyZ"|}) ]
@@ -3214,7 +3227,7 @@ let test_a_request_and_its_call_are_one_trace () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         ~trace [ socket ]
         (Spindle.Test.app [ front; back; broken ]);
       `Stop_daemon);
@@ -3599,7 +3612,7 @@ let test_a_server_counts_its_requests () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:2
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         ~metrics [ socket ]
         (Spindle.Test.app (hello :: Spindle.Metrics.routes metrics));
       `Stop_daemon);
@@ -3706,7 +3719,7 @@ let test_the_client_answers_times_out_and_reports domains () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         [ socket ] served;
       `Stop_daemon);
   let client =
@@ -3740,8 +3753,8 @@ let test_the_client_answers_times_out_and_reports domains () =
          && not (contains ~sub:{|"request_id":"r-4"|} l))
        !lines);
   (match Spindle_client.call impatient `GET (url "/slow") with
-  | Error (Spindle_client.Timeout _) -> ()
-  | Ok _ | Error (Spindle_client.Unsent _ | Spindle_client.Unanswered _) ->
+  | Error (`Lost m) when contains ~sub:"no answer within" m -> ()
+  | Ok _ | Error (`Unsent _ | `Lost _) ->
       Alcotest.fail "a call past its deadline should have been given up");
   (match Spindle_client.call client `GET (url "/events") with
   | Ok r ->
@@ -3757,8 +3770,8 @@ let test_the_client_answers_times_out_and_reports domains () =
            !lines)
   | Error e -> Alcotest.fail (Spindle_client.error_to_string e));
   match Spindle_client.call client `GET "http://127.0.0.1:1/nobody" with
-  | Error (Spindle_client.Unsent _) -> ()
-  | Ok _ | Error (Spindle_client.Unanswered _ | Spindle_client.Timeout _) ->
+  | Error (`Unsent _) -> ()
+  | Ok _ | Error (`Lost _) ->
       Alcotest.fail "nobody listening was never sent anything"
 
 (* A handshake that fails -- here against a server that speaks no TLS and
@@ -3813,8 +3826,8 @@ let test_a_refused_address_leaves_no_socket () =
   let before = open_descriptors () in
   for _ = 1 to 20 do
     match Spindle_client.call client `GET "http://127.0.0.1:1/nobody" with
-    | Error (Spindle_client.Unsent _) -> ()
-    | Ok _ | Error (Spindle_client.Unanswered _ | Spindle_client.Timeout _) ->
+    | Error (`Unsent _) -> ()
+    | Ok _ | Error (`Lost _) ->
         Alcotest.fail "nobody listening was never sent anything"
   done;
   check_int "no descriptor left behind" before (open_descriptors ())
@@ -3863,11 +3876,6 @@ let test_a_client_calls_through_the_network_it_is_given () =
     ];
   Eio_mock.Net.on_connect net
     [ `Run (fun () -> snd plain ~sw); `Run (fun () -> snd secure ~sw) ];
-  let client =
-    Spindle_client.create ~sw ~net
-      ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ~authenticator ()
-  in
   let traced = ref [] in
   let trace =
     {
@@ -3876,7 +3884,13 @@ let test_a_client_calls_through_the_network_it_is_given () =
           Format.kasprintf (fun line -> traced := !traced @ [ line ]) fmt);
     }
   in
+  (* Made inside the binding, so its resolver's fiber traces too. *)
   Eio.Fiber.with_binding (Eio.Stdenv.debug env)#traceln trace @@ fun () ->
+  let client =
+    Spindle_client.create ~sw ~net
+      ~mono_clock:(Eio.Stdenv.mono_clock env)
+      ~authenticator ()
+  in
   let body url =
     match Spindle_client.call client `GET url with
     | Ok r -> r.body
@@ -3993,11 +4007,40 @@ let test_a_client_sends_the_url_as_it_was_given () =
   Alcotest.(check (list string))
     "each target as its URL wrote it" (List.map snd urls) !targets
 
+(* eio_posix looks a name up in a system thread no cancellation reaches, so
+   a lookup is stood in for by one that ignores its cancellation and takes
+   ten minutes: the call is still answered at its deadline. *)
+let test_a_lookup_is_bounded_by_the_call's_deadline () =
+  In_memory.run @@ fun env ->
+  let clock = Eio.Stdenv.mono_clock env in
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio_mock.Net.make "net" in
+  Eio_mock.Net.on_getaddrinfo net
+    [
+      `Run
+        (fun () ->
+          Eio.Cancel.protect (fun () ->
+              Eio.Time.Mono.sleep_span clock Mtime.Span.(10 * min));
+          [ `Tcp (Eio.Net.Ipaddr.V4.loopback, 80) ]);
+    ];
+  let client =
+    Spindle_client.create ~sw ~net ~mono_clock:clock
+      ~timeout:Mtime.Span.(200 * ms)
+      ()
+  in
+  let started = Eio.Time.Mono.now clock in
+  (match Spindle_client.call client `GET "http://slow.example/" with
+  | Ok _ -> Alcotest.fail "answered"
+  | Error _ -> ());
+  Alcotest.(check int64)
+    "answered at its deadline, in nanoseconds" 200_000_000L
+    (Mtime.Span.to_uint64_ns (Mtime.span started (Eio.Time.Mono.now clock)))
+
 (* An error says whether the request went out, since a POST that went out
    is never sent twice and the caller decides: one that never left -- a
    URL the client cannot call, a field it writes itself, a connection
-   refused -- is [Unsent], and one that went and was not answered whole is
-   [Unanswered]. *)
+   refused -- is [`Unsent], and one that went and was not answered whole is
+   [`Lost]. *)
 let test_an_error_says_whether_the_request_went_out () =
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
@@ -4033,9 +4076,8 @@ let test_an_error_says_whether_the_request_went_out () =
   let went ?(headers = []) url =
     match Spindle_client.call client ~headers ~body:"hi" `POST url with
     | Ok _ -> "answered"
-    | Error (Spindle_client.Unsent _) -> "unsent"
-    | Error (Spindle_client.Unanswered _) -> "unanswered"
-    | Error (Spindle_client.Timeout _) -> "timed out"
+    | Error (`Unsent _) -> "unsent"
+    | Error (`Lost _) -> "lost"
   in
   List.iter
     (fun (says, expected, call) ->
@@ -4047,11 +4089,9 @@ let test_an_error_says_whether_the_request_went_out () =
         "unsent",
         fun () -> went ~headers:[ ("Content-Length", "2") ] "http://t/" );
       ("a connection refused", "unsent", fun () -> went "http://t/");
-      ( "closed after the request was read",
-        "unanswered",
-        fun () -> went "http://t/" );
-      ("an answer that cannot be read", "unanswered", fun () -> went "http://t/");
-      ("an answer cut short", "unanswered", fun () -> went "http://t/");
+      ("closed after the request was read", "lost", fun () -> went "http://t/");
+      ("an answer that cannot be read", "lost", fun () -> went "http://t/");
+      ("an answer cut short", "lost", fun () -> went "http://t/");
     ]
 
 (* ------------------------------------------------------------------ *)
@@ -4059,9 +4099,9 @@ let test_an_error_says_whether_the_request_went_out () =
 
 (* An app on a loopback socket of its own, served as Spindle.Server serves one;
    the port it is on. *)
-let serve ~sw ~net ~clock ~domain_mgr ~domains ?(now = fun () -> Ptime.epoch)
-    ?trusted_proxies ?proxy_header ?max_body ?send_timeout ?max_connections
-    served =
+let serve ~sw ~net ~clock ~domain_mgr ~domains
+    ?(read_clock = fun () -> Ptime.epoch) ?trusted_proxies ?proxy_header
+    ?max_body ?send_timeout ?max_connections served =
   let socket =
     Eio.Net.listen net ~sw ~backlog:8 ~reuse_addr:true
       (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
@@ -4072,7 +4112,7 @@ let serve ~sw ~net ~clock ~domain_mgr ~domains ?(now = fun () -> Ptime.epoch)
     | _ -> Alcotest.fail "expected a TCP socket"
   in
   Eio.Fiber.fork_daemon ~sw (fun () ->
-      Spindle.Server.serve_on ~mono_clock:clock ~now ~domain_mgr ~domains
+      Spindle.Server.serve_on ~mono_clock:clock ~read_clock ~domain_mgr ~domains
         ?trusted_proxies ?proxy_header ?max_body ?send_timeout ?max_connections
         [ socket ] served;
       `Stop_daemon);
@@ -4221,24 +4261,13 @@ let test_the_client_reads_as_it_arrives () =
                    | Error _ as e -> e
                  in
                  go 1))))
-  and slow =
-    Spindle.get
-      Spindle.Path.(s "slow")
-      Spindle.Returns.response
-      (Spindle.Dep.return
-         (Ok
-            (Spindle.Response.stream (fun send ->
-                 let ( let* ) = Result.bind in
-                 let* () = send "first" in
-                 (* Nothing more comes, so the reader's wait passes. *)
-                 Eio.Fiber.await_cancel ()))))
   in
   let port =
     serve ~sw ~net
       ~clock:(Eio.Stdenv.mono_clock env)
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains:1
-      (Spindle.Test.app [ stream; forever; slow; hello ])
+      (Spindle.Test.app [ stream; forever; hello ])
   in
   let client =
     Spindle_client.create ~sw ~net ~mono_clock:(Eio.Stdenv.mono_clock env) ()
@@ -4265,23 +4294,61 @@ let test_the_client_reads_as_it_arrives () =
    with
   | Ok (Spindle_client.Stopped (Some "3")) -> ()
   | _ -> Alcotest.fail "a stream that never ends stops where the function says");
-  (match
-     Spindle_client.events client (url "/hello/kim") (fun _ -> `Continue)
-   with
-  | Ok (Spindle_client.Refused r) ->
+  match
+    Spindle_client.events client (url "/hello/kim") (fun _ -> `Continue)
+  with
+  | Ok (Spindle_client.Answered r) ->
       check_int "an answer that is no stream is refused, read whole" 200
         (Spindle_http.Status.to_int r.status)
-  | _ -> Alcotest.fail "a JSON answer is no event stream");
+  | _ -> Alcotest.fail "a JSON answer is no event stream"
+
+(* On virtual time, where the first piece arrives at the instant it is sent
+   and the second never does: each wait is bounded, and no machine's speed
+   decides which. *)
+let test_each_wait_for_a_streamed_answer_is_bounded () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let clock = Eio.Stdenv.mono_clock env in
+  let slow =
+    Spindle.get
+      Spindle.Path.(s "slow")
+      Spindle.Returns.response
+      (Spindle.Dep.return
+         (Ok
+            (Spindle.Response.stream (fun send ->
+                 let ( let* ) = Result.bind in
+                 let* () = send "first" in
+                 (* Nothing more comes, so the reader's wait passes. *)
+                 Eio.Fiber.await_cancel ()))))
+  in
+  let listening, connect = In_memory.listen () in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      Spindle.Server.serve_on ~mono_clock:clock
+        ~read_clock:(fun () -> Ptime.epoch)
+        ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+        [ listening ]
+        (Spindle.Test.app [ slow ]);
+      `Stop_daemon);
+  let net = Eio_mock.Net.make "net" in
+  Eio_mock.Net.on_getaddrinfo net
+    [ `Return [ `Tcp (Eio.Net.Ipaddr.V4.loopback, 80) ] ];
+  Eio_mock.Net.on_connect net [ `Run (fun () -> connect ~sw) ];
+  let client = Spindle_client.create ~sw ~net ~mono_clock:clock () in
+  let started = Eio.Time.Mono.now clock in
   match
     Spindle_client.stream client
       ~read_timeout:Mtime.Span.(200 * ms)
-      `GET (url "/slow")
+      `GET "http://t/slow"
       (fun a ->
         let first = Spindle_client.Body.read a.body in
         let second = Spindle_client.Body.read a.body in
         (first, second))
   with
-  | Ok (Ok (`Data "first"), Error (Spindle_client.Timeout _)) -> ()
+  | Ok (Ok (`Data "first"), Error (`Lost m))
+    when contains ~sub:"no answer within" m ->
+      Alcotest.(check int64)
+        "the second wait passed at its bound, in nanoseconds" 200_000_000L
+        (Mtime.Span.to_uint64_ns (Mtime.span started (Eio.Time.Mono.now clock)))
   | _ ->
       Alcotest.fail
         "each wait is bounded, and the first piece came as it was sent"
@@ -4327,9 +4394,10 @@ let test_a_failed_read_is_answered_again () =
           match Spindle_client.Body.read a.body with
           | Ok (`Data _) -> until_failed ()
           | Ok `End -> "the body ended"
-          | Error (Spindle_client.Timeout _) -> (
+          | Error (`Lost m) when contains ~sub:"no answer within" m -> (
               match Spindle_client.Body.read a.body with
-              | Error (Spindle_client.Timeout _) -> "the same failure"
+              | Error (`Lost again) when String.equal m again ->
+                  "the same failure"
               | Ok _ | Error _ -> "something else")
           | Error _ -> "another failure"
         in
@@ -4394,9 +4462,9 @@ let test_an_answer_at_the_deadline_leaves_no_socket_open () =
   Alcotest.(check bool)
     "answered, or out of time" true
     (match got with
-    | Ok `OK | Error (Spindle_client.Timeout _) -> true
-    | Ok _ | Error (Spindle_client.Unsent _ | Spindle_client.Unanswered _) ->
-        false);
+    | Ok `OK -> true
+    | Error (`Lost m) -> contains ~sub:"no answer within" m
+    | Ok _ | Error (`Unsent _) -> false);
   check_int "and no socket is left open" before (open_sockets ())
 
 let call_on ~net ~clock ~port ?(headers = []) ?body meth path =
@@ -4476,7 +4544,7 @@ let test_a_limit_out_of_range_is_refused () =
     Spindle.Server.serve_on
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ~now:(fun () -> Ptime.epoch)
+      ~read_clock:(fun () -> Ptime.epoch)
       ?domains ?max_body ?max_header_bytes ?head_timeout ?idle_timeout
       ?body_timeout ?min_body_rate ?send_timeout ?discard_limit ?linger
       ?body_budget ?trusted_proxies ?max_connections ?drain ~stop [ socket ]
@@ -4546,6 +4614,16 @@ let test_forwarded_is_believed_where_it_is_named domains () =
   let xff = on [ "127.0.0.1" ] in
   check_string "Forwarded, where named" "1.2.3.4" (client fwd both);
   check_string "X-Forwarded-For, unless" "9.9.9.9" (client xff both);
+  (* An address with its port is one client, however many ports it uses,
+     so a rate limit keyed by it limits it. *)
+  check_string "an X-Forwarded-For address with its port" "1.2.3.4"
+    (client xff [ ("x-forwarded-for", "1.2.3.4:5678") ]);
+  check_string "an IPv6 one, bracketed with its port" "2001:db8::1"
+    (client xff [ ("x-forwarded-for", "[2001:db8::1]:4711") ]);
+  check_string "or bracketed alone" "2001:db8::1"
+    (client xff [ ("x-forwarded-for", "[2001:db8::1]") ]);
+  check_string "and one without, as it came" "2001:db8::1"
+    (client xff [ ("x-forwarded-for", "2001:db8::1") ]);
   check_string "an unknown hop is the peer" "127.0.0.1"
     (client fwd [ ("forwarded", "for=6.6.6.6, for=unknown") ]);
   check_string "an IPv6 node, unbracketed" "2001:db8::1"
@@ -4555,6 +4633,9 @@ let test_forwarded_is_believed_where_it_is_named domains () =
   in
   check_string "a trusted hop is passed over" "1.2.3.4"
     (client fleet [ ("forwarded", "for=1.2.3.4, for=10.0.0.7") ]);
+  let xff_fleet = on [ "127.0.0.0/8"; "10.0.0.0/8" ] in
+  check_string "and in X-Forwarded-For, with its port" "1.2.3.4"
+    (client xff_fleet [ ("x-forwarded-for", "1.2.3.4, 10.0.0.7:443") ]);
   let untrusted = on ~proxy_header:Spindle.Server.Forwarded [] in
   check_string "and from nobody else" "127.0.0.1" (client untrusted both)
 
@@ -4830,7 +4911,7 @@ let test_an_ipv4_peer_through_the_ipv6_wildcard domains () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         ~trusted_proxies:[ "127.0.0.1" ] [ socket ] (Spindle.Test.app [ who ]);
       `Stop_daemon);
   let client, _ =
@@ -4901,7 +4982,7 @@ let serve_in_memory ~sw env ?domains ?send_timeout ?max_connections served =
   Eio.Fiber.fork_daemon ~sw (fun () ->
       Spindle.Server.serve_on
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ?domains ?send_timeout ?max_connections [ listening ] served;
       `Stop_daemon);
@@ -4934,7 +5015,7 @@ let test_a_drain_that_runs_out_ends_on_time domains () =
   let listening, connect = In_memory.listen () in
   Eio.Fiber.fork ~sw (fun () ->
       Spindle.Server.serve_on ~mono_clock:clock
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains ~stop ~drain [ listening ]
         (Spindle.Test.app [ never ]);
@@ -4994,7 +5075,7 @@ let test_a_stop_lets_answers_finish domains () =
   let started = Eio.Time.Mono.now clock in
   Eio.Fiber.fork ~sw (fun () ->
       Spindle.Server.serve_on ~mono_clock:clock
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains ~stop
         ~drain:Mtime.Span.(2 * s)
@@ -5055,7 +5136,7 @@ let test_a_stop_lets_a_stream_of_known_length_finish domains () =
   let started = Eio.Time.Mono.now clock in
   Eio.Fiber.fork ~sw (fun () ->
       Spindle.Server.serve_on ~mono_clock:clock
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains ~stop
         ~drain:Mtime.Span.(2 * s)
@@ -5229,7 +5310,7 @@ let test_a_failed_accept_is_not_the_servers_end domains () =
   Eio.Fiber.fork_daemon ~sw (fun () ->
       Spindle.Server.serve_on
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains ~max_connections:1 [ listening ]
         (Spindle.Test.app [ hello ]);
@@ -5266,7 +5347,7 @@ let served_on ~sw ~net ~env ~domains host =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains
         ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         ~port ?host
         ~ready:(fun where -> Eio.Promise.resolve tell where)
         (Spindle.Test.app [ hello ]);
@@ -5346,7 +5427,7 @@ let test_localhost_held_on_one_loopback_is_refused () =
           ~domain_mgr:(Eio.Stdenv.domain_mgr env)
           ~domains:1
           ~mono_clock:(Eio.Stdenv.mono_clock env)
-          ~now:(fun () -> Ptime.epoch)
+          ~read_clock:(fun () -> Ptime.epoch)
           ~port
           ~ready:(fun where ->
             Alcotest.failf "listening on %s, beside whoever holds [::1]" where)
@@ -5375,7 +5456,7 @@ let test_run_checks_its_limits_before_it_binds () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains:1
       ~mono_clock:(Eio.Stdenv.mono_clock env)
-      ~now:(fun () -> Ptime.epoch)
+      ~read_clock:(fun () -> Ptime.epoch)
       ~port ~host:"127.0.0.1" ~max_connections:0
       ~ready:(fun where -> Alcotest.failf "ready on %s" where)
       (Spindle.Test.app [ hello ])
@@ -5599,7 +5680,7 @@ let test_a_jumping_clock_moves_no_duration domains () =
     ~out:(fun l -> lines := l :: !lines)
     ();
   let hour = ref Ptime.epoch in
-  let now () =
+  let read_clock () =
     hour := Spindle_http.Instant.add !hour Mtime.Span.hour;
     !hour
   in
@@ -5608,7 +5689,7 @@ let test_a_jumping_clock_moves_no_duration domains () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains
       ~clock:(Eio.Stdenv.mono_clock env)
-      ~now
+      ~read_clock
       (Spindle.Test.app [ hello ])
   in
   let r =
@@ -5658,9 +5739,9 @@ let test_https_is_never_spoken_as_plain_http domains () =
     Spindle_client.call client `GET
       (Printf.sprintf "https://127.0.0.1:%d/hello/kim" port)
   with
-  | Error (Spindle_client.Unsent _ | Spindle_client.Timeout _) -> ()
-  | Error (Spindle_client.Unanswered _) ->
-      Alcotest.fail "a request went out before its handshake"
+  | Error (`Unsent _) -> ()
+  | Error (`Lost m) when contains ~sub:"no answer within" m -> ()
+  | Error (`Lost _) -> Alcotest.fail "a request went out before its handshake"
   | Ok _ -> Alcotest.fail "an https call was answered in the clear"
 
 (* The framework logs no header value and no query string: a request's
@@ -5700,6 +5781,67 @@ let test_no_header_value_reaches_the_log () =
         false
         (List.exists (contains ~sub:secret) !lines))
     [ "s3cret-token"; "s3cret-cookie"; "s3cret-query" ]
+
+(* An exception's message is the application's words, where a card number
+   or a token can be: a raise is logged by its kind and its stack, never its
+   message -- from a handler, a stream's producer or a socket's handler --
+   and the 500 it is answered with says no more. *)
+exception Charging of string
+
+let test_no_exception_message_reaches_the_log () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let lines = ref [] in
+  Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Debug)
+    ~out:(fun l -> lines := l :: !lines)
+    ();
+  let secret = "4111-1111-1111-1111" in
+  let raises path response =
+    Spindle.get Spindle.Path.(s path) Spindle.Returns.response response
+  in
+  let routes =
+    [
+      raises "handler"
+        (Spindle.Dep.map
+           (fun () -> raise (Charging secret))
+           (Spindle.Dep.return ()));
+      raises "stream"
+        (Spindle.Dep.return
+           (Ok
+              (Spindle.Response.stream (fun send ->
+                   let ( let* ) = Result.bind in
+                   let* () = send "a" in
+                   raise (Charging secret)))));
+      raises "socket"
+        (Spindle.Dep.return
+           (Ok
+              (Spindle.Response.takeover ~protocol:"echo" (fun _ ->
+                   raise (Charging secret)))));
+    ]
+  in
+  let connect = serve_in_memory ~sw env (Spindle.Test.app routes) in
+  List.iter
+    (fun request ->
+      Eio.Switch.run (fun inner ->
+          let flow = connect ~sw:inner in
+          Eio.Flow.copy_string request flow;
+          ignore
+            (Eio.Buf_read.(parse_exn take_all) flow ~max_size:65536 : string)))
+    [
+      "GET /handler HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
+      "GET /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
+      "GET /socket HTTP/1.1\r\n\
+       Host: t\r\n\
+       Connection: upgrade\r\n\
+       Upgrade: echo\r\n\
+       \r\n";
+    ];
+  Alcotest.(check bool)
+    "each raise is logged by its kind" true
+    (List.length (List.filter (contains ~sub:"Charging") !lines) >= 3);
+  Alcotest.(check (list string))
+    "and no line holds its message" []
+    (List.filter (contains ~sub:secret) !lines)
 
 (* A request refused for its framing or its fields is logged by what is
    wrong, never by the bytes that were: a token sent where a length, a chunk
@@ -5843,7 +5985,7 @@ let domains_answering env ?domains ?(also = ignore) ~expect () =
       Eio.Domain_manager.run domain_mgr (fun () ->
           Spindle.Server.serve_on
             ~mono_clock:(Eio.Stdenv.mono_clock env)
-            ~now:(fun () -> Ptime.epoch)
+            ~read_clock:(fun () -> Ptime.epoch)
             ~domain_mgr ?domains [ socket ]
             (Spindle.Test.app [ where ]));
       `Stop_daemon);
@@ -5963,6 +6105,50 @@ let test_a_pretty_line_reads () =
         [ "info"; "test.web"; "moved d4"; "status=202" ];
       Alcotest.(check bool) "and not JSON" false (contains ~sub:"{" line)
   | l -> Alcotest.failf "expected one line, got %d" (List.length l)
+
+(* A line stands alone and reads as its format: an application's field of
+   bytes that are no UTF-8 -- a decoded %E9 -- would make a JSON line one a
+   shipper drops, so each byte that is none is written U+FFFD, as Go's
+   encoding/json writes it; and a pretty line's message or field that holds
+   a line's end is written with it escaped. *)
+let test_a_line_stands_alone_whatever_it_holds () =
+  let lines = ref [] in
+  let log format =
+    lines := [];
+    Spindle.Log.setup ~format ~level:(Some Logs.Info)
+      ~out:(fun l -> lines := l :: !lines)
+      ();
+    L.info (fun m ->
+        m "ERROR: x\nDETAIL: \xe9y"
+          ~tags:(Spindle.Log.tags [ ("name", `String "caf\xe9\r\nnext") ]));
+    match !lines with
+    | [ line ] -> line
+    | l -> Alcotest.failf "expected one line, got %d" (List.length l)
+  in
+  let json = log Spindle.Log.Json in
+  Alcotest.(check bool) "a JSON line is UTF-8" true (String.is_valid_utf_8 json);
+  (match Yojson.Safe.from_string json with
+  | `Assoc members ->
+      Alcotest.(check (option string))
+        "its field, each byte that is none written U+FFFD"
+        (Some "caf\xef\xbf\xbd\r\nnext")
+        (match List.assoc_opt "name" members with
+        | Some (`String s) -> Some s
+        | _ -> None);
+      Alcotest.(check (option string))
+        "and its message" (Some "ERROR: x\nDETAIL: \xef\xbf\xbdy")
+        (match List.assoc_opt "message" members with
+        | Some (`String s) -> Some s
+        | _ -> None)
+  | _ -> Alcotest.fail "not a JSON object");
+  let pretty = log Spindle.Log.Pretty in
+  Alcotest.(check bool)
+    "a pretty line is one line" false
+    (String.contains pretty '\n' || String.contains pretty '\r');
+  Alcotest.(check bool) "of UTF-8" true (String.is_valid_utf_8 pretty);
+  List.iter
+    (fun sub -> Alcotest.(check bool) sub true (contains ~sub pretty))
+    [ "ERROR: x\\nDETAIL: \xef\xbf\xbdy"; "name=caf\xef\xbf\xbd\\r\\nnext" ]
 
 (* What a route answers with, for the tests that only ask which answered. *)
 let says word = Spindle.Dep.return (Ok (Spindle.Response.make word))
@@ -6125,12 +6311,11 @@ let test_a_bad_parameter_is_a_problem () =
 let test_a_custom_segment_is_a_problem_or_not_the_route () =
   let even ?unparsed () =
     Spindle.Path.param ?unparsed "n"
-      (Spindle.Codec.custom ~kind:"even number" ~expects:"an even number"
-         ~print:string_of_int
+      (Spindle.Codec.custom ~kind:"even number" ~print:string_of_int
          ~parse:(fun s ->
            match int_of_string_opt s with
-           | Some n when n mod 2 = 0 -> Some n
-           | Some _ | None -> None)
+           | Some n when n mod 2 = 0 -> Ok n
+           | Some _ | None -> Error "This is not an even number.")
          ())
   in
   let half p =
@@ -6164,7 +6349,9 @@ let colour =
     (Spindle.Codec.custom ~kind:"colour"
        ~print:(function Red -> "red/ish" | Green -> "green")
        ~parse:(function
-         | "red/ish" -> Some Red | "green" -> Some Green | _ -> None)
+         | "red/ish" -> Ok Red
+         | "green" -> Ok Green
+         | _ -> Error "This is not a colour.")
        ())
 
 let count = Spindle.Path.int "count"
@@ -6959,7 +7146,7 @@ let test_a_file_replaced_before_its_body_sends_nothing () =
   let a = files root in
   let response, _ =
     Spindle.App.handle a
-      (Spindle.Request.make ~now:(fun () -> Ptime.epoch) `GET "/a.txt")
+      (Spindle.Request.make ~read_clock:(fun () -> Ptime.epoch) `GET "/a.txt")
       ~body:
         {
           Spindle.Body.whole = (fun () -> Ok "");
@@ -7100,10 +7287,56 @@ let upload =
     Spindle.Returns.text
     (let+ body =
        Spindle.body_stream
-         ~content_type:(String.equal "application/octet-stream")
+         ~content_types:[ "application/octet-stream" ]
          ~max:200_000 ()
      in
      tally body ~parts:0 ~bytes:0)
+
+(* A content type that is no pattern -- no subtype, a space inside --
+   would match nothing and refuse every body without a word: the table is
+   refused where it is made, naming the route and the pattern, and so is a
+   compression policy with one. *)
+let test_a_content_type_that_is_no_pattern_is_refused () =
+  List.iter
+    (fun pattern ->
+      let route =
+        Spindle.post
+          Spindle.Path.(s "upload")
+          Spindle.Returns.text
+          (let+ _ =
+             Spindle.body_stream ~content_types:[ pattern ] ~max:1024 ()
+           in
+           Ok "")
+      in
+      match Spindle.App.make [ route ] with
+      | Ok _ -> Alcotest.failf "%S was taken" pattern
+      | Error m ->
+          Alcotest.(check bool)
+            (Printf.sprintf "%S: said with the route and the pattern: %s"
+               pattern m)
+            true
+            (contains ~sub:"POST /upload" m && contains ~sub:pattern m))
+    [ "json"; "application/ json"; "application/json; charset=utf-8"; "*/json" ];
+  (match
+     Spindle.App.make
+       [
+         Spindle.post
+           Spindle.Path.(s "ok")
+           Spindle.Returns.text
+           (let+ _ =
+              Spindle.body_stream
+                ~content_types:[ "text/csv"; "image/*"; "application/*+json" ]
+                ~max:1024 ()
+            in
+            Ok "");
+       ]
+   with
+  | Ok _ -> ()
+  | Error m -> Alcotest.failf "patterns refused: %s" m);
+  match Spindle.Compress.make ~types:[ "text/html"; "json" ] () with
+  | (_ : Spindle.Compress.t) -> Alcotest.fail "a policy with \"json\" was taken"
+  | exception Invalid_argument m ->
+      Alcotest.(check bool) ("named: " ^ m) true (contains ~sub:{|"json"|} m)
 
 let test_a_streamed_body_is_read_in_parts () =
   let a = Spindle.Test.app [ upload ] in
@@ -7116,7 +7349,12 @@ let test_a_streamed_body_is_read_in_parts () =
   check_status "past the route's own limit" 413
     (call (String.make 200_001 'x')).status;
   check_status "another type, before any is read" 415
-    (call ~headers:[ ("content-type", "text/plain") ] "x").status
+    (call ~headers:[ ("content-type", "text/plain") ] "x").status;
+  check_string "its type with parameters, and in any case" "1 parts, 1 bytes"
+    (call
+       ~headers:[ ("content-type", "Application/Octet-Stream; charset=binary") ]
+       "x")
+      .body
 
 let test_a_body_read_after_its_handler_reads_nothing () =
   let late = ref None in
@@ -7259,7 +7497,10 @@ let test_int64_and_a_custom_kind_read_as_sentences () =
   let id = Spindle.Path.int64 "id" in
   let tile =
     Spindle.Path.param "tile"
-      (Spindle.Codec.custom ~kind:"int64" ~parse:Int64.of_string_opt
+      (Spindle.Codec.custom ~kind:"int64"
+         ~parse:(fun s ->
+           Option.to_result ~none:"This is not a tile's number."
+             (Int64.of_string_opt s))
          ~print:Int64.to_string ())
   in
   let a =
@@ -7284,8 +7525,8 @@ let test_int64_and_a_custom_kind_read_as_sentences () =
     (contains ~sub:"This is not a whole number."
        (Spindle.Test.call a `GET "/users/0x1f").body);
   Alcotest.(check bool)
-    "a valid kind" true
-    (contains ~sub:"This is not a valid int64."
+    "a custom codec's own sentence" true
+    (contains ~sub:"This is not a tile's number."
        (Spindle.Test.call a `GET "/tiles/abc").body)
 
 (* ------------------------------------------------------------------ *)
@@ -7558,7 +7799,9 @@ let test_a_route_answers_the_status_it_chose () =
   (* The server sends what the endpoint said and says whose bug it is. *)
   let response, answered =
     Spindle.App.handle a
-      (Spindle.Request.make ~now:(fun () -> Ptime.epoch) `PUT "/users/stray")
+      (Spindle.Request.make
+         ~read_clock:(fun () -> Ptime.epoch)
+         `PUT "/users/stray")
       ~body:
         {
           Spindle.Body.whole = (fun () -> Ok "");
@@ -7982,6 +8225,148 @@ let test_a_status_has_one_spelling () =
   with
   | `Conflict -> ()
   | _ -> Alcotest.fail "a code declared by number keeps the number's spelling"
+
+(* Every status RFC 9110 §15 defines, and those of RFC 6585, 7725, 8297
+   and 8470 -- all a server can mean -- is named; and every method RFC 9110
+   §9 defines. 306 and 418 are reserved, and stay numbers. *)
+let test_every_status_and_method_http_defines_is_named () =
+  List.iter
+    (fun n ->
+      Alcotest.(check bool)
+        (Printf.sprintf "%d is named" n)
+        true
+        (match Spindle.Status.of_int n with `Code _ -> false | _ -> true))
+    [
+      100;
+      101;
+      103;
+      200;
+      201;
+      202;
+      203;
+      204;
+      205;
+      206;
+      300;
+      301;
+      302;
+      303;
+      304;
+      305;
+      307;
+      308;
+      400;
+      401;
+      402;
+      403;
+      404;
+      405;
+      406;
+      407;
+      408;
+      409;
+      410;
+      411;
+      412;
+      413;
+      414;
+      415;
+      416;
+      417;
+      421;
+      422;
+      425;
+      426;
+      428;
+      429;
+      431;
+      451;
+      500;
+      501;
+      502;
+      503;
+      504;
+      505;
+      511;
+    ];
+  List.iter
+    (fun n ->
+      Alcotest.(check bool)
+        (Printf.sprintf "%d is a number" n)
+        true
+        (match Spindle.Status.of_int n with `Code _ -> true | _ -> false))
+    [ 306; 418; 207; 507 ];
+  List.iter
+    (fun (line, target) ->
+      let head =
+        Spindle_http.Head.Request.read ~max:1024
+          (Eio.Buf_read.of_string
+             (Printf.sprintf "%s %s HTTP/1.1\r\nHost: t\r\n\r\n" line target))
+      in
+      match head with
+      | Ok { meth = `Other m; _ } -> Alcotest.failf "%s is not named" m
+      | Ok h ->
+          Alcotest.(check string)
+            "spelled as sent" line
+            (Spindle.Meth.to_string h.meth)
+      | Error _ -> Alcotest.failf "%s was not read" line)
+    [ ("CONNECT", "t:443"); ("TRACE", "/") ]
+
+(* Every public error has its printer beside it, and every case its own
+   words. *)
+let test_every_error_has_its_words () =
+  let distinct says words =
+    List.iter
+      (fun w ->
+        Alcotest.(check bool)
+          (says ^ ": words for every case")
+          true
+          (String.length w > 0))
+      words;
+    Alcotest.(check int)
+      (says ^ ": each its own") (List.length words)
+      (List.length (List.sort_uniq String.compare words))
+  in
+  let response : Spindle.Test.response =
+    { status = `Forbidden; headers = []; body = "" }
+  in
+  distinct "Session"
+    (List.map Spindle.Session.error_to_string
+       [
+         Spindle.Session.Store "down";
+         Spindle.Session.Unencodable
+           { at = []; code = Wiretype.Unwritable.Not_utf8; message = "bytes" };
+       ]);
+  distinct "Body"
+    (List.map Spindle.Body.error_to_string
+       [ Spindle.Body.Too_large; Unreadable "cut"; Over_budget ]);
+  distinct "Multipart"
+    (List.map Spindle.Multipart.error_to_string
+       [
+         Spindle.Multipart.Malformed "no boundary";
+         Head_too_large;
+         Body Spindle.Body.Too_large;
+       ]);
+  distinct "Spindle_http.Multipart"
+    (List.map
+       (Spindle_http.Multipart.error_to_string Fun.id)
+       [
+         Spindle_http.Multipart.Malformed "no boundary";
+         Head_too_large;
+         Source "the pull";
+       ]);
+  distinct "Head"
+    (List.map Spindle_http.Head.error_to_string
+       [ Spindle_http.Head.Closed; Refused (`Bad_request, "a folded line") ]);
+  distinct "Head.Response"
+    (List.map Spindle_http.Head.Response.error_to_string
+       [ Spindle_http.Head.Response.Closed; Malformed "no status" ]);
+  distinct "Test.websocket_error"
+    (List.map Spindle.Test.websocket_error_to_string
+       [
+         Spindle.Test.Refused response;
+         Ended (Spindle_http.Websocket.Lost "gone");
+       ])
 
 let test_an_app_lists_its_routes () =
   let signed_out = code "signed_out" `Unauthorized in
@@ -8501,16 +8886,16 @@ let test_a_codec_reads_and_refuses_as_its_grammar () =
       List.iter
         (fun text ->
           match Spindle.Codec.parse codec text with
-          | None -> Alcotest.failf "%s refused %S" name text
-          | Some v -> (
+          | Error _ -> Alcotest.failf "%s refused %S" name text
+          | Ok v -> (
               let printed = Spindle.Codec.print codec v in
               match Spindle.Codec.parse codec printed with
-              | Some again ->
+              | Ok again ->
                   check_string
                     (Printf.sprintf "%s prints %S as it reads back" name text)
                     printed
                     (Spindle.Codec.print codec again)
-              | None ->
+              | Error _ ->
                   Alcotest.failf "%s printed %S as %S, which it refuses" name
                     text printed))
         reads;
@@ -8519,7 +8904,7 @@ let test_a_codec_reads_and_refuses_as_its_grammar () =
           Alcotest.(check bool)
             (Printf.sprintf "%s refuses %S" name text)
             true
-            (Option.is_none (Spindle.Codec.parse codec text)))
+            (Result.is_error (Spindle.Codec.parse codec text)))
         refuses)
     codec_cases
 
@@ -8533,8 +8918,8 @@ let test_a_float_comes_back_as_itself =
         Spindle.Codec.parse Spindle.Codec.float
           (Spindle.Codec.print Spindle.Codec.float v)
       with
-      | Some again -> Float.equal again v
-      | None -> false)
+      | Ok again -> Float.equal again v
+      | Error _ -> false)
 
 (* A header read by a codec answers what it read, and one it refuses is
    [invalid] at its place -- but for whitespace around it, which is no part
@@ -8643,6 +9028,8 @@ let () =
         [
           Alcotest.test_case "it is read in parts" `Quick
             test_a_streamed_body_is_read_in_parts;
+          Alcotest.test_case "a content type that is no pattern is refused"
+            `Quick test_a_content_type_that_is_no_pattern_is_refused;
           Alcotest.test_case "a read after its handler reads nothing" `Quick
             test_a_body_read_after_its_handler_reads_nothing;
           Alcotest.test_case "a route reads one body" `Quick
@@ -8801,6 +9188,8 @@ let () =
             test_an_event_stream_reads_as_the_standard_says;
           Alcotest.test_case "the client reads as it arrives" `Quick
             test_the_client_reads_as_it_arrives;
+          Alcotest.test_case "each wait for a streamed answer is bounded" `Quick
+            test_each_wait_for_a_streamed_answer_is_bounded;
           Alcotest.test_case "a failed read is answered again" `Quick
             test_a_failed_read_is_answered_again;
           Alcotest.test_case "an answer at the deadline leaves no socket open"
@@ -8903,6 +9292,8 @@ let () =
             test_no_header_value_reaches_the_log;
           Alcotest.test_case "no refused byte reaches the log" `Quick
             test_no_refused_byte_reaches_the_log;
+          Alcotest.test_case "no exception message reaches the log" `Quick
+            test_no_exception_message_reaches_the_log;
           Alcotest.test_case "request ids are distinct across domains" `Quick
             test_request_ids_are_distinct_across_domains;
         ] );
@@ -8924,6 +9315,8 @@ let () =
             test_a_client_sends_the_url_as_it_was_given;
           Alcotest.test_case "an error says whether the request went out" `Quick
             test_an_error_says_whether_the_request_went_out;
+          Alcotest.test_case "a lookup is bounded by the call's deadline" `Quick
+            test_a_lookup_is_bounded_by_the_call's_deadline;
         ] );
       ( "the edges",
         [
@@ -9000,6 +9393,8 @@ let () =
             test_work_runs_where_it_was_caused;
           Alcotest.test_case "a pretty line reads" `Quick
             test_a_pretty_line_reads;
+          Alcotest.test_case "a line stands alone whatever it holds" `Quick
+            test_a_line_stands_alone_whatever_it_holds;
           Alcotest.test_case "blocking carries the request, refuses an effect"
             `Quick test_blocking_carries_the_request_and_refuses_an_effect;
         ] );
@@ -9102,6 +9497,10 @@ let () =
             test_a_bodys_own_refusal_is_declared;
           Alcotest.test_case "a status has one spelling" `Quick
             test_a_status_has_one_spelling;
+          Alcotest.test_case "every error has its words" `Quick
+            test_every_error_has_its_words;
+          Alcotest.test_case "every status and method HTTP defines is named"
+            `Quick test_every_status_and_method_http_defines_is_named;
           Alcotest.test_case "an app lists its routes" `Quick
             test_an_app_lists_its_routes;
         ] );

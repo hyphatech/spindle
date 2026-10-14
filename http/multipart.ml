@@ -29,6 +29,11 @@ let content_type_of headers =
 
 type 'e error = Malformed of string | Head_too_large | Source of 'e
 
+let error_to_string source = function
+  | Malformed m -> "not a multipart body: " ^ m
+  | Head_too_large -> "a part's head longer than its limit"
+  | Source e -> source e
+
 (* Where the reader stands in RFC 2046's body. *)
 type state = Preamble | After_boundary | Part_head | Part_content | Finished
 
@@ -51,14 +56,15 @@ let is_bchar = function
       true
   | _ -> false
 
+let is_boundary b =
+  String.length b >= 1
+  && String.length b <= 70
+  && String.for_all is_bchar b
+  && not (Char.equal b.[String.length b - 1] ' ')
+
 let boundary (m : Media_type.t) =
   match (m.type_, Media_type.parameter m "boundary") with
-  | "multipart", Some b
-    when String.length b >= 1
-         && String.length b <= 70
-         && String.for_all is_bchar b
-         && not (Char.equal b.[String.length b - 1] ' ') ->
-      Some b
+  | "multipart", Some b when is_boundary b -> Some b
   | _, (Some _ | None) -> None
 
 (* As a server bounds a request's head. *)
@@ -324,27 +330,92 @@ let quoted_string s =
   Buffer.add_char b '"';
   Buffer.contents b
 
+(* Every part as it was written, its content whole: what [to_string] reads
+   its own body back as. *)
+let read_back ~boundary body =
+  let pulled = ref false in
+  let t =
+    create ~boundary (fun () ->
+        if !pulled then Ok None
+        else (
+          pulled := true;
+          Ok (Some body)))
+  in
+  let rec content b =
+    match read t with
+    | Ok (`Data d) ->
+        Buffer.add_string b d;
+        content b
+    | Ok `End -> Ok (Buffer.contents b)
+    | Error e -> Error e
+  in
+  let rec parts acc =
+    match next t with
+    | Ok None -> Ok (List.rev acc)
+    | Ok (Some p) ->
+        let* c = content (Buffer.create 64) in
+        parts ((p, c) :: acc)
+    | Error e -> Error e
+  in
+  parts []
+
+(* A name or a filename as the HTML standard has a browser write it, which
+   is how it reads back. *)
+let as_written s =
+  String.concat "%0A"
+    (List.map
+       (fun l -> String.concat "%0D" (String.split_on_char '\r' l))
+       (String.split_on_char '\n' s))
+
 let to_string ~boundary parts =
   let b = Buffer.create 256 in
-  List.iter
-    (fun (p, content) ->
-      Buffer.add_string b ("--" ^ boundary ^ "\r\n");
-      Buffer.add_string b
-        ("Content-Disposition: form-data; name=" ^ quoted_string p.name);
-      Option.iter
-        (fun f -> Buffer.add_string b ("; filename=" ^ quoted_string f))
-        p.filename;
-      Buffer.add_string b "\r\n";
-      (* text/plain is what a part with no type is, so it goes unwritten, as
-         a browser leaves it; a type that cannot be written is left out
-         rather than written wrong. *)
-      if not (Media_type.equal p.content_type text_plain) then
-        Result.iter
-          (fun ct -> Buffer.add_string b ("Content-Type: " ^ ct ^ "\r\n"))
-          (Media_type.to_string p.content_type);
-      Buffer.add_string b "\r\n";
-      Buffer.add_string b content;
-      Buffer.add_string b "\r\n")
-    parts;
-  Buffer.add_string b ("--" ^ boundary ^ "--\r\n");
-  Buffer.contents b
+  let write (p, content) =
+    (* text/plain is what a part with no type is, so it goes unwritten, as
+       a browser leaves it. *)
+    let* content_type =
+      if Media_type.equal p.content_type text_plain then Ok None
+      else Result.map Option.some (Media_type.to_string p.content_type)
+    in
+    Buffer.add_string b ("--" ^ boundary ^ "\r\n");
+    Buffer.add_string b
+      ("Content-Disposition: form-data; name=" ^ quoted_string p.name);
+    Option.iter
+      (fun f -> Buffer.add_string b ("; filename=" ^ quoted_string f))
+      p.filename;
+    Buffer.add_string b "\r\n";
+    Option.iter
+      (fun ct -> Buffer.add_string b ("Content-Type: " ^ ct ^ "\r\n"))
+      content_type;
+    Buffer.add_string b "\r\n";
+    Buffer.add_string b content;
+    Buffer.add_string b "\r\n";
+    Ok ()
+  in
+  let same (p, c) ((q : part), d) =
+    String.equal (as_written p.name) q.name
+    && Option.equal String.equal (Option.map as_written p.filename) q.filename
+    && Media_type.equal p.content_type q.content_type
+    && String.equal c d
+  in
+  if not (is_boundary boundary) then Error "a boundary RFC 2046 does not allow"
+  else
+    let written =
+      List.fold_left
+        (fun acc part -> Result.bind acc (fun () -> write part))
+        (Ok ()) parts
+    in
+    match written with
+    | Error _ -> Error "a part's content type its reader would not read back"
+    | Ok () -> (
+        Buffer.add_string b ("--" ^ boundary ^ "--\r\n");
+        let body = Buffer.contents b in
+        match read_back ~boundary body with
+        | Ok read
+          when List.compare_lengths read parts = 0
+               && List.for_all2 same parts read ->
+            Ok body
+        | Ok _ | Error _ ->
+            Error
+              "a part its reader would not read back as itself: content \
+               holding the boundary's delimiter, or a name or a filename no \
+               field can hold")

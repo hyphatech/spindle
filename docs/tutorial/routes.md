@@ -116,6 +116,8 @@ Path.root                                        (* / *)
 - Make a parameter once and use it in every path that has it. `/` joins
   pieces into a path; `Spindle.param` takes the parameter, not the path.
 - A segment arrives percent-decoded: `/orders/Kim%20Li` is `"Kim Li"`.
+- A `custom` codec's `~parse` answers `Ok` the value, or `Error` the
+  sentence a client is told: `Error "This is not a SKU."`.
 - `Path.rest` takes every segment left, as a list: `/static/css/site.css`
   is `["css"; "site.css"]`, and `/static` is `[]`. It must come last. It is
   left out of the OpenAPI document.
@@ -162,7 +164,8 @@ reported.
   "key")`) to make it "not this route" instead, so the next route whose
   path matches answers -- `/posts/42` by its number, `/posts/blue-lamp` by
   its name. Such routes share the parameter's name, and the API's document
-  describes them as one operation.
+  describes them as one operation, so they answer the same way and read the
+  same body: the document is refused otherwise.
 - **A path no route names** is `404`, or your own answer with
   `Spindle.serve env ~not_found:page routes`. A path another method's route
   names is `405`, with `Allow` listing the methods it has.

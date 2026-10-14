@@ -20,8 +20,9 @@
     {b The body is the handler's while it runs.} A read after the handler has
     returned -- from a stream's producer, a fibre it left behind -- is [`End],
     and is logged as the route's bug: the connection is by then the loop's
-    again. What the route left unread is discarded by the loop as any unread
-    body is. *)
+    again. So is a read still waiting when the handler returns, stopped before
+    the loop reads on. What the route left unread is discarded by the loop as
+    any unread body is. *)
 
 type t = Body_repr.t
 
@@ -33,6 +34,8 @@ type error = Request_repr.body_error =
           said *)
   | Over_budget
       (** no room left in the server's budget for bodies being held *)
+
+val error_to_string : error -> string
 
 val read : t -> ([ `Data of string | `End ], error) result
 (** The next part of the body as it arrived, at most 64 KiB, or its end. An

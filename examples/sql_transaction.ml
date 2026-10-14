@@ -66,7 +66,7 @@ let () =
   Eio_main.run @@ fun env ->
   Spindle_postgres.Pool.run env database @@ fun pool ->
   (* --8<-- [start:log] *)
-  match Spindle_postgres.Pool.query pool create_names () with
+  match Spindle_postgres.Pool.exec pool create_names () with
   | Ok () -> Spindle.serve env (routes pool)
   | Error e -> prerr_endline (Spindle_postgres.error_to_string e)
 (* --8<-- [end:log] *)

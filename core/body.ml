@@ -33,3 +33,8 @@ let read (t : t) =
             Error e)
 
 let refusal = Body_repr.refusal
+
+let error_to_string = function
+  | Too_large -> "a body longer than its limit"
+  | Unreadable m -> "a body that could not be read: " ^ m
+  | Over_budget -> "a body the server had no room to hold"

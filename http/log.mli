@@ -22,9 +22,10 @@ val tags : (string * value) list -> Logs.Tag.set
 (** [~tags:(Spindle.Log.tags [ ("status", `Int 202) ])] *)
 
 val raised : exn -> Printexc.raw_backtrace -> (string * value) list
-(** A caught exception as fields: [error.kind], its constructor;
-    [error.message]; and [error.stack], left out when nothing was recorded --
-    the names an error tracker groups a failure by. Take the backtrace first
+(** A caught exception as fields: [error.kind], its constructor, and
+    [error.stack], left out when nothing was recorded -- the names an error
+    tracker groups a failure by. Never its message, which is whatever its raiser
+    wrote, a credential or a card number among it. Take the backtrace first
     thing in the handler, [Printexc.get_raw_backtrace ()], since the next raise
     on the domain replaces it. *)
 

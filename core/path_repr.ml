@@ -46,7 +46,7 @@ let segments p =
             {
               name = p.name;
               unparsed = p.unparsed;
-              parses = (fun s -> Option.is_some (Codec.parse p.codec s));
+              parses = (fun s -> Result.is_ok (Codec.parse p.codec s));
               shape = Codec.shape p.codec;
               kind = Codec.kind p.codec;
             })
@@ -73,8 +73,8 @@ let encode = function
 let join_rest segments = String.concat "/" (List.map encode segments)
 
 let rest_codec =
-  Codec.custom ~kind:"path" ~expects:"a path"
+  Codec.custom ~kind:"path"
     ~parse:(function
-      | "" -> Some []
-      | s -> Some (List.map Uri.pct_decode (String.split_on_char '/' s)))
+      | "" -> Ok []
+      | s -> Ok (List.map Uri.pct_decode (String.split_on_char '/' s)))
     ~print:join_rest ()

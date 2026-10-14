@@ -27,7 +27,7 @@ type t = {
   client : string;
   proxied : bool;
   proxy_header : proxy_header;
-  now : unit -> Ptime.t;
+  read_clock : unit -> Ptime.t;
   matched : matched option;  (** set once the route table has chosen *)
   client_gone : unit Eio.Promise.t * unit Eio.Promise.u;
       (** resolved by the server once the exchange is over, or sooner where it
@@ -59,7 +59,7 @@ let query_of target =
 
 let make ?id ?(peer = "") ?client ?(proxied = false)
     ?(proxy_header = X_forwarded_for) ?(version = Spindle_http.Head.Http_1_1)
-    ?host ?(headers = []) ~now meth target =
+    ?host ?(headers = []) ~read_clock meth target =
   let host =
     match host with
     | Some h -> Some h
@@ -81,12 +81,19 @@ let make ?id ?(peer = "") ?client ?(proxied = false)
     client = Option.value client ~default:peer;
     proxied;
     proxy_header;
-    now;
+    read_clock;
     matched = None;
     client_gone = Eio.Promise.create ();
   }
 
 let with_matched m t = { t with matched = Some m }
+
+let with_headers headers t =
+  {
+    t with
+    headers = List.map (fun (k, v) -> (String.lowercase_ascii k, v)) headers;
+  }
+
 let matched t = t.matched
 let client_gone t = fst t.client_gone
 
@@ -123,7 +130,7 @@ let peer t = t.peer
 let proxied t = t.proxied
 let proxy_header t = t.proxy_header
 let client t = t.client
-let now t = t.now ()
+let now t = t.read_clock ()
 let loopback_hosts = [ "localhost"; "127.0.0.1"; "[::1]" ]
 
 (* Only a trusted proxy, in the header it writes, may say a request came

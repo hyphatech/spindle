@@ -357,17 +357,22 @@ let request_body (r : D.route) =
                   ] );
             ] );
       ]
-  | Some D.Raw_body ->
+  | Some (D.Raw_body content_types) ->
+      let content_types =
+        match content_types with
+        | [] -> [ "application/octet-stream" ]
+        | named -> named
+      in
       [
         ( "requestBody",
           Obj
             [
               ( "content",
                 Obj
-                  [
-                    ( "application/octet-stream",
-                      Obj [ ("schema", Obj [ ("type", String "string") ]) ] );
-                  ] );
+                  (List.map
+                     (fun t ->
+                       (t, Obj [ ("schema", Obj [ ("type", String "string") ]) ]))
+                     content_types) );
             ] );
       ]
   | None -> []

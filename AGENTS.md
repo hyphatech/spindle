@@ -29,8 +29,8 @@ http/       spindle.http: HTTP as both ends speak it -- heads, bodies,
 core/       spindle: routes, dependencies, answers, refusals, cookies,
             logging, streams, WebSockets, the routes described as OpenAPI
 client/     spindle.client: calling another server, on http/ alone
-postgres/   spindle_postgres: a server's Postgres, over rowtype's backend
-cli/        spindle_cli: the API, described on the command line
+postgres/   spindle-postgres: a server's Postgres, over rowtype's backend
+cli/        spindle-cli: the API, described on the command line
 docs/       the documentation site, every program included from examples/
 overrides/  the site's theme overrides: the header's mark, as an icon
 examples/   the programs the site shows, each built and run
@@ -71,15 +71,15 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   Prometheus cannot read, or a name registered twice) and its counting (for
   a number of label values other than its family's, or a counter moved
   down), `Spindle.Broadcast.create` (for a depth below one),
-  `Spindle.Compress.make` (for a level deflate has not, or a negative
-  size), `Spindle.Rate.create` (for a limit or a burst below one, or a
+  `Spindle.Compress.make` (for a level deflate has not, a negative
+  size, or a type that is no media type pattern), `Spindle.Rate.create` (for a limit or a burst below one, or a
   period shorter than a nanosecond a call),
   `Spindle.Server.run`, `serve_on` and `Spindle.serve` (for a limit out of
   its range, or a trusted proxy that is no address), `Spindle.serve` and
   `Spindle.Test.app`, for a route table `App.make` refuses -- and `Test.app`
   for a `Static.directory` or a `Files.directory`, which a test has no
   filesystem to read --, and
-  `Spindle.Openapi.docs`, for one or a description its document cannot name;
+  `Spindle.Openapi.docs`, for whatever `Spindle.Openapi.routes` refuses;
   and `Spindle.Test.call`, `Spindle.Test.events` and
   `Spindle.Test.websocket`, which refuse an undeclared code, or a status its
   route does not list -- and `Test.events` an event past its reader's
@@ -92,7 +92,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   start, as `Spindle_postgres.Pool.run` does when its pool cannot open,
   since a server missing what it needs is stopped where an orchestrator
   sees it; `Spindle.Log`'s default sink writes its lines to stderr; and
-  `spindle_cli`, a command line, prints its answer and its errors and
+  `spindle-cli`, a command line, prints its answer and its errors and
   exits with its status. A library printing anywhere else writes into
   output its program owns. Symptom: `rg -n -w
   'exit|stderr|print_string|print_endline|prerr_endline|Printf\.printf'
@@ -100,7 +100,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   does not name.
 - **Spindle reads and writes HTTP itself, names no driver, and its client
   links no framework.** No library links another HTTP implementation or
-  names one; `spindle_postgres` reaches Postgres through rowtype's backend
+  names one; `spindle-postgres` reaches Postgres through rowtype's backend
   alone, so a second driver is a second backend and no change here; and
   `spindle.client` links `spindle.http` and never `spindle`, so a program
   that calls other servers compiles no framework. Symptom: `rg -n -i -w
@@ -134,14 +134,19 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   which is not among the framework's codes every route may give. Test: a
   document that promises every route may answer `429`, or a limit a reader
   of the route cannot see; `test_spindle`'s rate case reads the document.
-- **A secret has no span.** No header value, body, query string or
-  statement parameter is a span's attribute, as none is a log field: a
-  request's span carries its access line's fields, a call's where it went and
-  never its query, and a statement's its text. A span's name is a route, a
-  method or `postgresql`, never a path or a string a caller chose, since a
-  name per URL is a series per URL in every collector. Test: a token in a
-  collector; `test_spindle` sends one in a header and a query and searches
-  every attribute of the trace.
+- **A secret has no span.** No header value, body, query string, statement
+  parameter or message of an exception the framework did not catch by name
+  is a span's attribute, as none is a log field: a request's span carries
+  its access line's fields, a call's where it went and never its query, a
+  statement's its text, and such a raise is told by its kind and its stack,
+  since its message is whatever its raiser wrote; an I/O error caught by
+  name keeps its words, which hold no data. A
+  span's name is a route, a method or `postgresql`, never a path or a string
+  a caller chose, since a name per URL is a series per URL in every
+  collector. Test: a token in a collector, or a card number in a log line;
+  `test_spindle` sends one in a header and a query and searches every
+  attribute of the trace, and raises one from a handler, a stream and a
+  socket and searches every line.
 - **Spindle frames every body, and its connection loop is the only thing
   that reads a socket.** A connection carries another request only once the
   last one's body was read to its end -- a route that ignored it has it
@@ -217,10 +222,11 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   `idle_timeout`
   between requests, `head_timeout` from a head's first byte, and
   `body_timeout` from a body's first read moved a second on for every
-  `min_body_rate` bytes; and while an answer is written, `send_timeout`
+  `min_body_rate` bytes; while an answer is written, `send_timeout`
   from the last byte the client took, so a client still reading slowly is
-  never cut off and one that stops is. A deadline passes up to a tick late,
-  and a tick is a tenth of the shortest limit.
+  never cut off and one that stops is; and `linger` while a closing
+  connection's last bytes are read and dropped. A deadline passes up to a
+  tick late, and a tick is a tenth of the shortest limit.
   A client that stops is otherwise a fiber and a connection slot held until
   the process ends, and a wait re-armed on every byte holds one for as long
   as the body's length allows. The server owns its connection's writer for
@@ -280,7 +286,11 @@ differently: removing or renaming anything in an `.mli`, changing a type,
 adding a required argument, or changing a default or documented behaviour.
 Adding a function, a module, an optional argument or a constructor to a
 public variant is not breaking: a variant grows in a minor version, so a
-match on one that must compile across versions ends in a catch-all arm. Nor
+match on one that must compile across versions ends in a catch-all arm.
+Two are closed instead, from 1.0: `Spindle_http.Status.t` and
+`Spindle_http.Meth.t` name every status and method HTTP defined by then,
+and one registered later stays `` `Code n `` or `` `Other s `` for every
+1.x release, so a match on either keeps its meaning across them. Nor
 is the wording of a refusal's sentence. A refusal's code, a route's place
 in the document and what the OpenAPI and Zod printers write for a route are
 behaviour: changing any is breaking.

@@ -73,7 +73,7 @@ let serve ~sw env ?(domains = 4) ?max_body ?max_header_bytes ?discard_limit
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains
-        ~now:(fun () -> Ptime.epoch)
+        ~read_clock:(fun () -> Ptime.epoch)
         ?max_body ?max_header_bytes ?discard_limit ?body_budget ?stop ?drain
         [ listening ] served;
       `Stop_daemon);
@@ -249,6 +249,37 @@ let test_a_stream_of_a_length_is_framed_by_it () =
       let answer = Eio.Buf_read.take_all r in
       check_bool "one that sent more is cut at its length, and closed" true
         (String.ends_with ~suffix:"\r\n\r\noverl" answer))
+
+(* A stream's [send] kept past its producer's return -- by a fiber the
+   route left behind -- would write between this answer and the next one
+   on a kept connection: it is gone, as a late body read is. *)
+let leaked_send = ref None
+
+let leaks_its_send =
+  Spindle.get
+    Spindle.Path.(s "leak")
+    Spindle.Returns.response
+    (Spindle.Dep.return
+       (Ok
+          (Spindle.Response.stream (fun send ->
+               leaked_send := Some send;
+               send "first"))))
+
+let test_a_stream_sends_nothing_once_its_producer_returned () =
+  with_server [ leaks_its_send; hello ] @@ fun connect ->
+  connect @@ fun send r ->
+  send (get "/leak");
+  check_string "the stream" "first" (read_answer r).body;
+  (match !leaked_send with
+  | None -> Alcotest.fail "the producer never ran"
+  | Some late -> (
+      match late "INJECTED" with
+      | Error Spindle.Response.Gone -> ()
+      | Ok () -> Alcotest.fail "a send after the producer returned was sent"));
+  send (get "/hello/after");
+  let next = read_answer r in
+  check_int "the next answer is whole" 200 next.status;
+  check_string "and its own" "after" next.body
 
 (* A stream compressed as it goes: each chunk, fed to a gzip decoder as it
    arrives, is the event it carried -- nothing is held back for a later one. *)
@@ -467,6 +498,42 @@ let test_a_body_asked_about_is_asked_for () =
          \r\n";
       check_string "answered without it" "ignored" (read_answer r).body;
       check_bool "and closed" true (closed r))
+
+(* A client that asked for 100 Continue and left before it could be sent
+   one: the route's read answers that the body is unreadable, and nothing
+   is raised to it. *)
+let test_a_client_gone_before_its_continue_is_a_value () =
+  let seen, saw = Eio.Promise.create () in
+  let reads =
+    Spindle.post
+      Spindle.Path.(s "reads")
+      Spindle.Returns.response
+      (let+ body = Spindle.body_stream ~max:1024 () in
+       match Spindle.Body.read body with
+       | Ok _ ->
+           Eio.Promise.resolve saw "read";
+           Ok (Spindle.Response.make "")
+       | Error e ->
+           Eio.Promise.resolve saw "an error";
+           Error (Spindle.Body.refusal e)
+       | exception ex ->
+           Eio.Promise.resolve saw (Printexc.to_string ex);
+           raise ex)
+  in
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let connect = serve ~sw env (Spindle.Test.app [ reads ]) in
+  Eio.Switch.run (fun sw ->
+      let flow = connect ~sw in
+      Eio.Flow.copy_string
+        "POST /reads HTTP/1.1\r\n\
+         Host: t\r\n\
+         Content-Length: 5\r\n\
+         Expect: 100-continue\r\n\
+         \r\n"
+        flow;
+      Eio.Resource.close flow);
+  check_string "the read is an error" "an error" (Eio.Promise.await seen)
 
 (* A length is a claim until its bytes come: a body that declares most of
    the budget and has sent a little of it holds only the little, so another
@@ -913,6 +980,71 @@ let test_a_takeover_owns_the_connection_until_the_server_stops () =
   Eio.Time.Mono.sleep_span (Eio.Stdenv.mono_clock env) drain;
   check_bool "ended by the stop as its drain ran out" true (closed r)
 
+(* A takeover whose route was still answering when the stop began is in
+   flight from its route to its socket: it gets the drain to say goodbye,
+   as one already open when the stop came does, never cancelled the moment
+   its 101 has gone. *)
+let test_a_takeover_answered_during_a_stop_gets_the_drain () =
+  let release, released = Eio.Promise.create () in
+  let held = Eio.Promise.create () in
+  let waiting, wait = held in
+  let late_echo =
+    Spindle.get
+      Spindle.Path.(s "late")
+      Spindle.Returns.response
+      (Spindle.Dep.of_request (fun _ ->
+           Eio.Promise.resolve wait ();
+           Eio.Promise.await release;
+           Ok ())
+      |> Spindle.Dep.map (fun () ->
+          Ok
+            (Spindle.Response.takeover ~protocol:"echo"
+               (fun { Spindle.Response.reader; writer; _ } ->
+                 let line = Eio.Buf_read.line reader in
+                 Eio.Buf_write.string writer (line ^ "\n");
+                 Eio.Buf_write.flush writer))))
+  in
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let stop, stopping = Eio.Promise.create () in
+  let connect =
+    serve ~sw env ~stop
+      ~drain:Mtime.Span.(5 * s)
+      (Spindle.Test.app [ late_echo ])
+  in
+  on_connection env connect @@ fun send r ->
+  send
+    "GET /late HTTP/1.1\r\n\
+     Host: t\r\n\
+     Connection: upgrade\r\n\
+     Upgrade: echo\r\n\
+     \r\n";
+  Eio.Promise.await waiting;
+  Eio.Promise.resolve stopping ();
+  Eio.Promise.resolve released ();
+  check_int "switching" 101 (read_answer r).status;
+  Eio.Time.Mono.sleep_span (Eio.Stdenv.mono_clock env) Mtime.Span.s;
+  send "goodbye\n";
+  check_string "and heard within the drain" "goodbye" (Eio.Buf_read.line r)
+
+(* A request that reaches a kept connection in the turn a stop begins, with
+   nothing else in flight, is answered before its connection closes: the
+   stop never cuts off a request whose head the server has. *)
+let test_a_request_arriving_as_a_stop_begins_is_answered () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let stop, stopping = Eio.Promise.create () in
+  let connect =
+    serve ~sw env ~stop ~drain:Mtime.Span.(5 * s) (Spindle.Test.app [ hello ])
+  in
+  on_connection env connect @@ fun send r ->
+  send (get "/hello/a");
+  check_string "the first" "a" (read_answer r).body;
+  send (get "/hello/b");
+  Eio.Promise.resolve stopping ();
+  check_string "the second, answered" "b" (read_answer r).body;
+  check_bool "then closed" true (closed r)
+
 (* ------------------------------------------------------------------ *)
 (* A body read as it arrives *)
 
@@ -947,6 +1079,38 @@ let test_what_a_stream_left_is_discarded () =
   check_string "the route read a part" "x" (read_answer r).body;
   check_string "and the next request is itself" "after" (read_answer r).body
 
+(* A fiber the route left behind, already waiting inside a read when the
+   route returns, reads nothing of the body the loop then discards: the
+   connection has one reader at a time. *)
+let test_a_read_left_waiting_shares_nothing_with_the_loop () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let late, read_late = Eio.Promise.create () in
+  let leaves_a_reader =
+    Spindle.post
+      Spindle.Path.(s "leave")
+      Spindle.Returns.response
+      (let+ body = Spindle.body_stream ~max:1_000_000 () in
+       Eio.Fiber.fork ~sw (fun () ->
+           Eio.Promise.resolve read_late
+             (match Spindle.Body.read body with
+             | Ok (`Data s) -> "read " ^ s
+             | Ok `End -> "the end"
+             | Error _ -> "an error"));
+       Ok (Spindle.Response.make "left"))
+  in
+  let connect = serve ~sw env (Spindle.Test.app [ leaves_a_reader; hello ]) in
+  on_connection env connect @@ fun send r ->
+  send "POST /leave HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\n\r\n";
+  (* A second for the route to return and the loop to wait on the rest. *)
+  Eio.Time.Mono.sleep_span (Eio.Stdenv.mono_clock env) Mtime.Span.s;
+  send ("hello" ^ get "/hello/after");
+  check_string "answered" "left" (read_answer r).body;
+  check_string "the next request is itself" "after" (read_answer r).body;
+  Alcotest.(check bool)
+    "and the fiber left behind read none of the body" false
+    (String.starts_with ~prefix:"read" (Eio.Promise.await late))
+
 (* A read waits only as long as the body's one allowance has left, so a
    byte sent just inside each read's wait still runs out: twenty seconds,
    spent across twenty reads of a byte each. *)
@@ -980,6 +1144,8 @@ let () =
             test_a_304_is_a_head_alone;
           Alcotest.test_case "a stream of a length is framed by it" `Quick
             test_a_stream_of_a_length_is_framed_by_it;
+          Alcotest.test_case "a stream sends nothing once its producer returned"
+            `Quick test_a_stream_sends_nothing_once_its_producer_returned;
           Alcotest.test_case "a compressed stream arrives as it is sent" `Quick
             test_a_compressed_stream_arrives_as_it_is_sent;
           Alcotest.test_case "a streamed body is past max_body" `Quick
@@ -990,6 +1156,8 @@ let () =
             test_what_a_stream_left_is_discarded;
           Alcotest.test_case "a streamed body that falls behind is cut off"
             `Quick test_a_streamed_body_that_falls_behind_is_cut_off;
+          Alcotest.test_case "a read left waiting shares nothing with the loop"
+            `Quick test_a_read_left_waiting_shares_nothing_with_the_loop;
           Alcotest.test_case "a chunked body is read whole" `Quick
             test_a_chunked_body_is_read_whole;
           Alcotest.test_case "a malformed chunk ends the connection" `Quick
@@ -998,6 +1166,8 @@ let () =
             test_forbidden_framing_is_refused_and_closed;
           Alcotest.test_case "a body asked about is asked for" `Quick
             test_a_body_asked_about_is_asked_for;
+          Alcotest.test_case "a client gone before its continue is a value"
+            `Quick test_a_client_gone_before_its_continue_is_a_value;
           Alcotest.test_case "a declared length holds only what arrived" `Quick
             test_a_declared_length_holds_only_what_arrived;
           Alcotest.test_case "bodies share a budget" `Quick
@@ -1043,5 +1213,9 @@ let () =
         [
           Alcotest.test_case "owns the connection until the server stops" `Quick
             test_a_takeover_owns_the_connection_until_the_server_stops;
+          Alcotest.test_case "one answered during a stop gets the drain" `Quick
+            test_a_takeover_answered_during_a_stop_gets_the_drain;
+          Alcotest.test_case "a request arriving as a stop begins is answered"
+            `Quick test_a_request_arriving_as_a_stop_begins_is_answered;
         ] );
     ]

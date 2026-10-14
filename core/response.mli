@@ -108,7 +108,10 @@ val stream :
     and every [send s] reaches the client before it answers [Ok ()]. Once the
     client has gone [send] answers [Error Gone], so a loop written with [let*]
     ends there. [send] may be called from several fibers, and their sends go one
-    after another, each whole. The response is over when [produce] returns.
+    after another, each whole. The response is over when [produce] returns or
+    raises: a [send] after that -- from a fibre it left behind -- answers
+    [Error Gone] and is logged as the route's bug, since the connection is by
+    then carrying the next answer.
 
     [length] is how many bytes it will send, for a body whose size is known
     before it is read -- a file. The server frames it with [Content-Length]

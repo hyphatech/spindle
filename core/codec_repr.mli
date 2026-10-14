@@ -11,7 +11,8 @@ type shape =
   | Enum of string list
 
 type 'a t = {
-  parse : string -> 'a option;
+  parse : string -> ('a, string) result;
+      (** [Error] is the sentence a client is told *)
   print : 'a -> string;
   expects : string;
   shape : shape;

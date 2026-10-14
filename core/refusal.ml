@@ -133,8 +133,12 @@ let internal ~detail =
   make ~detail Code.internal
     "Something went wrong at our end. Please try again."
 
+(* By its kind: its message is whatever the raiser wrote. *)
 let raised ex bt =
-  { (internal ~detail:(Printexc.to_string ex)) with raised = Some (ex, bt) }
+  {
+    (internal ~detail:("raised " ^ Printexc.exn_slot_name ex)) with
+    raised = Some (ex, bt);
+  }
 
 let rate_limited ~retry_after_s =
   make Code.rate_limited

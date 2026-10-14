@@ -13,9 +13,18 @@
     and is on a route that did not say {!never}. A [HEAD] gets the length its
     [GET] would. Every answer of a listed type says [Vary: Accept-Encoding],
     compressed or not, and an entity tag on a compressed one carries the coding
-    inside its quotes, so the two representations are never taken for one. A
-    [GET] or [HEAD] whose [If-None-Match] holds the compressed one's tag is
-    answered [304], with that tag and the [Vary].
+    inside its quotes -- ["v1-gzip"] for ["v1"] -- so the two representations
+    are never taken for one.
+
+    {b A precondition sees through the mark}: a route is asked [If-Match] and
+    [If-None-Match] with the mark taken off, the tags it set, so it compares
+    them as it would uncompressed; [If-None-Match] only where the request takes
+    gzip, since otherwise the client holds a representation it would not be
+    answered with. A [304] repeats the compressed tag where the client sent it,
+    and says [Vary: Accept-Encoding] unless it names a type never compressed; a
+    [GET] or [HEAD] whose route answered whole, unasked, is answered [304] where
+    the client holds the compressed answer it would be. [If-Range] is read as it
+    came: a part is only ever of the uncompressed representation.
 
     {b A stream is compressed as it goes}: every [send] reaches the client as a
     sync flush, so what it sent can be decoded when it arrives and an event is
@@ -33,8 +42,8 @@ val make : ?min_bytes:int -> ?level:int -> ?types:string list -> unit -> t
     (6) is deflate's, 1 to 9; [types] are what is compressed, each
     [type/subtype], [type/*] or [type/*+suffix]: text, JSON, XML, JavaScript,
     SVG and event streams unless given. Raises [Invalid_argument] for a [level]
-    outside 1 to 9 or a negative [min_bytes]: each is a constant written in
-    source. *)
+    outside 1 to 9, a negative [min_bytes] or a type that is none of those
+    forms: each is a constant written in source. *)
 
 val default : t
 (** [make ()]: what an application that compresses usually wants. *)

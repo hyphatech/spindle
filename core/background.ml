@@ -17,7 +17,8 @@ let fork_logged ~sw ~what f =
       | ex ->
           let bt = Printexc.get_raw_backtrace () in
           L.err (fun m ->
-              m "%s: %s" what (Printexc.to_string ex)
+              m "%s: raised %s" what
+                (Printexc.exn_slot_name ex)
                 ~tags:(Log.tags (Log.raised ex bt))));
       `Stop_daemon)
 

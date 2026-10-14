@@ -44,9 +44,10 @@ val float : float t
     number too large for a float is refused rather than read as infinity. It
     prints the fewest digits that read back as the same float. *)
 
-val uuid : string t
-(** RFC 9562, any version, the nil and the max UUID included; printed
-    lower-cased. *)
+val uuid : Uuidm.t t
+(** RFC 9562, any version, the nil and the max UUID included, read in either
+    case and printed lower-cased: the [Uuidm.t] a body's {!Wiretype.uuid} and a
+    row's are, so one identifier crosses them as one type. *)
 
 val date : (int * int * int) t
 (** [(year, month, day)], as RFC 3339 [full-date]: [2026-09-30]. *)
@@ -59,35 +60,38 @@ val instant : Ptime.t t
 val bool : bool t
 (** [true] or [false], and nothing else. *)
 
-val enum : kind:string -> ('a -> string) -> 'a list -> 'a t
+val enum : ?kind:string -> ('a -> string) -> 'a list -> 'a t
 (** One of a closed set of words: [enum ~kind:"colour" to_string [ Red; Green ]]
     reads ["red"] as [Red]. Each value is written as [to_string] writes it, and
     a word is read as the value that writes it, so there is nothing to keep in
-    step. [kind] names the set. *)
+    step. [kind], where given, names the set, as [Wiretype.enum]'s does. *)
 
 val custom :
   kind:string ->
-  ?expects:string ->
   ?list:bool ->
-  parse:(string -> 'a option) ->
+  parse:(string -> ('a, string) result) ->
   print:('a -> string) ->
   unit ->
   'a t
-(** A value of the application's own, read and written as text. [kind] names it;
-    [expects] ends the sentence a client is told when a text is not one --
-    ["This is not ..."] -- and is ["a valid <kind>"] unless given. Described as
-    a string.
+(** A value of the application's own, read and written as text, spelt as
+    [Wiretype.kind] spells one. [kind] names it; [parse]'s [Error] is the
+    sentence a client is told when a text is not one --
+    ["This is not an even number."] -- so it says what the text should be and
+    never quotes it. Described as a string.
 
     [list] says the value is a list field's, as RFC 9110 §5.3 defines one: a
     header sent on several lines is read as one text, its lines joined by
     [", "], which [parse] then splits as it would one line. [false] unless told,
     and a header read by such a codec sent twice is refused. *)
 
-val parse : 'a t -> string -> 'a option
+val parse : 'a t -> string -> ('a, string) result
+(** The value, or the sentence a client is told. *)
+
 val print : 'a t -> 'a -> string
 
 val expects : 'a t -> string
-(** What a text has to be, as the end of ["This is not ..."]. *)
+(** What a text has to be, as the end of ["This is not ..."]: ["a valid <kind>"]
+    for a {!custom} codec. *)
 
 val shape : 'a t -> shape
 

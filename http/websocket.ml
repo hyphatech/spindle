@@ -75,6 +75,7 @@ type error =
   | Closed of { code : close_code; reason : string }
   | Lost of string
   | Unreadable of string
+  | Unwritable of string
 
 let error_to_string = function
   | Closed { code; reason = "" } ->
@@ -83,6 +84,7 @@ let error_to_string = function
       Printf.sprintf "closed, %d: %s" (code_to_int code) reason
   | Lost m -> "lost: " ^ m
   | Unreadable m -> "a message that could not be read: " ^ m
+  | Unwritable m -> "a message that could not be written: " ^ m
 
 type data = Text_data of string | Binary_data of string
 
@@ -219,30 +221,24 @@ let close ?(code = Normal) ?(reason = "") t =
     ignore
       (write t Frame.Close (close_payload code reason) : (unit, error) result))
 
-type 'o encoded = (Frame.opcode * string) option
+type 'o encoded = (Frame.opcode * string, string) result
 
-let frame_of : type a.
-    a message -> a -> (Frame.opcode * string, Wiretype.Unwritable.t) result =
+(* RFC 6455 §8.1: a text frame is UTF-8, and a peer fails the connection
+   on one that is not, so none is written. *)
+let encode : type a. a message -> a -> a encoded =
  fun message v ->
   match message with
-  | Json d -> Result.map (fun s -> (Frame.Text, s)) (Wiretype.encode d v)
-  | Text -> Ok (Frame.Text, v)
+  | Json d -> (
+      match Wiretype.encode d v with
+      | Ok s -> Ok (Frame.Text, s)
+      | Error m -> Error (Wiretype.Unwritable.to_string m))
+  | Text when String.is_valid_utf_8 v -> Ok (Frame.Text, v)
+  | Text -> Error "a text message that is not UTF-8"
   | Binary -> Ok (Frame.Binary, v)
 
-(* A value that cannot be encoded is our bug: it is logged and sends
-   nothing, and the socket goes on. *)
-let encode message v =
-  match frame_of message v with
-  | Ok frame -> Some frame
-  | Error m ->
-      L.err (fun f ->
-          f "a message could not be encoded: %s"
-            (Wiretype.Unwritable.to_string m));
-      None
-
 let send_encoded t = function
-  | Some (opcode, payload) -> write t opcode payload
-  | None -> Ok ()
+  | Ok (opcode, payload) -> write t opcode payload
+  | Error m -> Error (Unwritable m)
 
 let send t v = send_encoded t (encode t.outgoing v)
 
@@ -507,6 +503,9 @@ let run ~side ~mask ?(keep_alive = default_keep_alive)
   | Error (Unreadable _) as e ->
       close_and_wait
         (Some (Invalid_data, "A message this socket could not read."));
+      e
+  | Error (Unwritable _) as e ->
+      close_and_wait (Some (Internal, "Something went wrong at our end."));
       e
   | Error (Closed _ | Lost _) as e ->
       close_and_wait None;

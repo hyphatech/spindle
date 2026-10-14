@@ -7,7 +7,7 @@ its SQL and the types of its parameters and rows, run through a pure-OCaml
 Postgres driver with nothing to link.
 
 ```lisp
-(libraries spindle spindle_postgres rowtype rowtype-postgres eio_main)
+(libraries spindle spindle-postgres rowtype rowtype-postgres eio_main)
 ```
 
 ## Connecting and querying
@@ -38,7 +38,7 @@ curl localhost:8080/
 that is not there stops the server with exit code 1, saying why:
 
 ```
-{"level":"error","logger.name":"spindle_postgres","message":"the pool could not be opened: Eio.Io Net Connection_failure Refused Unix_error (Connection refused, \"connect\", \"\")"}
+{"level":"error","logger.name":"spindle-postgres","message":"the pool could not be opened: Eio.Io Net Connection_failure Refused Unix_error (Connection refused, \"connect\", \"\")"}
 ```
 
 ??? example "The whole app"
@@ -92,16 +92,19 @@ transaction: `Ok` commits, `Error` rolls back. `let*` here is
 
 `Spindle_postgres.Pool` is rowtype's pool with server-friendly bounds:
 
-- `Pool.query pool statement params` -- one statement, for a read that is the
-  whole of the work.
+- `Pool.exec pool statement params` -- one statement, as rowtype's `run`
+  runs it, for a read that is the whole of the work. (`Pool.run` is the
+  program's pool, above.)
 - `Pool.transaction pool (fun db -> ...)` -- one transaction; takes
   `~isolation`, `~retries` and `~keep`.
 - `Pool.use pool (fun db -> ...)` -- a borrowed connection for several
   statements outside a transaction.
 - `Pool.check` -- the pool as a readiness check ([Health
   probes](../guide/health.md)); `Pool.stats` and `Pool.measure` for metrics.
-- `Pool.create ~sw ~net ~mono_clock` -- the same pool answering a `result`,
-  for a program that can go on without its database.
+- `Pool.create ~sw ~net ~mono_clock target` -- the same pool answering a
+  `result`, for a program that can go on without its database. `target` is a
+  `Rowtype_postgres.Conninfo.t`, read from a connection string by
+  `Conninfo.of_string`; `Pool.run` takes the string and reads it once.
 
 Every connection is bounded, so one bad query cannot hold a connection and
 its locks for ever:
@@ -110,11 +113,12 @@ its locks for ever:
 |---|---|---|
 | `~statement_timeout` | 10 s | a statement running longer is ended by Postgres |
 | `~idle_in_transaction_timeout` | 30 s | so is a transaction left open and idle |
-| `~connect_timeout` | 10 s | unless the connection string says `connect_timeout` |
 | `~size` | 8 | connections, all opened at start-up |
 | `~wait` | 5 s | a borrow waiting longer is `` `Pool `Busy ``, a `503` |
 
-Each is an `Mtime.Span.t`, written `Mtime.Span.(2 * s)`. Postgres is given
+Each is an `Mtime.Span.t`, written `Mtime.Span.(2 * s)`. Connecting waits
+10 s for each address unless the connection string says `connect_timeout`
+(`Conninfo.with_connect_timeout`). Postgres is given
 the two bounds in whole milliseconds, rounded up, so a span under a
 millisecond is still a bound; a span of zero lifts one, as Postgres's `0`
 does.
@@ -133,12 +137,14 @@ server starts.
 A failure is a variant, and `Spindle_postgres.refusal` turns any you do not
 handle into a status, with the detail in the log:
 
-- `` `Pool `Busy `` (no connection within the wait), `` `Pool `Closed ``
+- `` `Pool `Busy `` (no connection within the wait), `` `Unsent `` (the
+  database could not be reached, so nothing was done), `` `Pool `Closed ``
   (the pool is closed, answered at once) and `` `Not_serializable ``
   (a concurrent transaction won, past its retries): `503 busy` with
   `Retry-After: 1`, since asking again may succeed. The two `` `Pool ``
-  states are logged as warnings, not errors: a server under load or
-  shutting down is not a broken one.
+  states and `` `Unsent `` are logged as warnings, not errors: a server
+  under load, shutting down or cut off from its database is not a broken
+  one.
 - Everything else -- `` `Conflict ``, `` `Lost ``, `` `Not_committed ``,
   `` `Db ``, a closed connection, ... -- `500 internal`.
 

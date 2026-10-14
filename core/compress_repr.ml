@@ -7,21 +7,21 @@ type t = { min_bytes : int; level : int; types : string list }
 let never : unit Meta.key = Meta.key ()
 
 (* A tag names one representation, so a gzipped one's is the tag marked. *)
-let gzip_tag (t : Spindle_http.Etag.t) = { t with opaque = t.opaque ^ "-gzip" }
+let mark = "-gzip"
+let gzip_tag (t : Spindle_http.Etag.t) = { t with opaque = t.opaque ^ mark }
 
-(* [type/subtype], [type/*], or [type/*+suffix], compared without case. *)
-let type_matches (m : Media_type.t) pattern =
-  match String.split_on_char '/' (String.lowercase_ascii pattern) with
-  | [ ty; "*" ] -> String.equal ty m.type_
-  | [ ty; sub ] when String.starts_with ~prefix:"*+" sub ->
-      String.equal ty m.type_
-      && String.ends_with
-           ~suffix:(String.sub sub 1 (String.length sub - 1))
-           m.subtype
-  | [ ty; sub ] -> String.equal ty m.type_ && String.equal sub m.subtype
-  | _ -> false
+(* The route's tag a marked one was made from. *)
+let unmarked (t : Spindle_http.Etag.t) =
+  if String.ends_with ~suffix:mark t.opaque then
+    Some
+      {
+        t with
+        opaque =
+          String.sub t.opaque 0 (String.length t.opaque - String.length mark);
+      }
+  else None
 
 let compressible t content_type =
   match Option.map Media_type.parse content_type with
-  | Some (Ok m) -> List.exists (type_matches m) t.types
+  | Some (Ok m) -> List.exists (fun p -> Media_type.matches p m) t.types
   | Some (Error _) | None -> false

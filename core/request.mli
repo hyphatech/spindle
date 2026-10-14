@@ -29,17 +29,17 @@ val make :
   ?version:Spindle_http.Head.version ->
   ?host:string ->
   ?headers:(string * string) list ->
-  now:(unit -> Ptime.t) ->
+  read_clock:(unit -> Ptime.t) ->
   Spindle_http.Meth.t ->
   string ->
   t
 (** [make meth target] for a server adapter or a test. [target] is the path and
     query string as they arrived. Header names are matched without regard to
-    case. [now] is the application's clock. [client] defaults to [peer], and
-    [id] to a fresh one. [proxied] says the peer is a proxy the server was told
-    to trust (false), and [proxy_header] which header it writes
-    ([X_forwarded_for]). [version] is the one the request was sent in
-    ([Http_1_1]), and [host] the host its head names (see
+    case. [read_clock] reads the application's clock, which {!now} answers.
+    [client] defaults to [peer], and [id] to a fresh one. [proxied] says the
+    peer is a proxy the server was told to trust (false), and [proxy_header]
+    which header it writes ([X_forwarded_for]). [version] is the one the request
+    was sent in ([Http_1_1]), and [host] the host its head names (see
     {!Spindle_http.Head.Request.t}) -- its [Host] header, when not given. *)
 
 val id : t -> string
@@ -98,7 +98,10 @@ val client : t -> string
     {!val-proxy_header}. A header a client can write is a limit a client can
     step around, so an untrusted proxy's header is never read, and a trusted one
     is read in every line of it: the rightmost address the proxy did not write
-    itself, and the peer where that hop is [unknown] or hidden. *)
+    itself, and the peer where that hop is [unknown] or hidden. An address is
+    the address alone, without the port or the brackets a proxy may write beside
+    it -- [1.2.3.4:5678] is [1.2.3.4] -- since a client is one client whatever
+    port it came from. *)
 
 val now : t -> Ptime.t
 (** The application's clock. *)

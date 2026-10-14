@@ -18,3 +18,6 @@ val compressible : t -> string option -> bool
 val gzip_tag : Spindle_http.Etag.t -> Spindle_http.Etag.t
 (** The tag of a representation gzipped as it is answered: its own, marked
     [-gzip], since a tag names one representation. *)
+
+val unmarked : Spindle_http.Etag.t -> Spindle_http.Etag.t option
+(** The tag a {!gzip_tag} was made from; [None] for one that is not marked. *)

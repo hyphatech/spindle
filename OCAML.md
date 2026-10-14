@@ -109,7 +109,10 @@ A change is done when every box holds:
 - [ ] **A log line stands alone, and a secret has no log level.** A line
   says enough to be read among a thousand others and is never split
   across two. No header value, body, query string, credential or
-  statement parameter is logged, at any level.
+  statement parameter is logged, at any level, nor the message of an
+  exception the code did not catch by name, which may hold the data being
+  handled: such a raise is logged by its kind and its stack. A failure
+  caught by name -- an I/O error -- is told in its own words.
 - [ ] **A meaning is a type.** A state is a variant, never a string, a
   boolean or a pair of booleans one combination of which is impossible; a
   unit or an identifier that travels unnamed -- a column, an element, a

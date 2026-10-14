@@ -106,7 +106,7 @@ val serve :
   ?check_origin:bool ->
   ?trusted_origins:string list ->
   ?trailing_slash:App.trailing_slash ->
-  ?now:(unit -> Ptime.t) ->
+  ?read_clock:(unit -> Ptime.t) ->
   ?max_body:int ->
   ?max_header_bytes:int ->
   ?head_timeout:Mtime.Span.t ->
@@ -139,11 +139,11 @@ val serve :
     ]}
 
     Each argument is {!App.make}'s or {!Server.run}'s, of the same name and
-    default, and these are its own: [port] is [8080]; [now] is {!clock_now} of
-    [env]'s clock; [stop] is {!Server.stop_on_signals}, so SIGTERM and SIGINT
-    stop it cleanly, and a program that wants no handler passes a promise of its
-    own; and [ready] prints the address it listens on to stdout. It opens a
-    switch of its own for its own fibres, and leaves [Eio_main.run] to the
+    default, and these are its own: [port] is [8080]; [read_clock] reads [env]'s
+    clock ({!of_clock}); [stop] is {!Server.stop_on_signals}, so SIGTERM and
+    SIGINT stop it cleanly, and a program that wants no handler passes a promise
+    of its own; and [ready] prints the address it listens on to stdout. It opens
+    a switch of its own for its own fibres, and leaves [Eio_main.run] to the
     program, which is where anything the routes need -- a pool, a client -- is
     made first. Logging is the program's to set up ({!Log.setup}).
 
@@ -158,11 +158,11 @@ val serve :
     its routes at run time makes its app with {!App.make}, starts it with
     {!App.start}, and serves it with {!Server.run}. *)
 
-val clock_now : _ Eio.Time.clock -> unit -> Ptime.t
-(** The clock's time, which is what [now] is:
-    [Spindle.clock_now (Eio.Stdenv.clock env)]. A clock reads a time within the
-    years 0000 to 9999, and one that does not is read as the nearest instant in
-    them. *)
+val of_clock : _ Eio.Time.clock -> Ptime.t
+(** The clock's time now, {!Spindle_http.Instant.of_clock}: what [read_clock]
+    reads, [fun () -> Spindle.of_clock (Eio.Stdenv.clock env)]. A clock reads a
+    time within the years 0000 to 9999, and one that does not is read as the
+    nearest instant in them. *)
 
 val until : now:Ptime.t -> Ptime.t -> Mtime.Span.t
 (** [until ~now deadline]: how long from [now] until [deadline], rounded up to
@@ -266,8 +266,7 @@ val body : string Dep.t
 (** The body as it arrived: empty when there is none, {!Refusal.too_large} when
     there is too much. *)
 
-val body_stream :
-  ?content_type:(string -> bool) -> max:int -> unit -> Body.t Dep.t
+val body_stream : ?content_types:string list -> max:int -> unit -> Body.t Dep.t
 (** The body, read as it arrives ({!Body}), up to [max] bytes: for a body too
     large to hold, which is why [max] is the route's own and not the server's
     [max_body], and has no default -- a route that takes uploads is where their
@@ -286,9 +285,12 @@ val body_stream :
     {!Body.read} and has it only while it runs. Its bytes count toward the
     server's [body_budget] a part at a time, from the read that gets a part to
     the next, and it must keep arriving at the server's [min_body_rate] over the
-    whole body, measured only while the handler is inside a read. [content_type]
-    is asked of the request's [Content-Type] in the first stage, as
-    {!Dep.of_body}'s is.
+    whole body, measured only while the handler is inside a read.
+    [content_types] are the types it takes, each [type/subtype], [type/*] or
+    [type/*+suffix] -- any where none is named, and {!App.make} refuses one of
+    none of these forms -- checked against the request's [Content-Type] in the
+    first stage, as {!Dep.of_body}'s are, and listed as the request body's in
+    the API's document.
 
     A route reads at most one body: one that lists this beside another
     [body_stream], {!body}, {!json} or an {!Dep.of_body} is refused when the app

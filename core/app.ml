@@ -146,8 +146,8 @@ let check_body (r : Route_repr.t) =
       r.info.needs
   in
   let consumes_body = function
-    | Dep.Stream | Dep.Form | Dep.Multipart -> true
-    | Dep.Raw | Dep.Json _ -> false
+    | Dep.Stream _ | Dep.Form | Dep.Multipart -> true
+    | Dep.Raw _ | Dep.Json _ -> false
   in
   if List.exists consumes_body bodies && List.compare_length_with bodies 1 > 0
   then
@@ -157,6 +157,31 @@ let check_body (r : Route_repr.t) =
           way too, where a body is read one way"
          (route_name r))
   else Ok ()
+
+(* A content type that is no pattern matches nothing, and would refuse
+   every body without a word. *)
+let check_content_types (r : Route_repr.t) =
+  let patterns =
+    List.concat_map
+      (function
+        | Dep.Body (Dep.Raw { content_types } | Dep.Stream { content_types }) ->
+            content_types
+        | Dep.Body (Dep.Json _ | Dep.Form | Dep.Multipart)
+        | Dep.Path _ | Dep.Query _ | Dep.Header _ | Dep.Cookie _ | Dep.Field _
+        | Dep.File _ | Dep.Custom _ ->
+            [])
+      r.info.needs
+  in
+  match
+    List.find_opt (fun p -> not (Spindle_http.Media_type.is_pattern p)) patterns
+  with
+  | None -> Ok ()
+  | Some p ->
+      Error
+        (Printf.sprintf
+           "%s takes the content type %S, which is no type/subtype, type/* or \
+            type/*+suffix, so it would refuse every body"
+           (route_name r) p)
 
 (* Two reads of one input that agree are one already (Route_repr); two that
    remain read it as different things, which no document can say. *)
@@ -254,9 +279,12 @@ let check r =
       (Printf.sprintf "%s: a WebSocket is opened by a GET (RFC 6455 §4.1)"
          (route_name r))
   else
-    Result.bind (check_path r) (fun () ->
-        Result.bind (check_body r) (fun () ->
-            Result.bind (check_inputs r) (fun () -> check_statuses r)))
+    let ( let* ) = Result.bind in
+    let* () = check_path r in
+    let* () = check_body r in
+    let* () = check_content_types r in
+    let* () = check_inputs r in
+    check_statuses r
 
 (* A client branches on a code's name, so a name has one status and one doc
    wherever it is declared. *)
@@ -612,8 +640,8 @@ let is_cross_site t req =
           | None, _ | _, None -> true))
 
 let is_unsafe_method = function
-  | `GET | `HEAD | `OPTIONS -> false
-  | `POST | `PUT | `PATCH | `DELETE | `Other _ -> true
+  | `GET | `HEAD | `OPTIONS | `TRACE -> false
+  | `POST | `PUT | `PATCH | `DELETE | `CONNECT | `Other _ -> true
 
 (* Decided from the method and path before any middleware runs, so a
    middleware can ask which route matched. *)
@@ -628,9 +656,9 @@ type resolution =
   | Nothing  (** no route's: the not-found answer *)
 
 (* RFC 9110 §9.1: a method no route declares and the framework does not
-   know is not implemented. *)
+   implement -- CONNECT and TRACE among them -- is not implemented. *)
 let is_implemented t = function
-  | `Other _ as m -> List.exists (Meth.equal m) t.methods
+  | (`CONNECT | `TRACE | `Other _) as m -> List.exists (Meth.equal m) t.methods
   | `GET | `HEAD | `POST | `PUT | `PATCH | `DELETE | `OPTIONS -> true
 
 let resolve t req =
@@ -807,82 +835,146 @@ let answer_resolution t ~body ~answered_route resolution req =
         | Some f -> with_raise_as_500 f req
         | None -> Response.refusal Refusal.not_found)
 
-(* The route compared the request's tags with the one it set, and a client
-   holding the gzipped representation sent that one's, marked: so
-   If-None-Match is asked again of what is answered (RFC 9110 §13.1.2), and
-   a 304 repeats the marked tag and the fields the whole answer carried that
-   a 304 does (§15.4.5). *)
-let held_gzipped req response =
+(* Whether the client takes gzip: several lines are one list (RFC 9110
+   §5.3). *)
+let takes_gzip req =
+  match Spindle_http.Field.all (Request.headers req) "accept-encoding" with
+  | [] -> false
+  | lines -> (
+      match Spindle_http.Accept.parse_weighted (String.concat ", " lines) with
+      | Ok w ->
+          Option.equal String.equal
+            (Spindle_http.Accept.choose_encoding w [ "gzip"; "identity" ])
+            (Some "gzip")
+      | Error _ -> false)
+
+let varies_by_encoding headers =
+  List.exists
+    (fun (k, v) ->
+      String.equal (String.lowercase_ascii k) "vary"
+      && List.exists
+           (fun e -> String.equal (String.lowercase_ascii e) "accept-encoding")
+           (Spindle_http.Field.elements v))
+    headers
+
+(* A compressed answer's tag is its route's, marked ([Compress_repr.gzip_tag]),
+   and the route compares the tags it set: so the preconditions it is asked
+   are its own, the mark taken off -- here, and nowhere else. If-Match
+   always, since the mark names the same state of the resource;
+   If-None-Match where this request takes gzip, so the client holds the
+   representation it would be answered with (RFC 9110 §13.1.2). If-Range is
+   left as it came: a part is only ever of the identity, another
+   representation (§13.1.5). What If-None-Match held of the compressed
+   representation is answered, for the answer to be revalidated by. *)
+let unmark_preconditions req =
   let module Etag = Spindle_http.Etag in
-  let module Field = Spindle_http.Field in
+  (* The field's lines become one, its tags unmarked. *)
+  let rewrite name headers =
+    let condition =
+      match Spindle_http.Field.all headers name with
+      | [] -> Etag.Tags []
+      | lines -> (
+          match Etag.condition (String.concat ", " lines) with
+          | Ok condition -> condition
+          | Error _ -> Etag.Tags [])
+    in
+    match condition with
+    | Etag.Any -> (headers, Etag.Any)
+    | Etag.Tags tags -> (
+        let marked = List.filter_map Compress_repr.unmarked tags in
+        let written =
+          List.map
+            (fun t ->
+              Etag.to_string
+                (Option.value (Compress_repr.unmarked t) ~default:t))
+            tags
+        in
+        match marked with
+        | [] -> (headers, Etag.Tags [])
+        | _ :: _ when List.exists Result.is_error written ->
+            (headers, Etag.Tags [])
+        | _ :: _ ->
+            ( List.filter (fun (k, _) -> not (String.equal k name)) headers
+              @ [
+                  ( name,
+                    String.concat ", "
+                      (List.filter_map Result.to_option written) );
+                ],
+              Etag.Tags marked ))
+  in
+  let headers, _ = rewrite "if-match" (Request.headers req) in
+  let headers, held =
+    if takes_gzip req then rewrite "if-none-match" headers
+    else (headers, Etag.Tags [])
+  in
+  (Request_repr.with_headers headers req, held)
+
+(* RFC 9110 §15.4.5: a 304 repeats the tag and the Vary its 200 would carry.
+   The tag is the compressed representation's where [compressed] says the
+   client held that one; and since a 304 names no type, it varies by
+   Accept-Encoding unless it names one that is never compressed. *)
+let revalidated c ~compressed response =
+  let module Etag = Spindle_http.Etag in
   let headers = Response.headers response in
-  match
-    ( Request.meth req,
-      Option.map Etag.parse (Field.find headers "etag"),
-      Field.all (Request.headers req) "if-none-match" )
-  with
-  | (`GET | `HEAD), Some (Ok tag), (_ :: _ as lines) -> (
-      let marked = Compress_repr.gzip_tag tag in
-      match
-        (Etag.condition (String.concat ", " lines), Etag.to_string marked)
-      with
-      | Ok condition, Ok written
-        when match condition with
-             | Etag.Any -> true
-             | Etag.Tags tags -> List.exists (Etag.weak_equal marked) tags ->
-          let repeated (k, _) =
-            List.mem (String.lowercase_ascii k)
-              [ "cache-control"; "content-location"; "expires"; "vary" ]
-          in
-          Some
-            (Response.empty ~status:`Not_modified
-               ~headers:(("etag", written) :: List.filter repeated headers)
-               ()
-            |> Response.add_cookies (Response.cookies response))
-      | (Ok _ | Error _), (Ok _ | Error _) -> None)
-  | _, _, _ -> None
+  let headers =
+    List.map
+      (fun (k, v) ->
+        match (String.lowercase_ascii k, Etag.parse v) with
+        | "etag", Ok tag when compressed tag -> (
+            match Etag.to_string (Compress_repr.gzip_tag tag) with
+            | Ok written -> (k, written)
+            | Error _ -> (k, v))
+        | _, (Ok _ | Error _) -> (k, v))
+      headers
+  in
+  let compressible =
+    match Response.content_type response with
+    | None -> true
+    | Some _ as t -> Compress_repr.compressible c t
+  in
+  let headers =
+    if compressible && not (varies_by_encoding headers) then
+      headers @ [ ("vary", "Accept-Encoding") ]
+    else headers
+  in
+  let not_modified =
+    Response.make ~status:`Not_modified ~headers
+      ~cookies:(Response.cookies response)
+      ?content_type:(Response.content_type response)
+      ""
+  in
+  if Response.closes_connection response then
+    Response.close_connection not_modified
+  else not_modified
 
 (* A compressible type always varies by Accept-Encoding, and is gzipped where
    the client takes gzip and nothing forbids it: a coding of its own,
    no-transform, a partial or empty status, a route that opted out, a body
    too small, or a stream of a known length, which is a file served
-   precompressed. *)
-let choose_gzip t req matched response =
+   precompressed. A 304 is the representation the client [held]; and a
+   whole answer to a GET whose route left If-None-Match unasked is one where
+   the client holds the compressed representation it would be. *)
+let choose_gzip t req matched ~held response =
+  let module Etag = Spindle_http.Etag in
+  let holds tag =
+    match held with
+    | Etag.Any -> true
+    | Etag.Tags tags -> List.exists (Etag.weak_equal tag) tags
+  in
   match t.compress with
   | None -> (response, None)
+  | Some c when Status.equal (Response.status response) `Not_modified ->
+      let compressed tag =
+        match held with Etag.Any -> false | Etag.Tags _ -> holds tag
+      in
+      (revalidated c ~compressed response, None)
   | Some c
     when not (Compress_repr.compressible c (Response.content_type response)) ->
       (response, None)
   | Some c ->
-      let varies =
-        List.exists
-          (fun (k, v) ->
-            String.equal (String.lowercase_ascii k) "vary"
-            && List.exists
-                 (fun e ->
-                   String.equal (String.lowercase_ascii e) "accept-encoding")
-                 (Spindle_http.Field.elements v))
-          (Response.headers response)
-      in
       let response =
-        if varies then response
+        if varies_by_encoding (Response.headers response) then response
         else Response.add_headers [ ("vary", "Accept-Encoding") ] response
-      in
-      let takes_gzip =
-        (* Several lines are one list (RFC 9110 §5.3). *)
-        match
-          Spindle_http.Field.all (Request.headers req) "accept-encoding"
-        with
-        | [] -> false
-        | lines -> (
-            match
-              Spindle_http.Accept.parse_weighted (String.concat ", " lines)
-            with
-            | Ok w ->
-                Option.equal String.equal
-                  (Spindle_http.Accept.choose_encoding w [ "gzip"; "identity" ])
-                  (Some "gzip")
-            | Error _ -> false)
       in
       let headers = Response.headers response in
       let has_header name =
@@ -910,18 +1002,24 @@ let choose_gzip t req matched response =
       in
       let is_whole =
         match Status.to_int (Response.status response) with
-        | 206 | 204 | 304 -> false
+        | 206 | 204 -> false
         | _ -> true
       in
+      let held_already =
+        match (Request.meth req, Spindle_http.Field.find headers "etag") with
+        | (`GET | `HEAD), Some v -> (
+            match Etag.parse v with Ok tag -> holds tag | Error _ -> false)
+        | _, (Some _ | None) -> false
+      in
       if
-        takes_gzip
+        takes_gzip req
         && (not (has_header "content-encoding"))
         && (not no_transform) && (not route_opted_out) && large_enough
         && is_whole
       then
-        match held_gzipped req response with
-        | Some not_modified -> (not_modified, None)
-        | None -> (response, Some c.level)
+        if held_already then
+          (revalidated c ~compressed:(fun _ -> true) response, None)
+        else (response, Some c.level)
       else (response, None)
 
 (* A raise is caught at the route, so the access log names it, and again
@@ -933,6 +1031,11 @@ let handle t req ~body =
   let matched = matched_route resolution in
   let req =
     match matched with Some info -> Route_repr.mark info req | None -> req
+  in
+  let req, held =
+    match t.compress with
+    | Some _ -> unmark_preconditions req
+    | None -> (req, Spindle_http.Etag.Tags [])
   in
   let response =
     match preflight t req with
@@ -988,7 +1091,7 @@ let handle t req ~body =
         Option.value (Meta.find Meta.access info.meta) ~default:Logs.Info
     | None -> Logs.Info
   in
-  let response, gzip = choose_gzip t req matched response in
+  let response, gzip = choose_gzip t req matched ~held response in
   log_refusal req
     (response, { route = !answered_route; undeclared; access; gzip })
 

@@ -37,9 +37,12 @@ what it means.*
   api` keeps a static site out of the document.
 - `~at` and `~document` move the page and the document.
 - A mistake in the descriptions -- two different types under one name,
-  two paths that make one `operationId`, or one path under two parameter
-  names -- raises before the server listens. For routes built at run time,
-  `Spindle.Openapi.routes` answers a `result` instead.
+  two paths that make one `operationId`, one path under two parameter
+  names, or one operation whose routes answer in different ways or read
+  different bodies -- raises before the server listens, and so does an
+  `~at` or a `~document` with a parameter in it, which is no one place. For
+  routes built at run time, `Spindle.Openapi.routes` answers a `result`
+  instead.
 
 ??? example "The whole app"
 
@@ -96,9 +99,11 @@ Spindle.Openapi.report app                   (* what is described loosely *)
 `document` answers a `result`; its `Error` names two different types
 described under one name; two routes whose paths make one
 `operationId` (`/a-b` and `/a_b`), which a generated client would give one
-name; and two whose paths differ only in a parameter's name
-(`/items/{id}` and `/items/{item}`), which OpenAPI counts as one path. What
-to know when you read the document:
+name; two whose paths differ only in a parameter's name
+(`/items/{id}` and `/items/{item}`), which OpenAPI counts as one path; and
+one operation -- routes told apart by a parameter's type -- whose routes
+answer in different ways or read different bodies. What to know when you
+read the document:
 
 - **Each type with a name is a component.** Names are unique within an app.
   If a type's request and answer forms differ, the request's is
