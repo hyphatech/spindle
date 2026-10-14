@@ -28,7 +28,7 @@ jobs:
         with:
           ocaml-compiler: "5.5"
       - run: opam install . --deps-only --with-dev-setup -y
-      # Use setup-ocaml's switch instead of the Makefile's local one.
+      # Use setup-ocaml's switch instead of the Makefile's.
       - run: make reference OPAM="opam exec --"
       - uses: actions/setup-python@v5
         with:

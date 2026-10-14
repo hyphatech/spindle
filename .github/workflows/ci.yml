@@ -19,7 +19,7 @@ jobs:
         with:
           ocaml-compiler: ${{ matrix.ocaml }}
       - run: opam install . --deps-only --with-test --with-dev-setup -y
-      # Use setup-ocaml's switch instead of the Makefile's local one.
+      # Use setup-ocaml's switch instead of the Makefile's.
       - run: make lint OPAM="opam exec --"
       # The Postgres of compose.yaml, as on a laptop, so CI tests the
       # database every contributor does.

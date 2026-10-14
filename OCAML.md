@@ -170,9 +170,9 @@ the next where they expect it.
   writes the opam files from it. A Hypha library another depends on is
   pinned in the `*.opam.template`'s `pin-depends`, at a release's tag on
   GitHub, until the libraries are in opam-repository and the pins go.
-  `make setup` makes the checkout's switch, `./_opam`, and installs into
+  `make setup` makes the repository's switch, empty, and installs into
   it with `opam install . --deps-only`, which resolves everything, the
-  pins included; a new release is taken by moving its tag and the bound
+  compiler and the pins included; a new release is taken by moving its tag and the bound
   and running `make setup` again. An application commits its solution as
   an opam lock (`make lock` after an upgrade); a library commits none,
   its users solving their own. Why: it is how the libraries' users get
@@ -360,14 +360,15 @@ language server (the `LSP` tool) or, without one, Merlin's command line;
 every user of an export is found this way, since a shadowed, re-exported
 or aliased name defeats a text search.
 
-Nothing is on PATH. Every OCaml tool runs through the checkout's local
-switch, `./_opam`, as `opam exec --switch=<checkout> --` or through the
-Makefile; no `eval`. A worktree has no switch of its own: it uses its
-checkout's, the directory `git rev-parse --git-common-dir` is in, as the
-Makefile and the language server find it. `make setup` installs Merlin
-and `ocaml-lsp-server` with the rest.
+Nothing is on PATH. Every OCaml tool runs through the repository's opam
+switch, named `hypha-<name>` after the `(name)` its `dune-project`
+declares, as `opam exec --switch=hypha-<name> --` or through the
+Makefile, whose `SWITCH` names it; no `eval`. The checkout and every
+worktree of it use that one switch, by its name, so a worktree needs no
+setup of its own. `make setup` installs Merlin and `ocaml-lsp-server` with
+the rest.
 
-**`ocamllsp` runs as the agent's language server**, from the checkout's
+**`ocamllsp` runs as the agent's language server**, from the repository's
 switch. It answers every edit to OCaml source with its type errors,
 and gives a name's definition, its references, tests included, its type
 and a file's symbols; ask for the symbols before reading a long file
@@ -385,9 +386,10 @@ project`, `locate -position LINE:COL`, `type-enclosing -position LINE:COL`,
 a use**, never from its declaration in the `.mli`, which answers with that
 declaration alone; a value asked from its `.mli` finds every use.
 
-**A dependency's API is read where it is installed**, from its `.mli`
-under `_opam/lib/<package>/` or the server's hover, never from memory: the
-version in the switch is the one the code builds against.
+**A dependency's API is read where it is installed**, from its `.mli` in
+the switch (`opam var --switch=hypha-<name> lib`, then `<package>/`) or the
+server's hover, never from memory: the version in the switch is the one
+the code builds against.
 
 **The stdlib is 5.5's, and nothing newer.** A function whose odoc says
 `@since` a later version is not used until every `dune-project` asks for
@@ -396,7 +398,7 @@ that version.
 **A generated file is changed at its source.** An `*.opam` file is written
 by dune from `dune-project`, and from an `*.opam.template` beside it for
 what dune cannot say, so either of those is edited, never the `.opam`.
-Nothing under `_build/` or `_opam/` is edited; a test's new expected
+Nothing under `_build/` or in the switch is edited; a test's new expected
 output is taken with `dune promote`.
 
 **A worktree is outside the checkout** (`GIT.md`), so dune takes it as
@@ -407,9 +409,8 @@ missed when the whole project is read.
 
 **Search text with `rg`, always with a path**, never `grep -r` or `find`:
 with no path `rg` reads standard input, which an agent's shell never
-closes, and `_build/` and `_opam/` are gitignored, so `rg` skips them
-where `find . -name '*.ml'` returns every copy of the source under
-`_build/` and every package under `_opam/`.
+closes, and `_build/` is gitignored, so `rg` skips it where `find . -name
+'*.ml'` returns every copy of the source under `_build/`.
 
 `opam list --installed` says what the switch holds; `opam list
 --required-by --recursive` resolves against what is available, not what is
