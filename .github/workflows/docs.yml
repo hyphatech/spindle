@@ -24,12 +24,12 @@ jobs:
     steps:
       - uses: actions/configure-pages@v5
       - uses: actions/checkout@v5
-      - uses: ocaml/setup-ocaml@v3
+      - uses: ocaml-dune/setup-dune@v2
         with:
-          ocaml-compiler: "5.5"
-      - run: opam install . --deps-only --with-dev-setup -y
-      # Use setup-ocaml's switch instead of the Makefile's local one.
-      - run: make reference OPAM="opam exec --"
+          version: latest
+          steps: ""
+      - run: dune tools install odoc
+      - run: make reference
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x

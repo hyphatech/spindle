@@ -1,5 +1,10 @@
 # Changes
 
+## Unreleased
+
+- `spindle-postgres` is pinned to rowtype 0.8.0, its latest release,
+  where it was pinned to 0.7.0.
+
 ## 0.5.0 (2026-10-14)
 
 - A content type a route takes that is no `type/subtype`, `type/*` or

@@ -26,11 +26,16 @@ How work becomes a commit on `main`, the same in every Hypha repository.
 - **A piece of work gets a worktree; a fix does not.** Work -- anything
   that changes what the code does, touches more than one file, or needs a
   check run before it lands -- starts in a worktree made from the local
-  `main` before its first edit, under `.hypha/worktrees/`. A fix -- a
-  typo, a wording slip, a value the owner named exactly -- goes on `main`
-  and is committed at once, so `main` never holds uncommitted work. A fix
-  that grows moves to a worktree before its next edit. When unsure, it is
-  work.
+  `main` before its first edit, at `~/.hypha/worktrees/<repository>/<work>`
+  (`git worktree add ~/.hypha/worktrees/spindle/keep-a-session -b
+  keep-a-session main`). A fix -- a typo, a wording slip, a value the owner
+  named exactly -- goes on `main` and is committed at once, so `main` never
+  holds uncommitted work. A fix that grows moves to a worktree before its
+  next edit. When unsure, it is work.
+- **A worktree is never inside a checkout.** Why: a tool that finds its
+  project by looking upward -- dune, for one -- takes the outer checkout
+  as the root, and builds and answers for `main` instead of the work.
+  Symptom: `git worktree list` shows a path under a checkout.
 - **Work lands locally.** Its branch is squashed to one commit, rebased
   onto the local `main` and fast-forwarded into it, and the worktree and
   branch are removed. Nothing is fetched or pushed to land it.

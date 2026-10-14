@@ -1,6 +1,3 @@
-# The opam switch is local (./_opam), so OCaml commands go through opam exec.
-OPAM = opam exec --switch=$(CURDIR) --
-
 PG_TEST_PORT ?= 5438
 PG_TEST_URL  ?= postgres://spindle:spindle@localhost:$(PG_TEST_PORT)/spindle
 export PG_TEST_PORT
@@ -18,29 +15,32 @@ help: ## list targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
 
-setup: ## create the local switch and install dependencies
+# dune builds the dependencies as it needs them (dune-workspace); setup
+# brings dune's tools.
+setup: ## install the formatter, odoc, the language server and Merlin
 	@docker compose version >/dev/null 2>&1 || echo "The Postgres suites need docker compose."
-	@[ -d _opam ] || opam switch create . 5.5.1 --no-install -y
-	opam install . --switch=$(CURDIR) --deps-only --with-test --with-dev-setup -y
+	dune tools install ocamlformat
+	dune tools install odoc
+	dune tools install ocamllsp
+	dune tools install ocamlmerlin
 
 build: ## build everything
-	$(OPAM) dune build @all
+	dune build @all
 
 test: db ## run the tests
-	SPINDLE_TEST_PG=$(PG_TEST_URL) $(OPAM) dune test --force
+	SPINDLE_TEST_PG=$(PG_TEST_URL) dune test --force
 
-# Release is the profile opam installs with. opam lint passes a warning
-# unless told it is an error, and installing from source prints each one.
-lint: ## check formatting, docs, the release build and the opam files
-	$(OPAM) dune build @all @fmt @doc
-	$(OPAM) dune build --profile release @all
-	opam lint -W @1..99 *.opam
+# Release is the profile opam installs with. The opam files are linted
+# where opam is, in CI's job for the oldest versions.
+lint: ## check formatting, docs and the release build
+	dune build @all @fmt @doc
+	dune build --profile release @all
 
 fmt: ## format the code
-	$(OPAM) dune fmt
+	dune fmt
 
 doc: ## build the API docs into _build/default/_doc/_html
-	$(OPAM) dune build @doc
+	dune build @doc
 
 docs: reference ## build the documentation site into site/
 	uvx zensical@$(ZENSICAL) build --strict
