@@ -26,7 +26,7 @@ How work becomes a commit on `main`, the same in every Hypha repository.
 - **A piece of work gets a worktree; a fix does not.** Work -- anything
   that changes what the code does, touches more than one file, or needs a
   check run before it lands -- starts in a worktree made from the local
-  `main` before its first edit, under `.claude/worktrees/`. A fix -- a
+  `main` before its first edit, under `.hypha/worktrees/`. A fix -- a
   typo, a wording slip, a value the owner named exactly -- goes on `main`
   and is committed at once, so `main` never holds uncommitted work. A fix
   that grows moves to a worktree before its next edit. When unsure, it is

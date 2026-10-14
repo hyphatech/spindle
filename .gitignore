@@ -4,3 +4,4 @@ _opam
 # The documentation site, and the reference copied into it.
 site/
 docs/reference/
+.hypha/
