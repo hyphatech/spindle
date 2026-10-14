@@ -162,24 +162,9 @@ What every Hypha OCaml repository does alike, so that a user of one finds
 the next where they expect it.
 
 - **OCaml 5.5 or later, `(lang dune 3.18)`.** Every `dune-project` asks
-  for the same, and CI builds on it with the newest versions its bounds
-  allow and with the oldest. They move together, never one repository
-  alone.
-- **dune builds the dependencies too.** Every repository tracks a
-  `dune-workspace` of two lines, `(lang dune 3.24)` and `(pkg enabled)`,
-  so `dune build` solves what the `dune-project` declares, fetches it,
-  builds it, OCaml itself included, and keeps the solution in `_build`,
-  solving again only when a declaration changes. A
-  Hypha library another depends on is a `(pin)` in the `dune-project`, at
-  the upstream's tag with its version, `(pin (url
-  "git+https://github.com/hyphatech/rowtype.git#0.8.0") (package (name
-  rowtype) (version 0.8.0)))`, and while the libraries are in no opam
-  repository, the same tag in the `*.opam.template`'s `pin-depends`, which
-  opam reads and dune does not write. A library commits no solution: its
-  users solve their own. Why: the dependencies are declared once and
-  installed by the build, never by hand or by a script, and a clone, a
-  worktree and CI build alike. Symptom: a step that installs, pins or
-  upgrades a package by hand.
+  for the same, every switch is that OCaml, and CI builds on it with the
+  oldest versions the opam files allow. They move together, never one
+  repository alone.
 - **A library reaches only what it lists.** Every `dune-project` sets
   `(implicit_transitive_deps false)`, so a `dune` file's `libraries` are
   all its code can name, never a library it gets through another. Why: a
@@ -355,36 +340,34 @@ language server (the `LSP` tool) or, without one, Merlin's command line;
 every user of an export is found this way, since a shadowed, re-exported
 or aliased name defeats a text search.
 
-Only dune is on PATH, 3.24 or later; every other OCaml tool is dune's.
-`dune build` brings the dependencies and the compiler, and the tools come
-through `dune tools`, each at the version the repository asks for: `make
-setup` installs `ocamlformat`, `odoc`, `ocamllsp` and `ocamlmerlin`, each
-with `dune tools install`, and the formatter is the one `.ocamlformat`
-names. Nothing is installed into an opam switch, and no `eval`.
+Nothing is on PATH. Every OCaml tool runs through the checkout's local
+switch, `./_opam`, as `opam exec --switch=<checkout> --` or through the
+Makefile; no `eval`. A worktree has no switch of its own: it uses its
+checkout's, the directory `git rev-parse --git-common-dir` is in, as the
+Makefile and the language server find it. `make setup` installs Merlin
+and `ocaml-lsp-server` with the rest.
 
-**`ocamllsp` runs as the agent's language server**, through `dune tools
-exec ocamllsp` from the repository's root. It answers every edit to OCaml
-source with its type errors, and gives a name's definition, its
-references, tests included, its type and a file's symbols; ask for the
-symbols before reading a long file whole. References read the index as the
-last build left it, so after an edit rebuild it -- `dune build @check
-@ocaml-index` -- before asking.
+**`ocamllsp` runs as the agent's language server**, from the checkout's
+switch. It answers every edit to OCaml source with its type errors,
+and gives a name's definition, its references, tests included, its type
+and a file's symbols; ask for the symbols before reading a long file
+whole. References read the index as the last build left it, so after an
+edit rebuild it -- `dune build @check @ocaml-index` -- before asking.
 
 **Without the language server, Merlin's command line answers the same**:
-`dune tools exec ocamlmerlin -- single <query> -filename FILE < FILE`, in
-JSON, lines from 1 and columns from 0 -- `occurrences -identifier-at
-LINE:COL -scope project`, `locate -position LINE:COL`, `type-enclosing
--position LINE:COL`, `outline` and `errors`. Its `occurrences` reads the
-index as the last `dune build @ocaml-index` left it.
+`ocamlmerlin single <query> -filename FILE < FILE`, in JSON, lines from 1
+and columns from 0 -- `occurrences -identifier-at LINE:COL -scope
+project`, `locate -position LINE:COL`, `type-enclosing -position LINE:COL`,
+`outline` and `errors`. Its `occurrences` reads the index as the last
+`dune build @ocaml-index` left it.
 
 **Ask for a record field's uses from its definition in the `.ml` or from
 a use**, never from its declaration in the `.mli`, which answers with that
 declaration alone; a value asked from its `.mli` finds every use.
 
-**A dependency's API is read where the build has it**, from the server's
-hover or its definition, which opens the `.mli` the build compiled against,
-never from memory: the version dune solved is the one the code builds
-against.
+**A dependency's API is read where it is installed**, from its `.mli`
+under `_opam/lib/<package>/` or the server's hover, never from memory: the
+version in the switch is the one the code builds against.
 
 **The stdlib is 5.5's, and nothing newer.** A function whose odoc says
 `@since` a later version is not used until every `dune-project` asks for
@@ -393,14 +376,21 @@ that version.
 **A generated file is changed at its source.** An `*.opam` file is written
 by dune from `dune-project`, and from an `*.opam.template` beside it for
 what dune cannot say, so either of those is edited, never the `.opam`.
-Nothing under `_build/` is edited; a test's new expected
+Nothing under `_build/` or `_opam/` is edited; a test's new expected
 output is taken with `dune promote`.
+
+**A worktree is outside the checkout** (`GIT.md`), so dune takes it as
+a root of its own, and nothing is added to it.
 
 `dune describe` lists every library, executable and module, so nothing is
 missed when the whole project is read.
 
 **Search text with `rg`, always with a path**, never `grep -r` or `find`:
 with no path `rg` reads standard input, which an agent's shell never
-closes, and `_build/` is gitignored, so `rg` skips it where `find . -name
-'*.ml'` returns every copy of the source under `_build/` and every package
-dune built.
+closes, and `_build/` and `_opam/` are gitignored, so `rg` skips them
+where `find . -name '*.ml'` returns every copy of the source under
+`_build/` and every package under `_opam/`.
+
+`opam list --installed` says what the switch holds; `opam list
+--required-by --recursive` resolves against what is available, not what is
+installed.

@@ -28,34 +28,6 @@
 (source
  (github hyphatech/spindle))
 
-; The Hypha libraries below are in no opam repository yet: dune takes each
-; from its repository at the release's tag, and opam from the pin-depends
-; of the *.opam.template files, at the same tags.
-
-(pin
- (url "git+https://github.com/hyphatech/wiretype.git#0.5.0")
- (package
-  (name wiretype)
-  (version 0.5.0))
- (package
-  (name ppx_wiretype)
-  (version 0.5.0)))
-
-(pin
- (url "git+https://github.com/hyphatech/postgres-eio.git#0.5.0")
- (package
-  (name postgres-eio)
-  (version 0.5.0)))
-
-(pin
- (url "git+https://github.com/hyphatech/rowtype.git#0.8.0")
- (package
-  (name rowtype)
-  (version 0.8.0))
- (package
-  (name rowtype-postgres)
-  (version 0.8.0)))
-
 (package
  (name spindle)
  (synopsis "The Eio-native web framework for modern OCaml")
@@ -122,32 +94,47 @@
    (and
     :with-test
     (>= 1.9.1)))
-  ; The renderers the page examples are written with, which the checks
-  ; build: a page is a string to Spindle, so none of them is a dependency
-  ; of the framework.
+  (odoc
+   (and
+    :with-dev-setup
+    (>= 3.2.1)))
+  (merlin
+   (and
+    :with-dev-setup
+    (>= 5.6-504)))
+  (ocaml-lsp-server
+   (and
+    :with-dev-setup
+    (>= 1.24.0)))
+  (ocamlformat
+   (and
+    :with-dev-setup
+    (= 0.29.0)))
+  ; The renderers the page examples are written with: a page is a string
+  ; to Spindle, so none of them is a dependency of the framework.
   (htmlit
    (and
-    :with-test
+    :with-dev-setup
     (>= 0.2.0)))
   (tyxml
    (and
-    :with-test
+    :with-dev-setup
     (>= 5.0.0)))
   (tyxml-ppx
    (and
-    :with-test
+    :with-dev-setup
     (>= 5.0.0)))
   (html_of_jsx
    (and
-    :with-test
+    :with-dev-setup
     (>= 0.1.0)))
   (mlx
    (and
-    :with-test
+    :with-dev-setup
     (>= 0.11)))
   (jingoo
    (and
-    :with-test
+    :with-dev-setup
     (>= 1.5.4)))))
 
 (package

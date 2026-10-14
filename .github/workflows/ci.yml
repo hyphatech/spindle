@@ -7,42 +7,36 @@ on:
   pull_request:
 
 jobs:
-  # The newest versions dune-project allows: dune solves, fetches and
-  # builds them, OCaml included, as it does on a contributor's machine.
   test:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        ocaml: ["5.5"]
     steps:
       - uses: actions/checkout@v5
-      - uses: ocaml-dune/setup-dune@v2
+      - uses: ocaml/setup-ocaml@v3
         with:
-          version: latest
-          steps: ""
-      - run: make setup
-      - run: make lint
+          ocaml-compiler: ${{ matrix.ocaml }}
+      - run: opam install . --deps-only --with-test --with-dev-setup -y
+      # Use setup-ocaml's switch instead of the Makefile's local one.
+      - run: make lint OPAM="opam exec --"
       # The Postgres of compose.yaml, as on a laptop, so CI tests the
       # database every contributor does.
-      - run: make test
+      - run: make test OPAM="opam exec --"
 
-  # The oldest versions the opam files allow, as opam-repository checks,
-  # through opam: old releases do not yet build under dune's package
-  # management, so it is off for this job. opam is here, so the opam files
-  # are linted here too.
+  # The oldest versions the opam file allows, as opam-repository checks.
   lower-bounds:
     runs-on: ubuntu-24.04
     env:
       OPAMCRITERIA: +removed,+count[version-lag,solution]
       OPAMFIXUPCRITERIA: +removed,+count[version-lag,solution]
-      SPINDLE_TEST_PG: postgres://spindle:spindle@localhost:5438/spindle
     steps:
       - uses: actions/checkout@v5
       - uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: "5.5"
-      # opam lint passes a warning unless told it is an error, and
-      # installing from source prints each one.
-      - run: opam lint -W @1..99 *.opam
       - run: opam install . --deps-only --with-test -y
       - run: opam list --installed --columns=name,version
-      - run: make db
       - run: opam exec -- dune build -p spindle,spindle-postgres,spindle-cli @install
-      - run: opam exec -- dune test --pkg disabled --force
+      - run: make test OPAM="opam exec --"

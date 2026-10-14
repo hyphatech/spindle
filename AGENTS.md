@@ -8,19 +8,17 @@ and the documentation site, [docs/](docs/index.md).
 ## Commands
 
 ```sh
-make setup   # once: dune's tools (formatter, odoc, language server, Merlin)
+make setup   # once: local opam switch in ./_opam, every dependency
 make test    # starts the test Postgres in Docker, runs every suite
 make lint    # formatting, odoc, the release build, and the opam files
 make fmt     # format in place
 make docs    # the documentation site into site/, as Pages publishes it; docs-serve to preview
 ```
 
-Only dune is on PATH, 3.24 or later: `dune build` builds the dependencies
-and OCaml itself as it needs them. `make test` needs `docker compose`.
-Without `SPINDLE_TEST_PG` the suites that need a server are skipped, and
-the test output says so. CI runs `make lint` and `make test`, against the
-same compose Postgres, on OCaml 5.5, and the suites again, with `opam
-lint`, on the oldest versions the opam files allow. `docs.yml`
+`make test` needs `docker compose`. Without `SPINDLE_TEST_PG` the suites
+that need a server are skipped, and the test output says so. CI runs `make
+lint` and `make test`, against the same compose Postgres, on OCaml 5.5, and
+`make test` again on the oldest versions the opam files allow. `docs.yml`
 publishes the site to GitHub Pages on every push to `main`.
 
 ## Layout
