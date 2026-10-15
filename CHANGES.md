@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.6.0 (2026-10-15)
 
 - An answer is written by the fiber that flushes it, where every flush was
   handed to a writer fiber of the connection's own and waited for: a send
