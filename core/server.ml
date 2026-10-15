@@ -310,13 +310,73 @@ let write_head oc status headers =
    connection, never answers. *)
 exception Stalled
 
+(* A connection's output. An answer is written into [buf] and sent by the
+   fiber that flushes it: the socket takes most writes at once, so a flush
+   is one write, with no fiber woken to make it and no promise to wait on.
+   One fiber flushes at a time -- two draining at once would send the same
+   bytes twice -- and nothing needs a lock for it: the connection's own
+   fiber flushes between exchanges and while a handler reads its body, a
+   stream's sends take turns under the stream's lock and its last bytes go
+   once its producer has returned, and a takeover's handler, which flushes
+   through [Buf_write] itself, is handed [buf] with a fiber that copies it
+   ([take_over]) once the server has flushed for the last time. *)
+type output = {
+  buf : Eio.Buf_write.t;
+  flow : Eio.Flow.sink_ty Eio.Resource.t;
+  sw : Eio.Switch.t;
+  mutable copied : unit Eio.Promise.t option;
+  mutable write_error : exn option;
+}
+
+(* A write the socket refuses, or a sink that has ended, aborts the buffer, so whatever writes next is
+   refused too, and is raised to the flush that met it; it is kept, so the
+   connection ends on it rather than on whatever the refusal raised next. *)
+let send_pending ~deadline out =
+  while Eio.Buf_write.has_pending_output out.buf do
+    match
+      Eio.Flow.single_write out.flow (Eio.Buf_write.await_batch out.buf)
+    with
+    | n ->
+        Deadline.progress deadline n;
+        Eio.Buf_write.shift out.buf n
+    | exception ((Eio.Io _ | End_of_file) as ex) ->
+        out.write_error <- Some ex;
+        Eio.Buf_write.abort out.buf;
+        raise ex
+  done
+
 (* Bounded by progress, not by time: a client still reading a large answer
    slowly is not cut off. *)
-let flush ~limits ~deadline oc =
+let flush ~limits ~deadline out =
   Deadline.arm_since_last deadline limits.send_timeout;
-  let flushed = Deadline.wait deadline (fun () -> Eio.Buf_write.flush oc) in
+  let flushed = Deadline.wait deadline (fun () -> send_pending ~deadline out) in
   Deadline.clear deadline;
   match flushed with Some () -> () | None -> raise Stalled
+
+(* From here the takeover's handler writes and flushes, and the server only
+   waits for the copying to end. A write the socket refuses aborts the
+   buffer rather than raising, and the server raises it once the takeover
+   ends ([with_output]). *)
+let take_over ~deadline out =
+  let copied, all_copied = Eio.Promise.create () in
+  out.copied <- Some copied;
+  Eio.Fiber.fork ~sw:out.sw (fun () ->
+      let rec copy () =
+        match Eio.Buf_write.await_batch out.buf with
+        | iovecs -> (
+            match Eio.Flow.single_write out.flow iovecs with
+            | n ->
+                Deadline.progress deadline n;
+                Eio.Buf_write.shift out.buf n;
+                copy ()
+            | exception (Eio.Io _ as ex) ->
+                out.write_error <- Some ex;
+                Eio.Buf_write.abort out.buf)
+        | exception End_of_file -> ()
+      in
+      copy ();
+      Eio.Promise.resolve all_copied ());
+  out.buf
 
 (* ------------------------------------------------------------------ *)
 (* Streams *)
@@ -332,7 +392,7 @@ exception Overran
    that finished cleanly leaves it fit. Its second access line says how it
    ended: [finished], [client gone] after a failed write, or [connection
    closed] on cancellation, which is how a stopping server ends it. *)
-let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
+let write_stream ?gzip ~clock ~limits ~deadline ~framing req out
     (stream : Response.stream) =
   let is_chunked =
     match framing with Chunked -> true | Raw | Counted _ -> false
@@ -365,8 +425,9 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
           | Counted _ | Chunked | Raw -> (s, false)
         in
         match
-          if is_chunked then Write.chunk oc s else Eio.Buf_write.string oc s;
-          flush ~limits ~deadline oc
+          if is_chunked then Write.chunk out.buf s
+          else Eio.Buf_write.string out.buf s;
+          flush ~limits ~deadline out
         with
         | () ->
             bytes_left := !bytes_left - String.length s;
@@ -408,7 +469,11 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
      sends from several fibers or a filler runs beside it: a deadline ends
      one wait at a time, so a second flush beside the first would leave one
      of them waiting on a client that stopped reading, for ever. *)
-  let lock = Eio.Mutex.create () and last_sent = ref started in
+  let lock = Eio.Mutex.create () in
+  (* When the stream last sent, in the clock's nanoseconds: an immediate, so
+     a send moves it without allocating. *)
+  let now_ns () = Int64.to_int (Mtime.to_uint64_ns (Eio.Time.Mono.now clock)) in
+  let last_sent = ref (Int64.to_int (Mtime.to_uint64_ns started)) in
   (* Once [produce] has returned the connection is the loop's again, and a
      byte sent then -- from a fiber the route left behind -- lands between
      this answer and the next. *)
@@ -424,7 +489,7 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
           Error Response.Gone)
         else
           let sent = send s in
-          last_sent := Eio.Time.Mono.now clock;
+          last_sent := now_ns ();
           sent)
   in
   (* A filler that cannot be written stops, and says the client has gone, so
@@ -435,9 +500,10 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
     | None -> stream.produce send
     | Some { Response.quiet; filler } ->
         let rec fill () =
-          let silent = Mtime.span !last_sent (Eio.Time.Mono.now clock) in
-          if Mtime.Span.is_shorter silent ~than:quiet then (
-            Eio.Time.Mono.sleep_span clock (Mtime.Span.abs_diff quiet silent);
+          let left = nanoseconds quiet - (now_ns () - !last_sent) in
+          if left > 0 then (
+            Eio.Time.Mono.sleep_span clock
+              (Mtime.Span.of_uint64_ns (Int64.of_int left));
             fill ())
           else
             match send filler with
@@ -475,17 +541,17 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
           (* Ends with the connection, so nothing may follow. *)
           | Raw -> (
               try
-                Eio.Buf_write.string oc (gzip_trailer ());
-                flush ~limits ~deadline oc;
+                Eio.Buf_write.string out.buf (gzip_trailer ());
+                flush ~limits ~deadline out;
                 false
               with
               | (Eio.Cancel.Cancelled _ | Stalled) as ex -> raise ex
               | _ -> false)
           | Chunked -> (
               try
-                Write.chunk oc (gzip_trailer ());
-                Write.last_chunk oc;
-                flush ~limits ~deadline oc;
+                Write.chunk out.buf (gzip_trailer ());
+                Write.last_chunk out.buf;
+                flush ~limits ~deadline out;
                 true
               with
               | (Eio.Cancel.Cancelled _ | Stalled) as ex -> raise ex
@@ -505,16 +571,16 @@ let write_stream ?gzip ~clock ~limits ~deadline ~framing req oc
 
 (* Nothing after a head that could not be read can be trusted to be where it
    seems, so the connection closes. *)
-let refuse_head ~read_clock ~limits ~deadline oc status detail =
+let refuse_head ~read_clock ~limits ~deadline out status detail =
   L.info (fun m ->
       m "refused a request head: %d %s" (Status.to_int status) detail);
   let date =
     if Status.to_int status < 500 then [ ("date", Write.date (read_clock ())) ]
     else []
   in
-  write_head oc status
+  write_head out.buf status
     (("content-length", "0") :: ("connection", "close") :: date);
-  flush ~limits ~deadline oc
+  flush ~limits ~deadline out
 
 (* ------------------------------------------------------------------ *)
 (* The request's body *)
@@ -561,7 +627,8 @@ let release_budget ~state progress n =
       : int);
   progress.reserved <- progress.reserved - n
 
-let request_body ~limits ~state ~deadline ~framing ~reader ~req ic oc progress =
+let request_body ~limits ~state ~deadline ~framing ~reader ~req ic out progress
+    =
   (* A [100 Continue] the client cannot be sent is a body that will never
      come: a value for the route, as any body that stops arriving is. *)
   let continue_if_asked ~max =
@@ -572,8 +639,8 @@ let request_body ~limits ~state ~deadline ~framing ~reader ~req ic oc progress =
     in
     if progress.cleared_to_send || too_large then Ok ()
     else (
-      Write.continue oc;
-      match flush ~limits ~deadline oc with
+      Write.continue out.buf;
+      match flush ~limits ~deadline out with
       | () ->
           progress.cleared_to_send <- true;
           Ok ()
@@ -711,10 +778,10 @@ let connection_headers ~keep ~is_http_1_0 (wire : Wire.t) =
 
 (* Answers whether the connection may carry another request. *)
 let exchange ~clock ~read_clock ~limits ~trace ~instruments ~state ~deadline app
-    ic oc peer head =
+    ic out peer head =
   match Framing.of_request head with
   | Error (status, detail) ->
-      refuse_head ~read_clock ~limits ~deadline oc status detail;
+      refuse_head ~read_clock ~limits ~deadline out status detail;
       false
   | Ok framing ->
       let reader =
@@ -745,7 +812,7 @@ let exchange ~clock ~read_clock ~limits ~trace ~instruments ~state ~deadline app
       in
       let req = make_request ~read_clock ~limits ~peer head in
       let body, stop_reading =
-        request_body ~limits ~state ~deadline ~framing ~reader ~req ic oc
+        request_body ~limits ~state ~deadline ~framing ~reader ~req ic out
           progress
       in
       let traceparent =
@@ -773,16 +840,16 @@ let exchange ~clock ~read_clock ~limits ~trace ~instruments ~state ~deadline app
         match body with
         | Wire.Nothing | Wire.Bytes _ -> keep
         | Wire.Chunks produce ->
-            write_stream ?gzip ~clock ~limits ~deadline ~framing:Chunked req oc
+            write_stream ?gzip ~clock ~limits ~deadline ~framing:Chunked req out
               produce
             && keep
         | Wire.Counted (n, produce) ->
-            write_stream ~clock ~limits ~deadline ~framing:(Counted n) req oc
+            write_stream ~clock ~limits ~deadline ~framing:(Counted n) req out
               produce
             && keep
         | Wire.Until_close produce ->
             ignore
-              (write_stream ?gzip ~clock ~limits ~deadline ~framing:Raw req oc
+              (write_stream ?gzip ~clock ~limits ~deadline ~framing:Raw req out
                  produce
                 : bool);
             false
@@ -790,7 +857,7 @@ let exchange ~clock ~read_clock ~limits ~trace ~instruments ~state ~deadline app
             handle
               {
                 Response.reader = ic;
-                writer = oc;
+                writer = take_over ~deadline out;
                 clock :> Eio.Time.Mono.ty Eio.Resource.t;
                 send_timeout = limits.send_timeout;
                 stopping = state.stop_begun;
@@ -835,14 +902,14 @@ let exchange ~clock ~read_clock ~limits ~trace ~instruments ~state ~deadline app
               && (not state.stopping) && (not progress.over_budget)
               && not wire.closing
             in
-            write_head oc wire.status
+            write_head out.buf wire.status
               (connection_headers ~keep ~is_http_1_0 wire);
             (match wire.body with
-            | Wire.Bytes s -> Eio.Buf_write.string oc s
+            | Wire.Bytes s -> Eio.Buf_write.string out.buf s
             | Wire.Nothing | Wire.Chunks _ | Wire.Counted _ | Wire.Until_close _
             | Wire.Connection _ ->
                 ());
-            flush ~limits ~deadline oc;
+            flush ~limits ~deadline out;
             let answer = (wire.body, wire.gzip, keep) in
             (* A stream of known length ends by itself, within the send
                limit, so a drain waits for it as for a buffered answer. One of
@@ -888,44 +955,41 @@ let read_next_head ~limits ~deadline ic =
    and more than most heads need. *)
 let io_buffer_bytes = 4096
 
-(* The connection's own writer rather than [Buf_write.with_flow], which
+(* The connection's own output rather than [Buf_write.with_flow], which
    flushes before letting an exception out: to a client that stopped
-   reading, a wait with no end. Here a raise cancels the copying fiber, and
-   what is left once [f] returns has [send_timeout] from the last byte
-   the client took, as any answer has. A write the socket refuses aborts the
-   buffer rather than raising, so a handler whose client left learns it at
-   its next send instead of being cancelled mid-transaction; a cancellation
-   is raised as itself, never as the write error before it. *)
-let with_writer ~limits ~deadline flow f =
+   reading, a wait with no end. Here a raise aborts the buffer, and what is
+   left once [f] returns has [send_timeout] from the last byte the client
+   took, as any answer has. A write the socket refuses is raised to the
+   flush that met it, which a stream's [send] answers as the client gone,
+   so a handler learns it at its next send instead of being cancelled
+   mid-transaction; a cancellation is raised as itself, never as the write
+   error before it. *)
+let with_output ~limits ~deadline flow f =
   Eio.Switch.run @@ fun sw ->
-  let oc = Eio.Buf_write.create ~sw io_buffer_bytes in
-  let write_error = ref None in
-  let copied, all_copied = Eio.Promise.create () in
-  Eio.Fiber.fork ~sw (fun () ->
-      let rec copy () =
-        match Eio.Buf_write.await_batch oc with
-        | iovecs -> (
-            match Eio.Flow.single_write flow iovecs with
-            | n ->
-                Deadline.progress deadline n;
-                Eio.Buf_write.shift oc n;
-                copy ()
-            | exception (Eio.Io _ as ex) ->
-                write_error := Some ex;
-                Eio.Buf_write.abort oc)
-        | exception End_of_file -> ()
-      in
-      copy ();
-      Eio.Promise.resolve all_copied ());
-  match f oc with
+  let out =
+    {
+      buf = Eio.Buf_write.create ~sw io_buffer_bytes;
+      flow :> Eio.Flow.sink_ty Eio.Resource.t;
+      sw;
+      copied = None;
+      write_error = None;
+    }
+  in
+  match f out with
   | v -> (
-      Eio.Buf_write.close oc;
-      Deadline.arm_since_last deadline limits.send_timeout;
-      match Deadline.wait deadline (fun () -> Eio.Promise.await copied) with
-      | Some () -> v
-      | None -> raise Stalled)
+      Eio.Buf_write.close out.buf;
+      match out.copied with
+      | None ->
+          (* Once a write was refused nothing more can go. *)
+          if Option.is_none out.write_error then flush ~limits ~deadline out;
+          v
+      | Some copied -> (
+          Deadline.arm_since_last deadline limits.send_timeout;
+          match Deadline.wait deadline (fun () -> Eio.Promise.await copied) with
+          | Some () -> v
+          | None -> raise Stalled))
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
-  | exception ex -> raise (Option.value !write_error ~default:ex)
+  | exception ex -> raise (Option.value out.write_error ~default:ex)
 
 (* RFC 9112 §9.6: shut the write side, read and drop what still arrives for
    a while, then close. Closing with unread bytes has the kernel answer with
@@ -961,21 +1025,21 @@ let serve_connection ~clock ~read_clock ~limits ~trace ~instruments ~state
   in
   (* Which side ends the connection: when it is the server, the client may
      still be sending. *)
-  let rec loop oc =
+  let rec loop out =
     match read_next_head ~limits ~deadline ic with
     | `Gone -> `Client_ended
     | `Refuse (status, detail) ->
-        refuse_head ~read_clock ~limits ~deadline oc status detail;
+        refuse_head ~read_clock ~limits ~deadline out status detail;
         `Server_ended
     | `Request head ->
         if
           exchange ~clock ~read_clock ~limits ~trace ~instruments ~state
-            ~deadline app ic oc peer head
-        then loop oc
+            ~deadline app ic out peer head
+        then loop out
         else `Server_ended
   in
   try
-    match with_writer ~limits ~deadline flow loop with
+    match with_output ~limits ~deadline flow loop with
     | `Server_ended -> close_lingering ~limits ~deadline flow
     | `Client_ended -> ()
   with

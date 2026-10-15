@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- An answer is written by the fiber that flushes it, where every flush was
+  handed to a writer fiber of the connection's own and waited for: a send
+  is one write, with no fiber woken and no promise to wait on, and a
+  deadline moves by writing an `int`, where it boxed an `Mtime.t` each
+  time. Sending to many clients at once leaves far less for the collector
+  to promote -- delivering an event to ten thousand subscribers costs about
+  a third less CPU -- and a plaintext answer about an eighth less. A write
+  the socket refuses ends its connection without another attempt. A
+  takeover is still handed a `Buf_write.t` with a fiber that copies it.
 - `spindle-postgres` is pinned to rowtype 0.8.0, its latest release,
   where it was pinned to 0.7.0.
 

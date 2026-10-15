@@ -7,14 +7,22 @@
    a passed deadline. *)
 exception Passed
 
-(* A body keeps up a rate, each byte buying time; a write keeps going, each
-   byte restarting the allowance. *)
-type pace = Per_byte of Mtime.Span.t | Since_last of Mtime.Span.t
+(* Instants and spans are nanoseconds in an [int], so moving a deadline --
+   once a flush, once a read -- is a write of an immediate, never a fresh
+   [Mtime.t] boxed into a record that outlives every minor collection. Past
+   what an [int] counts to is never: [max_int]. *)
+let never = max_int
+let ns span = Int64.to_int (Mtime.Span.to_uint64_ns span)
+let now clock = Int64.to_int (Mtime.to_uint64_ns (Eio.Time.Mono.now clock))
+let later ~by at = if at > never - by then never else at + by
 
 type t = {
   clock : Eio.Time.Mono.ty Eio.Resource.t;
-  mutable due_at : Mtime.t option;
-  mutable pace : pace;
+  mutable due_at : int;  (** [never] when armed for nothing *)
+  mutable pace_ns : int;
+      (** A body keeps up a rate, each byte buying [pace_ns]; a write keeps
+          going, each byte restarting the allowance, [pace_ns] from it. *)
+  mutable since_last : bool;
   mutable waiting : Eio.Cancel.t option;
   mutable passed : bool;
 }
@@ -26,38 +34,35 @@ type sweep = {
   mutable next_id : int;
 }
 
-(* Past what the clock counts to is never. *)
-let later ~by at = Option.value (Mtime.add_span at by) ~default:Mtime.max_stamp
-
 (* Arming starts afresh: the answer to a passed deadline, a 408 say, is a
    wait of its own. *)
-let arm_with t pace span =
-  t.due_at <- Some (later ~by:span (Eio.Time.Mono.now t.clock));
-  t.pace <- pace;
+let arm_with t ~since_last ~pace span =
+  t.due_at <- later ~by:(ns span) (now t.clock);
+  t.pace_ns <- pace;
+  t.since_last <- since_last;
   t.passed <- false
 
 let arm ?(per_byte = Mtime.Span.zero) t span =
-  arm_with t (Per_byte per_byte) span
+  arm_with t ~since_last:false ~pace:(ns per_byte) span
 
-let arm_since_last t span = arm_with t (Since_last span) span
-let clear t = t.due_at <- None
+let arm_since_last t span = arm_with t ~since_last:true ~pace:(ns span) span
+let clear t = t.due_at <- never
 
 let remaining t =
-  Option.map
-    (fun at ->
-      let now = Eio.Time.Mono.now t.clock in
-      if Mtime.is_later at ~than:now then Mtime.span now at else Mtime.Span.zero)
-    t.due_at
+  if t.due_at = never then None
+  else
+    let left = t.due_at - now t.clock in
+    Some (Mtime.Span.of_uint64_ns (Int64.of_int (max 0 left)))
 
 let passed t = t.passed
 
 let progress t n =
-  match (t.due_at, t.pace) with
-  | None, _ -> ()
-  | Some at, Per_byte p -> t.due_at <- Some (later ~by:Mtime.Span.(n * p) at)
-  | Some _, Since_last span ->
-      if n > 0 then
-        t.due_at <- Some (later ~by:span (Eio.Time.Mono.now t.clock))
+  if t.due_at <> never && n > 0 then
+    if t.since_last then t.due_at <- later ~by:t.pace_ns (now t.clock)
+    else
+      t.due_at <-
+        (if t.pace_ns > 0 && n > (never - t.due_at) / t.pace_ns then never
+         else t.due_at + (n * t.pace_ns))
 
 (* Each wait in a cancellation context of its own, so the sweep interrupts
    the wait and nothing else. *)
@@ -84,15 +89,13 @@ let sweep ~mono_clock:clock ~tick =
    during the walk. *)
 let rec watch s =
   Eio.Time.Mono.sleep_span s.sweep_clock s.tick;
-  let now = Eio.Time.Mono.now s.sweep_clock in
+  let now = now s.sweep_clock in
   Hashtbl.iter
     (fun _ t ->
-      match t.due_at with
-      | Some at when not (Mtime.is_later at ~than:now) ->
-          t.passed <- true;
-          t.due_at <- None;
-          Option.iter (fun cc -> Eio.Cancel.cancel cc Passed) t.waiting
-      | Some _ | None -> ())
+      if t.due_at <> never && t.due_at <= now then (
+        t.passed <- true;
+        t.due_at <- never;
+        Option.iter (fun cc -> Eio.Cancel.cancel cc Passed) t.waiting))
     s.deadlines;
   watch s
 
@@ -100,8 +103,9 @@ let run s f =
   let t =
     {
       clock = s.sweep_clock;
-      due_at = None;
-      pace = Per_byte Mtime.Span.zero;
+      due_at = never;
+      pace_ns = 0;
+      since_last = false;
       waiting = None;
       passed = false;
     }

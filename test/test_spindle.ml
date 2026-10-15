@@ -5521,6 +5521,50 @@ let test_a_stream_ends_when_its_client_goes domains () =
       ignore (Eio.Flow.single_read flow (Cstruct.create 256) : int));
   ignore (Eio.Promise.await ended : string)
 
+(* A stream whose client went ends its connection quietly: the write that
+   met the gone client is the last, nothing more is flushed to a connection
+   that takes nothing, and the connection ends without a failure in the log.
+   The next client is served in the only slot once the first has let it go,
+   so its access line comes after every line the first connection logged. *)
+let test_a_gone_client_ends_its_connection_quietly domains () =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let lines = ref [] and next_served, served = Eio.Promise.create () in
+  Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
+    ~out:(fun l ->
+      lines := l :: !lines;
+      if contains ~sub:"/hello/b" l then
+        ignore (Eio.Promise.try_resolve served () : bool))
+    ();
+  let ticks =
+    Spindle.get
+      Spindle.Path.(s "ticks")
+      Spindle.Returns.response
+      (Spindle.Dep.return
+         (Ok
+            (Spindle.Response.events (fun send ->
+                 let rec go () = Result.bind (send "data: tick\n\n") go in
+                 go ()))))
+  in
+  let connect =
+    serve_in_memory ~sw env ~domains ~max_connections:1
+      (Spindle.Test.app [ ticks; hello ])
+  in
+  Eio.Switch.run (fun inner ->
+      let flow = connect ~sw:inner in
+      Eio.Flow.copy_string "GET /ticks HTTP/1.1\r\nHost: t\r\n\r\n" flow;
+      ignore (Eio.Flow.single_read flow (Cstruct.create 256) : int));
+  Eio.Switch.run (fun inner ->
+      let second = connect ~sw:inner in
+      Eio.Flow.copy_string
+        "GET /hello/b HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n" second;
+      check_string "the next is served" "HTTP/1.1 200 OK"
+        (Eio.Buf_read.line (Eio.Buf_read.of_flow second ~max_size:4096)));
+  Eio.Promise.await next_served;
+  Alcotest.(check (list string))
+    "no connection failed" []
+    (List.filter (contains ~sub:"connection failed") !lines)
+
 (* A client that asks and never reads. Past the send limit the server gives
    up on it, so its connection slot is somebody else's -- here the only
    slot there is. The answer is larger than a connection holds, so the
@@ -9383,6 +9427,8 @@ let () =
             test_localhost_is_localhost_in_any_case;
           Alcotest.test_case "a stream ends when its client goes" `Quick
             (test_a_stream_ends_when_its_client_goes 1);
+          Alcotest.test_case "a gone client ends its connection quietly" `Quick
+            (test_a_gone_client_ends_its_connection_quietly 1);
           Alcotest.test_case "https is never spoken as plain http" `Quick
             (test_https_is_never_spoken_as_plain_http 1);
           Alcotest.test_case "a server answers on every domain it was given"
@@ -9434,6 +9480,8 @@ let () =
             (test_an_address_is_exactly_that_one 4);
           Alcotest.test_case "a stream ends when its client goes" `Quick
             (test_a_stream_ends_when_its_client_goes 4);
+          Alcotest.test_case "a gone client ends its connection quietly" `Quick
+            (test_a_gone_client_ends_its_connection_quietly 4);
           Alcotest.test_case "a client that never reads frees its slot" `Quick
             (test_a_client_that_never_reads_frees_its_slot 4);
           Alcotest.test_case
