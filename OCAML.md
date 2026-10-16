@@ -1,6 +1,6 @@
 # OCaml
 
-<!-- Managed copy: kept word for word across Hypha's OCaml repositories. Do not edit it here; it is overwritten. -->
+<!-- Kept word for word across Hypha's OCaml repositories. A copy is never edited in place: it is rewritten from the one original. -->
 
 ## House style
 
@@ -167,13 +167,15 @@ the next where they expect it.
   repository alone.
 - **opam resolves the dependencies; dune only builds.** A package's
   dependencies are declared in `dune-project`, with ranges, and dune
-  writes the opam files from it. A Hypha library another depends on is
-  pinned in the `*.opam.template`'s `pin-depends`, at a release's tag on
-  GitHub, until the libraries are in opam-repository and the pins go.
-  `make setup` makes the repository's switch, empty, and installs into
-  it with `opam install . --deps-only`, which resolves everything, the
-  compiler and the pins included; a new release is taken by moving its tag and the bound
-  and running `make setup` again. An application commits its solution as
+  writes the opam files from it. A Hypha library comes from Hypha's opam
+  repository, `hyphatech/opam-repository`, through a range that stops
+  before its next breaking release -- before 1.0 the next minor,
+  `(and (>= 0.5.0) (< 0.6.0))` -- and is pinned, at a release's tag, only
+  at a version that repository does not carry. `make setup` makes the
+  repository's switch, empty, adds Hypha's opam repository to it, and
+  installs into it with `opam install . --deps-only`, which resolves
+  everything, the compiler included; a new release is taken by raising
+  the range and running `make setup` again. An application commits its solution as
   an opam lock (`make lock` after an upgrade); a library commits none,
   its users solving their own. Why: it is how the libraries' users get
   them, so the build every contributor runs is the one users run; and

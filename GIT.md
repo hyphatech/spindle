@@ -1,6 +1,6 @@
 # Git
 
-<!-- Managed copy: kept word for word across Hypha's repositories. Do not edit it here; it is overwritten. -->
+<!-- Kept word for word across Hypha's repositories. A copy is never edited in place: it is rewritten from the one original. -->
 
 How work becomes a commit on `main`, the same in every Hypha repository.
 
