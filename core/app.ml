@@ -44,6 +44,8 @@ type t = {
   cors : Cors_repr.t option;
   compress : Compress_repr.t option;
   trailing_slash : trailing_slash;
+  resources : Dep_repr.resources Atomic.t;
+      (** written once, by [start], before the server accepts anything *)
 }
 
 let meth_of (r : Route_repr.t) = r.info.meth
@@ -108,7 +110,7 @@ let check_path r =
         (function
           | Dep.Path n when not (List.exists (String.equal n) params) -> Some n
           | Dep.Path _ | Dep.Query _ | Dep.Header _ | Dep.Cookie _ | Dep.Field _
-          | Dep.File _ | Dep.Body _ | Dep.Custom _ ->
+          | Dep.File _ | Dep.Body _ | Dep.Custom _ | Dep.Resource _ ->
               None)
         (r.info.needs : Dep.need list) )
   with
@@ -141,7 +143,7 @@ let check_body (r : Route_repr.t) =
       (function
         | Dep.Body b -> Some b
         | Dep.Path _ | Dep.Query _ | Dep.Header _ | Dep.Cookie _ | Dep.Field _
-        | Dep.File _ | Dep.Custom _ ->
+        | Dep.File _ | Dep.Custom _ | Dep.Resource _ ->
             None)
       r.info.needs
   in
@@ -168,7 +170,7 @@ let check_content_types (r : Route_repr.t) =
             content_types
         | Dep.Body (Dep.Json _ | Dep.Form | Dep.Multipart)
         | Dep.Path _ | Dep.Query _ | Dep.Header _ | Dep.Cookie _ | Dep.Field _
-        | Dep.File _ | Dep.Custom _ ->
+        | Dep.File _ | Dep.Custom _ | Dep.Resource _ ->
             [])
       r.info.needs
   in
@@ -498,6 +500,7 @@ let make ?(middleware = []) ?(codes = []) ?not_found ?cors ?compress
         cors;
         compress;
         trailing_slash;
+        resources = Atomic.make (Dep_repr.unstarted ());
       })
     (check_all routes)
 
@@ -816,7 +819,11 @@ let answer_resolution t ~body ~answered_route resolution req =
     match resolution with
     | Route (r, params) ->
         answered_route := Some (pattern_of r);
-        with_raise_as_500 (fun req -> Route_repr.handle r req ~params ~body) req
+        with_raise_as_500
+          (fun req ->
+            Route_repr.handle r req ~resources:(Atomic.get t.resources) ~params
+              ~body)
+          req
     | Slash -> (
         match location_without_slash req with
         | Some location ->
@@ -1095,10 +1102,33 @@ let handle t req ~body =
   log_refusal req
     (response, { route = !answered_route; undeclared; access; gzip })
 
-(* The first route, in listed order, that cannot start: a server missing
-   one route's files is not the server that was written. *)
-let start t ~fs =
+(* The first route, in listed order, that reads a resource nobody supplied
+   or cannot start: a server missing one route's database or files is not
+   the server that was written. *)
+let start ?(resources = []) t ~fs ~mono_clock =
+  let ( let* ) = Result.bind in
   let fs = (fs :> Eio.Fs.dir_ty Eio.Path.t) in
+  let* supplied =
+    Dep_repr.supply resources ~unsupplied:Dep_repr.Refused ~mono_clock
+  in
+  let* () =
+    match
+      List.find_map
+        (fun (r : Route_repr.t) ->
+          List.find_map
+            (fun (owner, name) ->
+              if Dep_repr.is_supplied supplied owner then None
+              else Some (r, name))
+            r.resources_read)
+        t.routes
+    with
+    | Some (r, name) ->
+        Error
+          (Printf.sprintf "%s reads the resource %s, which was not supplied"
+             (route_name r) name)
+    | None -> Ok ()
+  in
+  Atomic.set t.resources supplied;
   List.fold_left
     (fun started (r : Route_repr.t) ->
       Result.bind started (fun () ->

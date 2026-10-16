@@ -9,9 +9,32 @@ type response = {
 }
 
 (* A route table [App.make] refuses is a constant in source, so a test stops
-   on it as [Spindle.serve] does. *)
-let app ?middleware ?codes ?not_found ?cors ?compress ?check_origin
-    ?trusted_origins ?trailing_slash routes =
+   on it as [Spindle.serve] does. A test is given only the resources the
+   routes it calls read, so each route reads the test's own, where a server's
+   are App.start's. *)
+let app ?(resources = []) ?mono_clock ?middleware ?codes ?not_found ?cors
+    ?compress ?check_origin ?trusted_origins ?trailing_slash routes =
+  let mono_clock =
+    match mono_clock with
+    | Some clock -> (clock :> Eio.Time.Mono.ty Eio.Resource.t)
+    | None -> (Eio_mock.Clock.Mono.make () :> Eio.Time.Mono.ty Eio.Resource.t)
+  in
+  let given =
+    match Dep_repr.supply resources ~unsupplied:Dep_repr.Raised ~mono_clock with
+    | Ok given -> given
+    | Error m -> invalid_arg ("Spindle.Test.app: " ^ m)
+  in
+  let routes =
+    List.map
+      (fun (r : Route_repr.t) ->
+        {
+          r with
+          run =
+            (fun req ~resources:_ ~params ~body ->
+              r.run req ~resources:given ~params ~body);
+        })
+      routes
+  in
   match
     App.make ?middleware ?codes ?not_found ?cors ?compress ?check_origin
       ?trusted_origins ?trailing_slash routes
@@ -43,6 +66,12 @@ let answer_checked app req ~body =
        (Meth.to_string (Request.meth req))
        (Request.target req)
    in
+   (match Response.refused r with
+   | Some { Refusal.raised = Some (Dep_repr.Unsupplied name, _); _ } ->
+       invalid_arg
+         (Printf.sprintf "%s read the resource %s, which Test.app was not given"
+            asked name)
+   | Some _ | None -> ());
    match answered.undeclared with
    | Some (App.Code code) ->
        invalid_arg

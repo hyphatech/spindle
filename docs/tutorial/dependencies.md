@@ -238,10 +238,8 @@ encrypted cookies and sessions are on [their own page](../guide/cookies.md).
   …`, and use that value everywhere. A function `let current () = …` called
   twice makes two dependencies, which run twice. `Dep.uncached d` runs `d`
   at every use on purpose.
-- **What the app holds is not a dependency.** A database pool, a client or
-  a configuration exists once, at startup; close over it:
-  `let routes pool = [ … ]`. [Database](database.md) shows that shape,
-  and [why a transaction is not a dependency](database.md#why-a-transaction-is-not-a-dependency).
+- **What the app holds is a resource**: read like any other dependency,
+  but supplied once, where the server starts ([below](#resources)).
 
 ??? note "Reading what no built-in reads"
 
@@ -250,5 +248,37 @@ encrypted cookies and sessions are on [their own page](../guide/cookies.md).
     for) and how it may refuse with `~refuses`, so the document can list it;
     without `~needs` it is opaque. `Dep.bind` is for a dependency that needs
     another's value to decide what to read next; it is opaque too.
+
+## Resources
+
+Every dependency above is request-wide: worked out from the request, once
+per request. A resource is app-wide: a database pool, a client, a
+[broadcast](../guide/sse.md#broadcasting-to-many-clients) hub, made once
+where the program starts. Name it with `Dep.of_resource`, read it like any
+other dependency, and supply it when the server starts:
+
+```ocaml
+let db : Spindle_postgres.Pool.t Spindle.Dep.t = Spindle.Dep.of_resource "database"
+
+(let+ pool = db and+ id = Spindle.param order_id in ...)
+
+Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes
+```
+
+- **The routes stay a value.** They read the pool without holding it, so
+  the [command line](client-schemas.md) describes them with no database,
+  and a [test](../guide/testing.md) supplies its own.
+- **A missing resource stops the server.** A route that reads one
+  `~resources` does not hold is refused before the server listens, naming
+  the route and the resource; so is one supplied twice. One read inside
+  `Dep.bind` is found only as it runs: unsupplied, it is a `500`, logged
+  by name.
+- **It is no input.** A request does not carry it, so the API's document
+  and the client schemas never list it.
+- **Make it once, at the top level.** It has an identity, as every
+  dependency has: the value supplied is the value read.
+
+[Database](database.md) shows the whole shape, and [why a transaction is
+not a dependency](database.md#why-a-transaction-is-not-a-dependency).
 
 Next: [request bodies, responses and errors](bodies.md).

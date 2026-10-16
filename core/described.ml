@@ -163,7 +163,7 @@ let form_schema (i : Route.info) =
                     examples = [];
                   }
             | Dep.Path _ | Dep.Query _ | Dep.Header _ | Dep.Cookie _
-            | Dep.File _ | Dep.Body _ | Dep.Custom _ ->
+            | Dep.File _ | Dep.Body _ | Dep.Custom _ | Dep.Resource _ ->
                 None)
           i.needs;
     }
@@ -196,7 +196,7 @@ let body_of ctx (i : Route.info) =
                  required = Result.is_error (Wiretype.decode description "{}");
                })
       | Dep.Path _ | Dep.Query _ | Dep.Header _ | Dep.Cookie _ | Dep.Field _
-      | Dep.File _ | Dep.Custom _ ->
+      | Dep.File _ | Dep.Custom _ | Dep.Resource _ ->
           None)
     i.needs
 
@@ -267,7 +267,8 @@ let parameters_of (i : Route.info) =
           | Dep.Query x -> Some (input_parameter In_query x)
           | Dep.Header x -> Some (input_parameter In_header x)
           | Dep.Cookie x -> Some (input_parameter In_cookie x)
-          | Dep.Path _ | Dep.Field _ | Dep.File _ | Dep.Body _ | Dep.Custom _ ->
+          | Dep.Path _ | Dep.Field _ | Dep.File _ | Dep.Body _ | Dep.Custom _
+          | Dep.Resource _ ->
               None)
       i.needs
 

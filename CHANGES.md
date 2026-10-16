@@ -4,6 +4,36 @@
 
 - Breaking: `Spindle.Zod.module_` is `Spindle.Zod.schemas`, a noun like
   `Openapi.document`, without the trailing underscore.
+- A resource is what the application holds -- a pool, a client, a hub --
+  read by a route as a dependency: `Dep.of_resource "database"` names one,
+  `let+ pool = db in` reads it, and `Spindle.serve`, `App.start` and
+  `Test.app` take `~resources:[ Dep.resource db pool ]`. The routes are
+  then a value, made before any database is, so a command line or a
+  document describes them with none. A route reading a resource the server
+  was not given stops it before it listens, naming the route and the
+  resource, as does one supplied twice or a `Dep.resource` of what
+  `of_resource` did not make; one read inside `Dep.bind` and not supplied
+  answers `500`, logged by name. `Test.app` needs only the resources the
+  routes a test calls read, and `Test.call` raises `Invalid_argument` on
+  one that reads a resource it was not given. The API's document and the
+  Zod schemas never list a resource, which no request carries.
+  `Dep.need` has a `Resource` constructor.
+- Breaking: `Spindle_cli.run`'s `~app` is the app itself, a
+  `(Spindle.App.t, string) result`, where it was a function of the
+  environment and a switch, and the `Spindle_cli.app` type is gone. It
+  takes `()` where it took `env`, so a command line needs no event loop:
+  `let () = Spindle_cli.run ~name ~app:(Spindle.App.make routes) ()`.
+  Routes that read their database as a resource need nothing made to be
+  described.
+- Breaking: `Rate.create` takes no `~mono_clock`, so a limit is a value
+  made at the top level, beside the routes that read it:
+  `let sign_ins = Spindle.Rate.create ~limit:10 ~per:Mtime.Span.min ()`.
+  Its counts are the app's, so two apps -- two servers, two tests -- never
+  share a key's, and they are timed on the monotonic clock `App.start` now
+  takes as `~mono_clock`, which `Spindle.serve` gives from its
+  environment; a limit in an app never started answers `500`. A test
+  gives `Test.app ~mono_clock` an `Eio_mock` clock to move; by default its
+  clock never moves.
 
 ## 0.6.1 (2026-10-16)
 

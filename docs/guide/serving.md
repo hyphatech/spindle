@@ -1,13 +1,15 @@
 # Server configuration and shutdown
 
 `Spindle.serve env routes` is the whole server. Anything the routes need --
-a database pool, a client -- is made first, inside `Eio_main.run`:
+a database pool, a client -- is made first, inside `Eio_main.run`, and
+supplied as a [resource](../tutorial/dependencies.md#resources):
 
 ```ocaml
 let () =
   Eio_main.run @@ fun env ->
   Spindle_postgres.Pool.run env database @@ fun pool ->
-  Spindle.serve env ~port:3000 ~max_connections:1024 (routes ~pool)
+  Spindle.serve env ~port:3000 ~max_connections:1024
+    ~resources:[ Spindle.Dep.resource db pool ] routes
 ```
 
 By default it serves on `localhost:8080`, on every CPU core, stops cleanly
@@ -19,8 +21,9 @@ Three mistakes stop the server before it listens:
 - A route table that cannot be right -- two routes answering one URL, say
   -- raises `Invalid_argument`, naming the route. So does a limit out of
   its range.
-- A `Static.directory` or a `Files.directory` that cannot be read logs an
-  error saying why, and the program exits with status 1.
+- A `Static.directory` or a `Files.directory` that cannot be read, or a
+  resource a route reads that `~resources` does not hold, logs an error
+  saying why, and the program exits with status 1.
 - A port already in use, or a `~host` name the resolver does not know,
   raises Eio's I/O error.
 
@@ -135,6 +138,7 @@ Fields against RFC 9651's published test suite, run whole.
 
 | Argument | What it does |
 |---|---|
+| `~resources` | what the routes read that the program holds -- a pool, a client -- made where it starts ([Resources](../tutorial/dependencies.md#resources)) |
 | `~middleware` | wraps every route ([Middleware](middleware.md)) |
 | `~codes` | the refusal codes your middleware may answer ([Middleware](middleware.md#writing-middleware)) |
 | `~not_found` | answers a request no route claims ([Routes](../tutorial/routes.md#how-routes-are-matched)) |
@@ -154,7 +158,8 @@ Fields against RFC 9651's published test suite, run whole.
 
 A program that builds its routes at run time, or wants no signal handler,
 does what `Spindle.serve` does in three steps: `App.make` the routes,
-`App.start` the app (which reads any `Static.directory` or
+`App.start` the app (which takes the `~resources` and the `~mono_clock` its
+rate limits are timed on, and reads any `Static.directory` or
 `Files.directory`), and `Server.run` it with every capability passed
 explicitly. `Server.serve_on` serves on sockets you already listen on -- a
 test's, on a port the system chose.

@@ -35,14 +35,15 @@ bin/
 `notes.ml` makes the app from the routes and hands it to `Spindle_cli.run`:
 
 ```ocaml title="bin/notes.ml"
-let app _env ~sw:_ = Spindle.App.make Routes.routes
 let () =
-  Eio_main.run @@ fun env ->
-  Spindle_cli.run ~name:"notes" ~title:"Notes" ~app env
+  Spindle_cli.run ~name:"notes" ~title:"Notes"
+    ~app:(Spindle.App.make Routes.routes) ()
 ```
 
-The app is only described, never served, so make it from nothing a request
-needs: no database, no service it calls.
+The app is only described, never started or served. A database app's routes
+need nothing to be described: they read their pool as a
+[resource](dependencies.md#resources), which the server supplies and the
+command line never asks for.
 
 | Command | What it does |
 |---|---|

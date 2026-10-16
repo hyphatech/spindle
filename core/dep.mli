@@ -54,9 +54,21 @@
     with no [~needs] read cannot be known without running them, so they say they
     are {!opaque}.
 
-    What the application already holds -- a pool, a client, a configuration --
-    is not a dependency. It exists once, at startup, and a route is a function
-    of it. *)
+    {b A resource} is what the application holds rather than the request: a
+    pool, a client, a hub, made once where the program starts. It is read as a
+    dependency like any other -- {!of_resource} names it, and a route lists it
+    beside its inputs -- and handed over at start ({!val-resource}), so the
+    routes are a value made before it exists, which a document or a command line
+    describes without it:
+
+    {[
+      let db : Spindle_postgres.Pool.t Spindle.Dep.t =
+        Spindle.Dep.of_resource "database"
+
+      let+ pool = db and+ id = Spindle.param order_id in ...
+
+      Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes
+    ]} *)
 
 type 'a t = 'a Dep_repr.t
 
@@ -103,6 +115,9 @@ type need = Dep_repr.need =
   | Body of body
   | Custom of { name : string; doc : string }
       (** something the framework has no word for -- a session, say *)
+  | Resource of string
+      (** a resource, by its name ({!of_resource}): the application's, so never
+          in a route's document, which lists what a request carries *)
 
 val of_request :
   ?needs:need list ->
@@ -112,6 +127,29 @@ val of_request :
 (** A dependency of the application's own, read off the request in the first
     stage. [needs] is what it reads; without it the dependency is {!opaque}.
     [refuses] is the codes it may refuse with. *)
+
+val of_resource : string -> 'a t
+(** [of_resource name]: a value the application holds -- a pool, a client, a hub
+    -- that the program supplies when the server starts ({!val-resource}), read
+    in the first stage, as a header is. [name] is what a refusal to start, a log
+    line and a test's failure call it. It has an identity, as every dependency
+    has, so it is made once, at the top level, and that one value is both read
+    and supplied: one made again is another resource.
+
+    What the routes read outside a {!bind} is checked as the server starts
+    ({!App.start}), and a server without one of them does not start. One read
+    inside a [bind] is found only as it runs, and unsupplied answers
+    {!Refusal.internal}'s [500], logged naming it. *)
+
+type resource = Dep_repr.resource
+(** A resource's value, as the program supplies it at start. *)
+
+val resource : 'a t -> 'a -> resource
+(** [resource d v]: [v] is what [d] reads, for {!Spindle.serve}'s,
+    {!App.start}'s or {!Test.app}'s [~resources]. [d] is the value
+    {!of_resource} made, or {!uncached} of it; anything else -- a {!map} of it,
+    say -- reads no resource of its own, and is refused there, as is one
+    resource supplied twice. *)
 
 val of_body :
   ?refuses:Refusal.Code.t list ->

@@ -546,6 +546,10 @@ let test_bind_after_the_body_reads_it () =
   in
   check_string "both sides saw the body" "abab" r.body
 
+(* An app-wide value the program hands over at start: here a name, where a
+   program's is a pool. *)
+let database : string Spindle.Dep.t = Spindle.Dep.of_resource "database"
+
 let test_a_dependency_says_what_it_reads () =
   let listed =
     let+ _ = Spindle.Query.optional "page" Spindle.Codec.int
@@ -553,7 +557,8 @@ let test_a_dependency_says_what_it_reads () =
     and+ _ =
       Spindle.Cookie.optional
         (Spindle.Cookie.named "session" Spindle.Codec.string)
-    and+ _ = Spindle.now in
+    and+ _ = Spindle.now
+    and+ _ = Spindle.Dep.uncached database in
     ()
   in
   let names =
@@ -570,12 +575,13 @@ let test_a_dependency_says_what_it_reads () =
         | Spindle.Dep.Body (Spindle.Dep.Raw _) -> "body"
         | Spindle.Dep.Body (Spindle.Dep.Json _) -> "json"
         | Spindle.Dep.Body (Spindle.Dep.Stream _) -> "stream"
-        | Spindle.Dep.Custom { name; _ } -> name)
+        | Spindle.Dep.Custom { name; _ } -> name
+        | Spindle.Dep.Resource name -> "resource " ^ name)
       (Spindle.Dep.needs listed)
   in
   Alcotest.(check (list string))
     "in the order listed"
-    [ "query page"; "json"; "cookie session" ]
+    [ "query page"; "json"; "cookie session"; "resource database" ]
     names;
   Alcotest.(check bool) "and nothing else" false (Spindle.Dep.opaque listed);
   Alcotest.(check bool)
@@ -2213,39 +2219,29 @@ let test_a_compressed_answer_revalidates () =
 (* A limit is a constant written in source, so one that limits nothing, or
    everything, is refused where it is made rather than read as another. *)
 let test_a_limit_that_cannot_be_is_refused () =
-  let mono_clock = Eio_mock.Clock.Mono.make () in
   let refused name make =
     match make () with
     | (_ : Spindle.Rate.t) -> Alcotest.failf "%s was accepted" name
     | exception Invalid_argument m ->
         Alcotest.(check bool) (name ^ ", named") true (contains ~sub:name m)
   in
-  refused "limit" (fun () ->
-      Spindle.Rate.create ~mono_clock ~limit:0 ~per:Mtime.Span.s ());
+  refused "limit" (fun () -> Spindle.Rate.create ~limit:0 ~per:Mtime.Span.s ());
   refused "burst" (fun () ->
-      Spindle.Rate.create ~mono_clock ~limit:1 ~per:Mtime.Span.s ~burst:0 ());
-  refused "per" (fun () ->
-      Spindle.Rate.create ~mono_clock ~limit:1 ~per:Mtime.Span.zero ());
+      Spindle.Rate.create ~limit:1 ~per:Mtime.Span.s ~burst:0 ());
+  refused "per" (fun () -> Spindle.Rate.create ~limit:1 ~per:Mtime.Span.zero ());
   (* A period shorter than a nanosecond a call leaves none between two, so
      it would let everything through. *)
   refused "per" (fun () ->
-      Spindle.Rate.create ~mono_clock ~limit:1_000
-        ~per:(Mtime.Span.of_uint64_ns 999L)
-        ());
+      Spindle.Rate.create ~limit:1_000 ~per:(Mtime.Span.of_uint64_ns 999L) ());
   ignore
-    (Spindle.Rate.create ~mono_clock ~limit:1_000
-       ~per:(Mtime.Span.of_uint64_ns 1_000L)
-       ());
-  ignore
-    (Spindle.Rate.create ~mono_clock ~limit:1 ~per:Mtime.Span.ms ~burst:1 ())
+    (Spindle.Rate.create ~limit:1_000 ~per:(Mtime.Span.of_uint64_ns 1_000L) ());
+  ignore (Spindle.Rate.create ~limit:1 ~per:Mtime.Span.ms ~burst:1 ())
 
 let test_a_burst_is_its_own_figure () =
   let mono_clock = Eio_mock.Clock.Mono.make () in
-  let calls =
-    Spindle.Rate.create ~mono_clock ~limit:2 ~per:Mtime.Span.s ~burst:5 ()
-  in
+  let calls = Spindle.Rate.create ~limit:2 ~per:Mtime.Span.s ~burst:5 () in
   let a =
-    Spindle.Test.app
+    Spindle.Test.app ~mono_clock
       [
         Spindle.post
           Spindle.Path.(s "call")
@@ -2268,8 +2264,7 @@ let test_a_burst_is_its_own_figure () =
 (* A network hands an IPv6 client a /64, and its addresses rotate within
    it, so a limit by address counts the /64; IPv4's address is its own. *)
 let test_an_ipv6_client_is_counted_by_its_network () =
-  let mono_clock = Eio_mock.Clock.Mono.make () in
-  let calls = Spindle.Rate.create ~mono_clock ~limit:1 ~per:Mtime.Span.min () in
+  let calls = Spindle.Rate.create ~limit:1 ~per:Mtime.Span.min () in
   let a =
     Spindle.Test.app
       [
@@ -2293,9 +2288,7 @@ let test_an_ipv6_client_is_counted_by_its_network () =
 
 let test_a_limit_refuses_past_its_rate () =
   let mono_clock = Eio_mock.Clock.Mono.make () in
-  let sign_ins =
-    Spindle.Rate.create ~mono_clock ~limit:10 ~per:Mtime.Span.s ()
-  in
+  let sign_ins = Spindle.Rate.create ~limit:10 ~per:Mtime.Span.s () in
   let route =
     Spindle.post
       Spindle.Path.(s "sign-in")
@@ -2308,7 +2301,7 @@ let test_a_limit_refuses_past_its_rate () =
       Spindle.Returns.text
       (Spindle.Dep.return (Ok "open"))
   in
-  let a = Spindle.Test.app [ route; open_ ] in
+  let a = Spindle.Test.app ~mono_clock [ route; open_ ] in
   let call ?(peer = "10.0.0.1") () =
     Spindle.Test.call ~peer a `POST "/sign-in"
   in
@@ -2341,6 +2334,48 @@ let test_a_limit_refuses_past_its_rate () =
       Alcotest.(check bool)
         "and nowhere else" false
         (List.mem "429" (responses "/open" "get"))
+
+(* A limit is a value made once, at the top level, so it holds no counts of
+   its own: each app keeps its own, and two never share a key's. *)
+let once_a_minute = Spindle.Rate.create ~limit:1 ~per:Mtime.Span.min ()
+
+let limited_once_a_minute =
+  Spindle.post
+    Spindle.Path.(s "call")
+    Spindle.Returns.text
+    (let+ () = Spindle.Rate.limit once_a_minute ~key:Spindle.client in
+     Ok "in")
+
+let test_two_apps_count_apart () =
+  let first = Spindle.Test.app [ limited_once_a_minute ]
+  and second = Spindle.Test.app [ limited_once_a_minute ] in
+  let call a = (Spindle.Test.call a `POST "/call").status in
+  check_status "the first app's first call" 200 (call first);
+  check_status "and its second" 429 (call first);
+  check_status "the second app counts its own" 200 (call second);
+  check_status "and limits its own" 429 (call second)
+
+(* A server's limit is timed on the clock its app was started with, and
+   one never started has none to read: our fault, as an unread directory
+   is. *)
+let test_a_server_times_its_limit_on_its_monotonic_clock () =
+  Eio_main.run @@ fun env ->
+  let app () =
+    match Spindle.App.make [ limited_once_a_minute ] with
+    | Ok a -> a
+    | Error m -> Alcotest.fail m
+  in
+  let call a = (Spindle.Test.call a `POST "/call").status in
+  check_status "never started, our fault" 500 (call (app ()));
+  let mono_clock = Eio_mock.Clock.Mono.make () in
+  let a = app () in
+  (match Spindle.App.start a ~fs:(Eio.Stdenv.fs env) ~mono_clock with
+  | Ok () -> ()
+  | Error m -> Alcotest.failf "it did not start: %s" m);
+  check_status "the first call" 200 (call a);
+  check_status "the second at once" 429 (call a);
+  Eio_mock.Clock.Mono.set_time mono_clock (Mtime.of_uint64_ns 60_000_000_000L);
+  check_status "a minute on, one more" 200 (call a)
 
 (* ---------------------------------------------------------------- *)
 (* Tests that keep cookies and read a stream *)
@@ -6741,6 +6776,111 @@ let test_a_site_answers_by_its_three_rules () =
   check_status "HEAD is answered" 200 r.status;
   check_string "without the body" "" r.body
 
+(* Resources *)
+
+let notes =
+  Spindle.get
+    Spindle.Path.(s "notes")
+    Spindle.Returns.text
+    (let+ db = database in
+     Ok ("notes from " ^ db))
+
+let started ?resources routes =
+  Eio_main.run @@ fun env ->
+  match Spindle.App.make routes with
+  | Error m -> Alcotest.fail m
+  | Ok app ->
+      Result.map
+        (fun () -> app)
+        (Spindle.App.start ?resources app ~fs:(Eio.Stdenv.fs env)
+           ~mono_clock:(Eio.Stdenv.mono_clock env))
+
+let refused_at_start what ~sub ?resources routes =
+  match started ?resources routes with
+  | Ok _ -> Alcotest.failf "%s: started" what
+  | Error m ->
+      if not (contains ~sub m) then
+        Alcotest.failf "%s: %S does not say %S" what m sub
+
+(* A resource is what the program supplies at start, read like any other
+   input -- by the server, as App.start stored it, and by a test. *)
+let test_a_route_reads_the_resource_supplied () =
+  let resources = [ Spindle.Dep.resource database "the shelf" ] in
+  (match started ~resources [ notes ] with
+  | Error m -> Alcotest.failf "it did not start: %s" m
+  | Ok app ->
+      check_string "served" "notes from the shelf"
+        (Spindle.Test.call app `GET "/notes").body);
+  check_string "in a test" "notes from the shelf"
+    (Spindle.Test.call (Spindle.Test.app ~resources [ notes ]) `GET "/notes")
+      .body
+
+(* What a route reads can be listed, so a server missing a resource is
+   stopped before it listens, naming the route and the resource; and what
+   was supplied is checked too: a dependency of_resource did not make, or
+   one resource twice. *)
+let test_start_refuses_what_was_not_supplied () =
+  refused_at_start "nothing supplied" [ notes ]
+    ~sub:"GET /notes reads the resource database, which was not supplied";
+  refused_at_start "not a resource" [ notes ] ~sub:"Dep.of_resource"
+    ~resources:
+      [
+        Spindle.Dep.resource database "the shelf";
+        Spindle.Dep.resource (Spindle.Dep.map Fun.id database) "a copy";
+      ];
+  refused_at_start "twice" [ notes ] ~sub:"database"
+    ~resources:
+      [
+        Spindle.Dep.resource database "the shelf";
+        Spindle.Dep.resource database "another shelf";
+      ];
+  match
+    Spindle.Test.app
+      ~resources:[ Spindle.Dep.resource (Spindle.Dep.map Fun.id database) "" ]
+      [ notes ]
+  with
+  | _ -> Alcotest.fail "a test was given what is no resource"
+  | exception Invalid_argument m ->
+      Alcotest.(check bool)
+        "a test says so" true
+        (contains ~sub:"of_resource" m)
+
+(* A bind's reads are seen only as it runs, so start cannot find a
+   resource read there: unsupplied, it is our bug, a 500 that names it. *)
+let test_a_resource_behind_a_bind_is_found_when_it_runs () =
+  let route =
+    Spindle.get
+      Spindle.Path.(s "notes")
+      Spindle.Returns.text
+      (Spindle.Dep.bind Spindle.now (fun _ ->
+           let+ db = database in
+           Ok db))
+  in
+  match started [ route ] with
+  | Error m -> Alcotest.failf "it did not start: %s" m
+  | Ok app ->
+      let r = ref None in
+      let lines =
+        captured (fun () -> r := Some (Spindle.Test.call app `GET "/notes"))
+      in
+      (match !r with
+      | Some r -> check_status "our bug" 500 r.status
+      | None -> Alcotest.fail "no answer");
+      Alcotest.(check bool)
+        "the log names it" true
+        (List.exists (contains ~sub:"resource database") lines)
+
+(* A test supplies only what the routes it calls read; one that calls a
+   route reading a resource it was not given has a bug, said by name. *)
+let test_a_test_calling_for_a_resource_it_lacks_raises () =
+  let app = Spindle.Test.app [ notes; hello ] in
+  check_status "a route that reads none" 200
+    (Spindle.Test.call app `GET "/hello/ada").status;
+  match Spindle.Test.call app `GET "/notes" with
+  | _ -> Alcotest.fail "a missing resource answered"
+  | exception Invalid_argument m ->
+      Alcotest.(check bool) "naming it" true (contains ~sub:"database" m)
+
 (* A directory named by its path is read when the server starts --
    [App.start], which [Spindle.serve] calls -- so the route table stays a
    constant. One that cannot be read names its route; one never started is
@@ -6755,7 +6895,8 @@ let test_a_directory_is_read_when_the_server_starts () =
   let a = app [ Spindle.Static.directory dir ] in
   check_status "before it starts, our fault" 500
     (Spindle.Test.call a `GET "/").status;
-  (match Spindle.App.start a ~fs with
+  let mono_clock = Eio_mock.Clock.Mono.make () in
+  (match Spindle.App.start a ~fs ~mono_clock with
   | Ok () -> ()
   | Error m -> Alcotest.failf "it did not start: %s" m);
   check_string "started, its files" "FRONT DOOR"
@@ -6763,7 +6904,7 @@ let test_a_directory_is_read_when_the_server_starts () =
   (match
      Spindle.App.start
        (app [ Spindle.Static.directory (Filename.concat dir "nowhere") ])
-       ~fs
+       ~fs ~mono_clock
    with
   | Ok () -> Alcotest.fail "a missing directory started"
   | Error m ->
@@ -7218,7 +7359,10 @@ let test_a_directory_not_there_is_refused_at_start () =
   match Spindle.App.make [ Spindle.Files.directory "/nowhere/at/all" ] with
   | Error m -> Alcotest.fail m
   | Ok app -> (
-      match Spindle.App.start app ~fs:(Eio.Stdenv.fs env) with
+      match
+        Spindle.App.start app ~fs:(Eio.Stdenv.fs env)
+          ~mono_clock:(Eio.Stdenv.mono_clock env)
+      with
       | Ok () -> Alcotest.fail "a directory not there was started"
       | Error m ->
           Alcotest.(check bool)
@@ -9166,6 +9310,14 @@ let () =
             test_bind_after_the_body_reads_it;
           Alcotest.test_case "a dependency says what it reads" `Quick
             test_a_dependency_says_what_it_reads;
+          Alcotest.test_case "a route reads the resource supplied" `Quick
+            test_a_route_reads_the_resource_supplied;
+          Alcotest.test_case "start refuses what was not supplied" `Quick
+            test_start_refuses_what_was_not_supplied;
+          Alcotest.test_case "a resource behind a bind is found when it runs"
+            `Quick test_a_resource_behind_a_bind_is_found_when_it_runs;
+          Alcotest.test_case "a test calling for a resource it lacks raises"
+            `Quick test_a_test_calling_for_a_resource_it_lacks_raises;
           Alcotest.test_case "a dependency runs once per request" `Quick
             test_a_dependency_runs_once_per_request;
           Alcotest.test_case "uncached runs at every use" `Quick
@@ -9249,6 +9401,10 @@ let () =
             test_a_limit_refuses_past_its_rate;
           Alcotest.test_case "an IPv6 client is counted by its network" `Quick
             test_an_ipv6_client_is_counted_by_its_network;
+          Alcotest.test_case "two apps count apart" `Quick
+            test_two_apps_count_apart;
+          Alcotest.test_case "a server times its limit on its monotonic clock"
+            `Quick test_a_server_times_its_limit_on_its_monotonic_clock;
         ] );
       ( "compression",
         [

@@ -55,6 +55,7 @@ let need_to_string = function
   | Dep.Body (Dep.Json { description; examples = _ }) ->
       "body " ^ Wiretype.name description
   | Dep.Custom { name; doc = _ } -> name
+  | Dep.Resource name -> "resource " ^ name
 
 let statuses_to_string statuses =
   String.concat " or "

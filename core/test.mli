@@ -10,6 +10,8 @@ type response = {
 }
 
 val app :
+  ?resources:Dep.resource list ->
+  ?mono_clock:_ Eio.Time.Mono.t ->
   ?middleware:Middleware.t list ->
   ?codes:Refusal.Code.t list ->
   ?not_found:(Request.t -> Response.t) ->
@@ -21,14 +23,22 @@ val app :
   Route.t list ->
   App.t
 (** [app routes]: {!App.make}, for a test -- every argument its, of the same
-    name and default. Raises [Invalid_argument] with {!App.make}'s reason for a
-    table it refuses, as [Spindle.serve] does: a route table is a constant
-    written in source, and a test that made a bad one has nothing to do but
-    stop. A test of what {!App.make} refuses calls {!App.make}. It raises too
-    for a {!Static.directory} or {!Files.directory} route, which reads a
+    name and default -- given [resources] as {!App.start} is
+    ({!Dep.val-resource}), but only those the routes it calls read: {!call}
+    raises on a route that reads one it was not given. Its limits ({!Rate})
+    count from none, apart from any other app's, on [mono_clock]: one that never
+    moves unless given, so a test that waits out a limit gives
+    [Eio_mock.Clock.Mono.make ()] and moves it with
+    [Eio_mock.Clock.Mono.set_time]. Raises [Invalid_argument] with {!App.make}'s
+    reason for a table it refuses, as [Spindle.serve] does: a route table is a
+    constant written in source, and a test that made a bad one has nothing to do
+    but stop. A test of what {!App.make} refuses calls {!App.make}. It raises
+    too for a {!Static.directory} or {!Files.directory} route, which reads a
     directory when the server starts and a test has none: a test loads one with
     {!Static.load} and serves it with {!Static.route}, or serves one it opened
-    itself with {!Files.route}, as the message says. *)
+    itself with {!Files.route}, as the message says. And it raises for
+    [resources] {!App.start} refuses: one {!Dep.of_resource} did not make, or
+    one given twice. *)
 
 val call :
   ?now:Ptime.t ->
@@ -54,8 +64,9 @@ val call :
     is run to its end and its body collected; a takeover's body is empty, since
     there is no connection to hand it.
 
-    Raises [Invalid_argument] when the answer refused with a code that neither
-    the matched route, nor any of its inputs, nor the app's [codes], nor the
+    Raises [Invalid_argument] when the route read a resource {!app} was not
+    given, naming it, and when the answer refused with a code that neither the
+    matched route, nor any of its inputs, nor the app's [codes], nor the
     framework declares, or answered a status its route's
     {!Returns.json_response} or {!Returns.empty_response} does not list
     ({!App.answered}): a test that reaches that answer has found a bug, which

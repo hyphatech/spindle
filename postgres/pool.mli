@@ -135,7 +135,7 @@ val run :
     {[
     Eio_main.run @@ fun env ->
     Spindle_postgres.Pool.run env target @@ fun pool ->
-    Spindle.serve env (routes pool)
+    Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes
     ]}
 
     [target] is a connection string, a [postgres://] URL or a keyword list, read

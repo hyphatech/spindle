@@ -57,6 +57,10 @@ let test_a_document_is_printed_or_written () =
     "an OpenAPI document" true
     (contains ~sub:{|"openapi"|} printed.out
     && contains ~sub:"/hello" printed.out);
+  Alcotest.(check bool)
+    "a route reading a resource, which is no input" true
+    (contains ~sub:"/notes" printed.out
+    && not (contains ~sub:"database" printed.out));
   let zod = run [ "api"; "zod" ] in
   check_status "and the module" 0 zod.status;
   Alcotest.(check bool)

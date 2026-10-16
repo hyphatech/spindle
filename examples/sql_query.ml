@@ -21,13 +21,19 @@ let list_databases pool =
   |> Result.map_error Spindle_postgres.refusal
 (* --8<-- [end:query] *)
 
-let routes pool =
+(* --8<-- [start:routes] *)
+(* The pool, as the routes read it: supplied where the server starts. *)
+let db : Spindle_postgres.Pool.t Spindle.Dep.t =
+  Spindle.Dep.of_resource "database"
+
+let routes =
   [
     Spindle.get Spindle.Path.root
       (Spindle.Returns.json (Wiretype.list Wiretype.string))
-      (let+ () = Spindle.Dep.return () in
+      (let+ pool = db in
        list_databases pool);
   ]
+(* --8<-- [end:routes] *)
 
 (* --8<-- [start:pool] *)
 (* The pool makes every connection at once, so a database that refuses is a
@@ -36,5 +42,5 @@ let () =
   Spindle.Log.setup ();
   Eio_main.run @@ fun env ->
   Spindle_postgres.Pool.run env database @@ fun pool ->
-  Spindle.serve env (routes pool)
+  Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes
 (* --8<-- [end:pool] *)

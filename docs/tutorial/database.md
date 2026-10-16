@@ -41,14 +41,28 @@ each row. `Pool.exec` runs it on a connection borrowed from the pool, and
 --8<-- "sql_query.ml:query"
 ```
 
-Make the pool where the program starts, from a connection string, and give
-it to the routes:
+The routes read the pool as a dependency, `db`, made once with
+`Dep.of_resource`. It is a resource: the application's, not the request's,
+so the routes are a plain value that exists before any database does:
+
+```ocaml
+--8<-- "sql_query.ml:routes"
+```
+
+Make the pool where the program starts, from a connection string, and
+supply it to the server with `~resources`:
 
 ```ocaml
 let database = "postgres://postgres:postgres@localhost:5432/postgres"
 
 --8<-- "sql_query.ml:pool"
 ```
+
+A route that reads a resource the server was not given stops the program
+before it listens, naming the route and the resource. A test supplies its
+own pool, or none for a route that reads none
+([Testing](../guide/testing.md)), and the [command
+line](client-schemas.md) describes the routes with no database at all.
 
 Run it from the repository's root, then ask for `/`:
 
@@ -255,11 +269,12 @@ dependencies run first -- the body read, the cookies parsed -- and open the
 transaction inside the handler, around the database work alone:
 
 ```ocaml
-let add_item pool =
+let add_item =
   Spindle.post
     Spindle.Path.(s "orders" / order_id / s "items")
     (Spindle.Returns.json ~status:`Created item_json)
-    (let+ id = Spindle.param order_id
+    (let+ pool = db
+     and+ id = Spindle.param order_id
      and+ item = Spindle.json item_json in
      match
        Spindle_postgres.Pool.transaction pool (fun db ->

@@ -1,16 +1,20 @@
 (* Every instant is the monotonic clock's. *)
 
-type t = {
-  mono_clock : Eio.Time.Mono.ty Eio.Resource.t;
-  interval : Mtime.Span.t;  (** between two calls, at the sustained rate *)
-  tolerance : Mtime.Span.t;  (** how far ahead of now a key's instant may run *)
+(* One app's: a limit made at the top level is counted apart in each. *)
+type counts = {
   next_allowed : (string, Mtime.t) Hashtbl.t;
       (** GCRA's theoretical arrival time per key: the soonest it may call *)
   lock : Eio.Mutex.t;
   mutable writes_since_sweep : int;
 }
 
-let create ~mono_clock ~limit ~per ?(burst = limit) () =
+type t = {
+  interval : Mtime.Span.t;  (** between two calls, at the sustained rate *)
+  tolerance : Mtime.Span.t;  (** how far ahead of now a key's instant may run *)
+  counts : (counts * Mtime.t) Dep.t;  (** the app's, and its clock's now *)
+}
+
+let create ~limit ~per ?(burst = limit) () =
   let refuse what = invalid_arg ("Spindle.Rate.create: " ^ what) in
   if limit < 1 then refuse (Printf.sprintf "~limit:%d, below one" limit);
   if burst < 1 then refuse (Printf.sprintf "~burst:%d, below one" burst);
@@ -25,33 +29,35 @@ let create ~mono_clock ~limit ~per ?(burst = limit) () =
       (Printf.sprintf "~per, shorter than a nanosecond for each of ~limit:%d"
          limit);
   {
-    mono_clock :> Eio.Time.Mono.ty Eio.Resource.t;
     interval;
     tolerance = Mtime.Span.((burst - 1) * interval);
-    next_allowed = Hashtbl.create 64;
-    lock = Eio.Mutex.create ();
-    writes_since_sweep = 0;
+    counts =
+      Dep_repr.kept ~make:(fun () ->
+          {
+            next_allowed = Hashtbl.create 64;
+            lock = Eio.Mutex.create ();
+            writes_since_sweep = 0;
+          });
   }
 
 (* A sweep walks the whole table, so it is made once in many writes. *)
 let writes_per_sweep = 1000
 
 (* A key whose instant has passed is as good as never seen. *)
-let sweep t now =
+let sweep counts now =
   let passed =
     Hashtbl.fold
       (fun k at acc -> if Mtime.is_later at ~than:now then acc else k :: acc)
-      t.next_allowed []
+      counts.next_allowed []
   in
-  List.iter (Hashtbl.remove t.next_allowed) passed
+  List.iter (Hashtbl.remove counts.next_allowed) passed
 
 (* GCRA: a call passes while the key's instant is within the burst of now,
    and moves it on one interval. *)
-let check t key =
-  let now = Eio.Time.Mono.now t.mono_clock in
-  Eio.Mutex.use_rw ~protect:false t.lock (fun () ->
+let check t counts ~now key =
+  Eio.Mutex.use_rw ~protect:false counts.lock (fun () ->
       let at =
-        match Hashtbl.find_opt t.next_allowed key with
+        match Hashtbl.find_opt counts.next_allowed key with
         | Some at when Mtime.is_later at ~than:now -> at
         | Some _ | None -> now
       in
@@ -59,10 +65,11 @@ let check t key =
       if Mtime.Span.is_longer ahead ~than:t.tolerance then
         `Wait (Mtime.Span.abs_diff ahead t.tolerance)
       else (
-        Hashtbl.replace t.next_allowed key
+        Hashtbl.replace counts.next_allowed key
           (Option.value (Mtime.add_span at t.interval) ~default:Mtime.max_stamp);
-        t.writes_since_sweep <- t.writes_since_sweep + 1;
-        if t.writes_since_sweep mod writes_per_sweep = 0 then sweep t now;
+        counts.writes_since_sweep <- counts.writes_since_sweep + 1;
+        if counts.writes_since_sweep mod writes_per_sweep = 0 then
+          sweep counts now;
         `Pass))
 
 (* An IPv6 host makes its own address within its link's /64 (RFC 4862), and
@@ -83,8 +90,8 @@ let limit t ~key =
   Dep.join
     ~refuses:[ Refusal.Code.rate_limited ]
     (Dep.map
-       (fun k ->
-         match check t (counted k) with
+       (fun ((counts, now), k) ->
+         match check t counts ~now (counted k) with
          | `Pass -> Ok ()
          | `Wait span ->
              (* Whole seconds, rounded up, as [Retry-After] counts them. *)
@@ -96,4 +103,4 @@ let limit t ~key =
                        (Int64.unsigned_div
                           (Int64.add ns 999_999_999L)
                           1_000_000_000L))))
-       key)
+       (Dep.both t.counts key))

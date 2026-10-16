@@ -52,9 +52,15 @@ with
 ## Using a client inside a server
 
 Make it once, with `Spindle_client.create`, on the application's switch --
-never a request's, since the connections it keeps outlive any one request:
+never a request's, since the connections it keeps outlive any one request --
+and supply it to the routes as a
+[resource](../tutorial/dependencies.md#resources), which they read with
+`let+ client = upstream`:
 
 ```ocaml
+let upstream : Spindle_client.t Spindle.Dep.t =
+  Spindle.Dep.of_resource "upstream"
+
 let () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
@@ -62,7 +68,7 @@ let () =
     Spindle_client.create ~sw ~net:(Eio.Stdenv.net env)
       ~mono_clock:(Eio.Stdenv.mono_clock env) ()
   in
-  Spindle.serve env (routes client)
+  Spindle.serve env ~resources:[ Spindle.Dep.resource upstream client ] routes
 ```
 
 `create` and `run` take the same options:

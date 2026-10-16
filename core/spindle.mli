@@ -98,6 +98,7 @@ val serve :
   ?port:int ->
   ?host:string ->
   ?domains:int ->
+  ?resources:Dep.resource list ->
   ?middleware:Middleware.t list ->
   ?codes:Refusal.Code.t list ->
   ?not_found:(Request.t -> Response.t) ->
@@ -138,25 +139,30 @@ val serve :
     let () = Eio_main.run @@ fun env -> Spindle.serve env routes
     ]}
 
-    Each argument is {!App.make}'s or {!Server.run}'s, of the same name and
-    default, and these are its own: [port] is [8080]; [read_clock] reads [env]'s
-    clock ({!of_clock}); [stop] is {!Server.stop_on_signals}, so SIGTERM and
+    Each argument is {!App.make}'s, {!App.start}'s or {!Server.run}'s, of the
+    same name and default, and these are its own: [port] is [8080]; [read_clock]
+    reads [env]'s clock ({!of_clock}), and its limits ({!Rate}) are timed on
+    [env]'s monotonic clock; [stop] is {!Server.stop_on_signals}, so SIGTERM and
     SIGINT stop it cleanly, and a program that wants no handler passes a promise
     of its own; and [ready] prints the address it listens on to stdout. It opens
     a switch of its own for its own fibres, and leaves [Eio_main.run] to the
     program, which is where anything the routes need -- a pool, a client -- is
-    made first. Logging is the program's to set up ({!Log.setup}).
+    made first, and handed over as [resources] ({!Dep.of_resource}). Logging is
+    the program's to set up ({!Log.setup}).
 
     Raises [Invalid_argument] for routes {!App.make} refuses -- two that could
     answer one URL, a parameter named twice -- and for a limit or a proxy
     {!Server.run} refuses, before it listens: each is a constant written in
     source. What the routes read when the server starts -- a {!Static.directory}
     or a {!Files.directory} -- is read before it listens too ({!App.start}),
-    from [env]'s filesystem, and one that cannot be read ends the program: an
-    error in the log saying why, and exit code 1, since a server missing what it
-    was written to serve is not the one that was written. A program that builds
-    its routes at run time makes its app with {!App.make}, starts it with
-    {!App.start}, and serves it with {!Server.run}. *)
+    from [env]'s filesystem, and the [resources] they read are checked: a
+    directory that cannot be read, or a resource a route reads that [resources]
+    does not hold, ends the program: an error in the log saying why, and exit
+    code 1, since a server missing what it was written to serve is not the one
+    that was written. A program that builds its routes at run time makes its app
+    with {!App.make}, starts it with {!App.start}, and serves it with
+    {!Server.run}, starting it on [env]'s monotonic clock, which times its
+    limits ({!Rate}). *)
 
 val of_clock : _ Eio.Time.clock -> Ptime.t
 (** The clock's time now, {!Spindle_http.Instant.of_clock}: what [read_clock]

@@ -37,9 +37,12 @@ type t = {
   segments : Path_repr.segment list;
   run :
     Request.t ->
+    resources:Dep_repr.resources ->
     params:(string * string) list ->
     body:Body_repr.source ->
     Response.t;
+  resources_read : (int * string) list;
+      (** what it reads outside a [bind] ({!Dep_repr.resources_read}) *)
   start : start option;
 }
 
@@ -64,6 +67,7 @@ val matched : Request_repr.t -> info option
 val handle :
   t ->
   Request.t ->
+  resources:Dep_repr.resources ->
   params:(string * string) list ->
   body:Body_repr.source ->
   Response.t

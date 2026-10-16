@@ -78,12 +78,13 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   its range, or a trusted proxy that is no address), `Spindle.serve` and
   `Spindle.Test.app`, for a route table `App.make` refuses -- and `Test.app`
   for a `Static.directory` or a `Files.directory`, which a test has no
-  filesystem to read --, and
+  filesystem to read, or for resources `App.start` refuses --, and
   `Spindle.Openapi.docs`, for whatever `Spindle.Openapi.routes` refuses;
   and `Spindle.Test.call`, `Spindle.Test.events` and
-  `Spindle.Test.websocket`, which refuse an undeclared code, or a status its
-  route does not list -- and `Test.events` an event past its reader's
-  limit -- in a test and nowhere else. Nothing else raises
+  `Spindle.Test.websocket`, which refuse an undeclared code, a status its
+  route does not list, or a resource `Test.app` was not given -- and
+  `Test.events` an event past its reader's limit -- in a test and nowhere
+  else. Nothing else raises
   across a library boundary. Symptom: `rg -n -w invalid_arg -g '*.ml' http
   core client postgres cli` finds one this list does not name.
 - **A library prints and exits only where its `.mli` says, and these are

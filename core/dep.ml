@@ -30,6 +30,7 @@ let return v =
     listed = [];
     opaque = false;
     binds = false;
+    resource = None;
     compute = (fun _ -> Now (Ok v));
   }
 
@@ -100,6 +101,7 @@ let both a b =
     listed = a.listed @ b.listed;
     opaque = a.opaque || b.opaque;
     binds = a.binds || b.binds;
+    resource = None;
     compute =
       (fun c ->
         match exec a c with

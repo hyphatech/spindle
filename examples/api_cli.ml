@@ -22,11 +22,8 @@ let routes =
   ]
 
 (* --8<-- [start:app] *)
-(* The app is only described, so it is made from nothing a request would
-   need: no database, no service it calls. *)
-let app _env ~sw:_ = Spindle.App.make routes
-
+(* The app is only described, never started, so a resource its routes read
+   -- a pool, a client -- need not exist. *)
 let () =
-  Eio_main.run @@ fun env ->
-  Spindle_cli.run ~name:"notes" ~title:"Notes" ~app env
+  Spindle_cli.run ~name:"notes" ~title:"Notes" ~app:(Spindle.App.make routes) ()
 (* --8<-- [end:app] *)

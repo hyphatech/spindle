@@ -26,6 +26,17 @@ let test_echo () =
   `Files.directory` route: load the files with `Static.load` and serve them
   with `Static.route`, or serve a directory the test opened with
   `Files.route`, instead.
+- `Test.app ~resources` supplies the
+  [resources](../tutorial/dependencies.md#resources) the routes read, as the
+  server's `~resources` does: a test's own pool, say,
+  `Spindle.Test.app ~resources:[ Spindle.Dep.resource db test_pool ] routes`.
+  It needs only those the routes it calls read; calling one that reads a
+  resource it was not given raises `Invalid_argument`, naming it.
+- `Test.app ~mono_clock` is the clock its
+  [rate limits](rate-limits.md) are timed on: by default one that never
+  moves. Give it `Eio_mock.Clock.Mono.make ()` and move it with
+  `Eio_mock.Clock.Mono.set_time` to wait one out. Each app counts its own,
+  so one test's calls never count against another's.
 - `Test.call app meth target` takes `?now` (a `Ptime.t`, default `Ptime.epoch`),
   `?peer` (default `127.0.0.1`), `?headers` and `?body`.
 - To test what a route sees behind a proxy, pass `~proxied:true`: the peer

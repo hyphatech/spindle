@@ -917,6 +917,37 @@ let test_a_value_outside_its_bounds_is_the_route_s_bug () =
          contains ~sub:{|"level":"error"|} l && contains ~sub:"out_of_bounds" l)
        !lines)
 
+(* A resource is the program's, supplied at start, and no request carries
+   it: a route that reads one is described as the route that does not. *)
+let test_a_resource_is_no_input () =
+  let database : string Spindle.Dep.t = Spindle.Dep.of_resource "database" in
+  let app reads =
+    Spindle.Test.app
+      [
+        Spindle.get ~summary:"One order"
+          Spindle.Path.(s "orders" / order_id)
+          Spindle.Returns.text reads;
+      ]
+  in
+  let plain =
+    app
+      (let+ _ = Spindle.param order_id in
+       Ok "")
+  and reading =
+    app
+      (let+ _ = Spindle.param order_id and+ _ = database in
+       Ok "")
+  in
+  let printed a =
+    match
+      ( Spindle.Openapi.document ~title:"Orders" ~version:"1" a,
+        Spindle.Zod.module_ a )
+    with
+    | Ok document, Ok schemas -> document ^ schemas
+    | Error e, _ | _, Error e -> Alcotest.fail (String.concat "; " e)
+  in
+  Alcotest.(check string) "the same" (printed plain) (printed reading)
+
 let () =
   Alcotest.run "openapi"
     [
@@ -957,6 +988,8 @@ let () =
             test_nothing_is_said_as_its_status;
           Alcotest.test_case "a body refused for its type says 415" `Quick
             test_a_body_refused_for_its_type_says_415;
+          Alcotest.test_case "a resource is no input" `Quick
+            test_a_resource_is_no_input;
         ] );
       ( "the module",
         [

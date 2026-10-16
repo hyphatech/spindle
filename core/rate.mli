@@ -2,7 +2,7 @@
     request to it.
 
     {[
-    let sign_ins = Spindle.Rate.create ~mono_clock ~limit:10 ~per:Mtime.Span.s ()
+    let sign_ins = Spindle.Rate.create ~limit:10 ~per:Mtime.Span.s ()
 
     (let+ () = Spindle.Rate.limit sign_ins ~key:Spindle.client and+ ... in ...)
     ]}
@@ -15,21 +15,20 @@
     {b It is GCRA}: one instant per key, the soonest it may call again, so a
     check is a comparison and a write, exact, with bursts. The table is behind a
     lock held for that alone, and a key whose instant has passed is dropped
-    every thousand writes, so it holds only keys that are limited. Durations are
-    the monotonic clock's, which a wall clock that jumps cannot move; a test
-    gives it [Eio_mock]'s. It is one process's. Behind a proxy, a key that is
-    the client's address is the one [trusted_proxies] vouches for
+    every thousand writes, so it holds only keys that are limited.
+
+    {b A limit is a value, and its counts are its app's}: one made at the top
+    level holds none, and each app that serves it counts its own, so two apps --
+    two servers, two tests -- never share a key's. Durations are the app's
+    monotonic clock's, which a wall clock that jumps cannot move: the one
+    {!App.start} is given, which {!Spindle.serve} gives the environment's, or
+    {!Test.app}'s. Counts are one process's. Behind a proxy, a key that is the
+    client's address is the one [trusted_proxies] vouches for
     ({!Spindle.client}). *)
 
 type t
 
-val create :
-  mono_clock:_ Eio.Time.Mono.t ->
-  limit:int ->
-  per:Mtime.Span.t ->
-  ?burst:int ->
-  unit ->
-  t
+val create : limit:int -> per:Mtime.Span.t -> ?burst:int -> unit -> t
 (** [limit] calls every [per], up to [burst] ([limit]) of them at once. Raises
     [Invalid_argument] for a [limit] or a [burst] below one, or a [per] shorter
     than [limit] nanoseconds, which leaves no time between two calls: each would

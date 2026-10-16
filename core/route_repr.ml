@@ -36,9 +36,12 @@ type t = {
   segments : Path_repr.segment list;
   run :
     Request.t ->
+    resources:Dep_repr.resources ->
     params:(string * string) list ->
     body:Body_repr.source ->
     Response.t;
+  resources_read : (int * string) list;
+      (** what it reads outside a [bind] ({!Dep_repr.resources_read}) *)
   start : start option;
 }
 
@@ -52,7 +55,7 @@ let matched req =
   | Some (Matched info) -> Some info
   | Some _ | None -> None
 
-let handle t req ~params ~body = t.run req ~params ~body
+let handle t req ~resources ~params ~body = t.run req ~resources ~params ~body
 
 (* ------------------------------------------------------------------ *)
 (* Making one: [Spindle.get] and its siblings are these *)
@@ -83,7 +86,7 @@ let input_key = function
   | Dep.Cookie i -> Some ("the cookie", i.name)
   | Dep.Field i -> Some ("the form's field", i.name)
   | Dep.File f -> Some ("the form's field", f.name)
-  | Dep.Path _ | Dep.Body _ | Dep.Custom _ -> None
+  | Dep.Path _ | Dep.Body _ | Dep.Custom _ | Dep.Resource _ -> None
 
 let same_shape a b =
   match (a, b) with
@@ -153,7 +156,7 @@ let merge_need a b =
   | Dep.File a, Dep.File b when Bool.equal a.many b.many ->
       Some (Dep.File { a with required = a.required || b.required })
   | ( ( Dep.Query _ | Dep.Header _ | Dep.Cookie _ | Dep.Field _ | Dep.File _
-      | Dep.Path _ | Dep.Body _ | Dep.Custom _ ),
+      | Dep.Path _ | Dep.Body _ | Dep.Custom _ | Dep.Resource _ ),
       _ ) ->
       None
 
@@ -183,7 +186,7 @@ let reads_inputs (i : info) =
          | Dep.Query _ | Dep.Header _ | Dep.Cookie _ | Dep.Field _ | Dep.File _
          | Dep.Body _ ->
              true
-         | Dep.Path _ | Dep.Custom _ -> false)
+         | Dep.Path _ | Dep.Custom _ | Dep.Resource _ -> false)
        i.needs
 
 let framework_codes (i : info) =
@@ -236,13 +239,16 @@ let make meth ?(refuses = []) ?summary ?doc ?tags ?meta path returns inputs =
       };
     segments;
     run =
-      (fun req ~params ~body ->
+      (fun req ~resources ~params ~body ->
         let outgoing = Dep_repr.outgoing pattern in
         let response =
           match Returns_repr.upgrade returns req with
           | Error refusal -> Response.refusal refusal
           | Ok upgrade -> (
-              match Dep_repr.run inputs ~table req ~params ~outgoing ~body with
+              match
+                Dep_repr.run inputs ~table ~resources req ~params ~outgoing
+                  ~body
+              with
               | Error refusal -> Response.refusal refusal
               | Ok r ->
                   Returns_repr.respond returns ~pattern ~path:(Request.path req)
@@ -251,6 +257,7 @@ let make meth ?(refuses = []) ?summary ?doc ?tags ?meta path returns inputs =
         in
         outgoing.sent <- true;
         response);
+    resources_read = Dep_repr.resources_read inputs;
     start = None;
   }
 

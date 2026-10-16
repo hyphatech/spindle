@@ -230,8 +230,8 @@ let until = Spindle_http.Instant.until
 
 (* A route table [App.make] refuses is a constant in source, so it raises:
    the program ends before it listens, saying why. *)
-let serve ?(port = 8080) ?host ?domains ?middleware ?codes ?not_found ?cors
-    ?compress ?check_origin ?trusted_origins ?trailing_slash ?read_clock
+let serve ?(port = 8080) ?host ?domains ?resources ?middleware ?codes ?not_found
+    ?cors ?compress ?check_origin ?trusted_origins ?trailing_slash ?read_clock
     ?max_body ?max_header_bytes ?head_timeout ?idle_timeout ?body_timeout
     ?min_body_rate ?send_timeout ?discard_limit ?linger ?body_budget
     ?trusted_proxies ?proxy_header ?backlog ?max_connections ?stop ?drain
@@ -245,7 +245,10 @@ let serve ?(port = 8080) ?host ?domains ?middleware ?codes ?not_found ?cors
     | Error m -> invalid_arg ("Spindle.serve: " ^ m)
   in
   (* The exit status is what an orchestrator sees; the reason is logged. *)
-  (match App.start app ~fs:(Eio.Stdenv.fs env) with
+  (match
+     App.start ?resources app ~fs:(Eio.Stdenv.fs env)
+       ~mono_clock:(Eio.Stdenv.mono_clock env)
+   with
   | Ok () -> ()
   | Error m ->
       L.err (fun f -> f "cannot start: %s" m);

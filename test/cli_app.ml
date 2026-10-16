@@ -1,7 +1,10 @@
-(* An application's command line, for test_cli to run: two routes, one of
-   them read as opaque, so --strict has something to refuse. *)
+(* An application's command line, for test_cli to run: three routes, one of
+   them read as opaque, so --strict has something to refuse, and one reading
+   a resource nothing supplies, since a description needs none. *)
 
 open Spindle.Syntax
+
+let database : string Spindle.Dep.t = Spindle.Dep.of_resource "database"
 
 let routes =
   [
@@ -14,8 +17,11 @@ let routes =
       Spindle.Returns.response
       (let+ _ = Spindle.request in
        Ok (Spindle.Response.make ""));
+    Spindle.get
+      Spindle.Path.(s "notes")
+      Spindle.Returns.text
+      (let+ db = database in
+       Ok db);
   ]
 
-let () =
-  Eio_main.run @@ fun env ->
-  Spindle_cli.run ~name:"shop" ~app:(fun _ ~sw:_ -> Spindle.App.make routes) env
+let () = Spindle_cli.run ~name:"shop" ~app:(Spindle.App.make routes) ()

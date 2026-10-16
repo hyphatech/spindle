@@ -36,6 +36,7 @@ type need =
   | File of file
   | Body of body
   | Custom of { name : string; doc : string }
+  | Resource of string
 
 (** Before the body is read: the answer, or what to do with the body once the
     first stage refused nothing. *)
@@ -59,11 +60,43 @@ val outgoing : string -> outgoing
 type table
 (** The answers a request's dependencies have given, by identity. *)
 
+(** A resource's value, by the identity of the dependency that reads it. *)
+type binding =
+  | Binding : { id : 'a Type.Id.t; name : string; value : 'a } -> binding
+
+(** What {!Dep.val-resource} makes: a binding, or a dependency {!of_resource}
+    did not make, refused where it is supplied. *)
+type resource = Supplied of binding | Not_a_resource
+
+(** What a read of a resource nobody supplied does. *)
+type unsupplied =
+  | Refused
+      (** a server's: {!Refusal.internal}, naming it, since [App.start] found
+          every resource it could see and this one was read inside a [bind] *)
+  | Raised  (** a test's: {!Unsupplied}, for [Test.call] to raise on *)
+
+type kept
+(** What an app keeps from one request to the next, for {!val-kept}. *)
+
+type resources = {
+  supplied : binding list;
+  unsupplied : unsupplied;
+  mono_clock : Eio.Time.Mono.ty Eio.Resource.t option;
+      (** the app's, once it is started *)
+  kept : kept;
+}
+(** What an app holds for its requests: the resources supplied, its monotonic
+    clock, and what it keeps. *)
+
+exception Unsupplied of string
+(** A test read the resource of that name, which it was not given. *)
+
 type context = {
   request : Request.t;
   params : (string * string) list;  (** percent-decoded *)
   outgoing : outgoing;
   table : table option;  (** only for a route that reads something twice *)
+  resources : resources;
 }
 
 type credential = { scheme : string; doc : string option; reads : need list }
@@ -86,6 +119,8 @@ type 'a t = {
           read *)
   opaque : bool;
   binds : bool;  (** holds a [bind], whose reads are known only as it runs *)
+  resource : string option;
+      (** the name it was made with, by {!of_resource} and nothing else *)
   compute : context -> 'a stage;
       (** what it does, before any answer is shared *)
 }
@@ -99,6 +134,10 @@ val needs : 'a t -> need list
 
 val codes : 'a t -> Refusal.Code.t list
 val credentials : 'a t -> credential list
+
+val resources_read : 'a t -> (int * string) list
+(** The resources it reads outside a [bind], each once: the identity of the
+    dependency that reads it, and its name. *)
 
 val needs_table : 'a t -> bool
 (** Whether a route needs answers shared: an identity read twice, or a [bind]
@@ -115,9 +154,38 @@ val make :
   'a t
 (** A dependency of a new identity, listed after what it is made of. *)
 
+val of_resource : string -> 'a t
+(** As {!Dep.of_resource}. *)
+
+val resource : 'a t -> 'a -> resource
+(** As {!Dep.val-resource}. *)
+
+val unstarted : unit -> resources
+(** An app's before it is started: no resource, no clock, nothing kept. *)
+
+val supply :
+  resource list ->
+  unsupplied:unsupplied ->
+  mono_clock:_ Eio.Time.Mono.t ->
+  (resources, string) result
+(** The resources, timed on [mono_clock] and keeping nothing yet, or a sentence
+    saying why not: one {!Dep.val-resource} was given a dependency
+    {!of_resource} did not make, or one resource is supplied twice. *)
+
+val kept : make:(unit -> 'a) -> ('a * Mtime.t) t
+(** The value an app keeps for this dependency from one request to the next --
+    made by [make] the first time one of its requests reads it, so every app has
+    its own -- and the app's monotonic clock as it is read. Refused with
+    {!Refusal.internal} in an app never started, which has no clock. [make] runs
+    under a lock, so it does no IO. *)
+
+val is_supplied : resources -> int -> bool
+(** Whether the resource read by that identity is among them. *)
+
 val run :
   'a t ->
   table:bool ->
+  resources:resources ->
   Request.t ->
   params:(string * string) list ->
   outgoing:outgoing ->

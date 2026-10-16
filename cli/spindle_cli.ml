@@ -1,15 +1,5 @@
 let ( let* ) = Result.bind
 
-type app =
-  Eio_unix.Stdenv.base -> sw:Eio.Switch.t -> (Spindle.App.t, string) result
-
-(* Made on a switch of its own and only described; no request reaches
-   it. *)
-let with_app env (app : app) f =
-  Eio.Switch.run @@ fun sw ->
-  let* a = app env ~sw in
-  f a
-
 let generated ~title = function
   | `Openapi -> fun a -> Spindle.Openapi.document ~title a
   | `Zod ->
@@ -37,47 +27,44 @@ let write_or_print output text =
           Ok ()
       | exception Sys_error m -> Error m)
 
-let generate env app ~title ~output what =
-  with_app env app (fun a ->
-      let* text =
-        Result.map_error (String.concat "\n") (generated ~title what a)
-      in
-      write_or_print output text)
+let generate app ~title ~output what =
+  let* a = app in
+  let* text = Result.map_error (String.concat "\n") (generated ~title what a) in
+  write_or_print output text
 
 (* Loose descriptions are always reported, and fail only with [strict]. *)
-let check env app ~title ~openapi ~zod ~strict =
-  with_app env app (fun a ->
-      let matches_committed what path =
-        let* text =
-          Result.map_error (String.concat "\n") (generated ~title what a)
-        in
-        match In_channel.with_open_bin path In_channel.input_all with
-        | committed when String.equal committed text -> Ok ()
-        | _ ->
-            Error
-              (Printf.sprintf
-                 "%s is not what the routes make: generate it again" path)
-        | exception Sys_error _ -> Error (path ^ " is missing: generate it")
-      in
-      let loose = Spindle.Openapi.report a in
-      List.iter (fun l -> prerr_endline ("loose: " ^ l)) loose;
-      (* Each file is checked, so one run names every file to generate. *)
-      let stale =
-        List.filter_map
-          (fun (what, path) ->
-            Result.fold
-              ~ok:(fun () -> None)
-              ~error:Option.some
-              (matches_committed what path))
-          [ (`Openapi, openapi); (`Zod, zod) ]
-      in
-      match (stale, strict, loose) with
-      | _ :: _, _, _ -> Error (String.concat "\n" stale)
-      | [], true, _ :: _ ->
-          Error
-            (Printf.sprintf "%d places are described loosely"
-               (List.length loose))
-      | [], true, [] | [], false, _ -> Ok ())
+let check app ~title ~openapi ~zod ~strict =
+  let* a = app in
+  let matches_committed what path =
+    let* text =
+      Result.map_error (String.concat "\n") (generated ~title what a)
+    in
+    match In_channel.with_open_bin path In_channel.input_all with
+    | committed when String.equal committed text -> Ok ()
+    | _ ->
+        Error
+          (Printf.sprintf "%s is not what the routes make: generate it again"
+             path)
+    | exception Sys_error _ -> Error (path ^ " is missing: generate it")
+  in
+  let loose = Spindle.Openapi.report a in
+  List.iter (fun l -> prerr_endline ("loose: " ^ l)) loose;
+  (* Each file is checked, so one run names every file to generate. *)
+  let stale =
+    List.filter_map
+      (fun (what, path) ->
+        Result.fold
+          ~ok:(fun () -> None)
+          ~error:Option.some
+          (matches_committed what path))
+      [ (`Openapi, openapi); (`Zod, zod) ]
+  in
+  match (stale, strict, loose) with
+  | _ :: _, _, _ -> Error (String.concat "\n" stale)
+  | [], true, _ :: _ ->
+      Error
+        (Printf.sprintf "%d places are described loosely" (List.length loose))
+  | [], true, [] | [], false, _ -> Ok ()
 
 (* ------------------------------------------------------------------ *)
 (* The command line *)
@@ -106,7 +93,7 @@ let exits =
     Cmd.Exit.info Cmd.Exit.internal_error ~doc:"on unexpected internal errors.";
   ]
 
-let run ~name ?(title = name) ~app:make env =
+let run ~name ?(title = name) ~app () =
   let output =
     Arg.value
     @@ Arg.opt (Arg.some Arg.string) None
@@ -125,13 +112,13 @@ let run ~name ?(title = name) ~app:make env =
   in
   let write what =
     let+ output = output in
-    exit_code (generate env make ~title ~output what)
+    exit_code (generate app ~title ~output what)
   in
   let check =
     let+ openapi = file "openapi" ~doc:"The committed document."
     and+ zod = file "zod" ~doc:"The committed module."
     and+ strict = strict in
-    exit_code (check env make ~title ~openapi ~zod ~strict)
+    exit_code (check app ~title ~openapi ~zod ~strict)
   in
   let api =
     Cmd.group

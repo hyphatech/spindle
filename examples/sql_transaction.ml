@@ -45,9 +45,12 @@ let claim pool name ~now =
 
 let name = Spindle.Path.str "name"
 
+let db : Spindle_postgres.Pool.t Spindle.Dep.t =
+  Spindle.Dep.of_resource "database"
+
 (* Every branch returns the status it reached, and the route lists each with
    when it happens, which is what the API's document says of it. *)
-let routes pool =
+let routes =
   [
     Spindle.put ~summary:"Claim a name"
       Spindle.Path.(s "names" / name)
@@ -57,7 +60,7 @@ let routes pool =
              (`Created, "The name was free, and is now claimed.");
              (`OK, "The name was claimed already.");
            ])
-      (let+ name = Spindle.param name and+ now = Spindle.now in
+      (let+ pool = db and+ name = Spindle.param name and+ now = Spindle.now in
        claim pool name ~now);
   ]
 
@@ -67,7 +70,8 @@ let () =
   Spindle_postgres.Pool.run env database @@ fun pool ->
   (* --8<-- [start:log] *)
   match Spindle_postgres.Pool.exec pool create_names () with
-  | Ok () -> Spindle.serve env (routes pool)
+  | Ok () ->
+      Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes
   | Error e ->
       Logs.err (fun m ->
           m "could not create the table: %s"

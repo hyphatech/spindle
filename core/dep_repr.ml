@@ -50,6 +50,7 @@ type need =
   | File of file
   | Body of body
   | Custom of { name : string; doc : string }
+  | Resource of string
 
 (* Before the body is read: the answer, or what to do with the body once the
    first stage refused nothing. *)
@@ -79,6 +80,33 @@ type 'a answer =
 type entry = Entry : 'a Type.Id.t * 'a answer -> entry
 type table = (int, entry) Hashtbl.t
 
+(* A resource's value, by the identity of the dependency that reads it. *)
+type binding =
+  | Binding : { id : 'a Type.Id.t; name : string; value : 'a } -> binding
+
+type resource = Supplied of binding | Not_a_resource
+
+(* A server's resources are every one its routes list, which App.start
+   checked, so one read without being supplied was read inside a bind: a
+   500 that names it. A test is given only the ones it calls for, so such a
+   read is the test's bug, which Test.call raises on. *)
+type unsupplied = Refused | Raised
+
+(* What an app keeps from one request to the next for a dependency, by the
+   dependency's identity: made the first time one of its requests asks. *)
+type kept_value = Kept : 'a Type.Id.t * 'a -> kept_value
+type kept = { lock : Mutex.t; values : (int, kept_value) Hashtbl.t }
+
+type resources = {
+  supplied : binding list;
+  unsupplied : unsupplied;
+  mono_clock : Eio.Time.Mono.ty Eio.Resource.t option;
+      (** the app's, once it is started *)
+  kept : kept;
+}
+
+exception Unsupplied of string
+
 (* [params] are percent-decoded. [table] exists only for a route that reads
    something twice. *)
 type context = {
@@ -86,6 +114,7 @@ type context = {
   params : (string * string) list;
   outgoing : outgoing;
   table : table option;
+  resources : resources;
 }
 
 type credential = { scheme : string; doc : string option; reads : need list }
@@ -107,6 +136,8 @@ type 'a t = {
           read *)
   opaque : bool;
   binds : bool;  (** holds a [bind], whose reads are known only as it runs *)
+  resource : string option;
+      (** the name it was made with, by [of_resource] and nothing else *)
   compute : context -> 'a stage;
       (** what it does, before any answer is shared *)
 }
@@ -164,6 +195,18 @@ let codes d = List.concat_map (fun l -> l.codes) (first_listings d.listed)
 let credentials d =
   List.concat_map (fun l -> l.credentials) (first_listings d.listed)
 
+let resources_read d =
+  List.concat_map
+    (fun l ->
+      List.filter_map
+        (function
+          | Resource name -> Some (l.owner, name)
+          | Path _ | Query _ | Header _ | Cookie _ | Field _ | File _ | Body _
+          | Custom _ ->
+              None)
+        l.needs)
+    (first_listings d.listed)
+
 (* Only when an identity is read twice, or a [bind] may read one again: any
    other route allocates nothing for sharing. *)
 let needs_table d =
@@ -178,14 +221,134 @@ let make ?(inside = []) ?(needs = []) ?(codes = []) ?(credentials = [])
     listed = inside @ [ { owner = Type.Id.uid id; needs; codes; credentials } ];
     opaque;
     binds;
+    resource = None;
     compute;
   }
 
+let find_resource (type a) (id : a Type.Id.t) resources : a option =
+  let value_of (type b) (b_id : b Type.Id.t) (value : b) : a option =
+    match Type.Id.provably_equal id b_id with
+    | Some Type.Equal -> Some value
+    | None -> None
+  in
+  List.find_map (fun (Binding b) -> value_of b.id b.value) resources.supplied
+
+(* Read in the first stage, as a header is. *)
+let of_resource name =
+  let id = Type.Id.make () in
+  {
+    key = Some { id; cached = true };
+    listed =
+      [
+        {
+          owner = Type.Id.uid id;
+          needs = [ Resource name ];
+          codes = [];
+          credentials = [];
+        };
+      ];
+    opaque = false;
+    binds = false;
+    resource = Some name;
+    compute =
+      (fun c ->
+        match (find_resource id c.resources, c.resources.unsupplied) with
+        | Some v, _ -> Now (Ok v)
+        | None, Raised -> raise (Unsupplied name)
+        | None, Refused ->
+            Now
+              (Error
+                 (Refusal.internal
+                    ~detail:
+                      (Printf.sprintf
+                         "a dependency read the resource %s, which was not \
+                          supplied: Spindle.serve's ~resources supplies it, as \
+                          App.start's does"
+                         name))));
+  }
+
+(* A misuse is refused where the resources are supplied, by [supply]. *)
+let resource (type a) (d : a t) (value : a) =
+  match (d.key, d.resource) with
+  | Some { id; _ }, Some name -> Supplied (Binding { id; name; value })
+  | (Some _ | None), (Some _ | None) -> Not_a_resource
+
+let kept_nothing () = { lock = Mutex.create (); values = Hashtbl.create 8 }
+
+let unstarted () =
+  {
+    supplied = [];
+    unsupplied = Refused;
+    mono_clock = None;
+    kept = kept_nothing ();
+  }
+
+let supply resources ~unsupplied ~mono_clock =
+  let rec check supplied = function
+    | [] ->
+        Ok
+          {
+            supplied = List.rev supplied;
+            unsupplied;
+            mono_clock = Some (mono_clock :> Eio.Time.Mono.ty Eio.Resource.t);
+            kept = kept_nothing ();
+          }
+    | Not_a_resource :: _ ->
+        Error
+          "Dep.resource was given a dependency Dep.of_resource did not make, \
+           which no route can read as a resource"
+    | Supplied (Binding b as binding) :: rest ->
+        if
+          List.exists
+            (fun (Binding s) -> Type.Id.uid s.id = Type.Id.uid b.id)
+            supplied
+        then Error (Printf.sprintf "the resource %s is supplied twice" b.name)
+        else check (binding :: supplied) rest
+  in
+  check [] resources
+
+(* An identity of its own is what each app keeps its value by, so one made
+   at the top level is a value of its own in every app. *)
+let kept (type a) ~make:(fresh : unit -> a) =
+  let id : a Type.Id.t = Type.Id.make () in
+  let find_or_make kept =
+    Mutex.protect kept.lock (fun () ->
+        let found : a option =
+          match Hashtbl.find_opt kept.values (Type.Id.uid id) with
+          | Some (Kept (k_id, value)) -> (
+              match Type.Id.provably_equal id k_id with
+              | Some Type.Equal -> Some value
+              | None -> None)
+          | None -> None
+        in
+        match found with
+        | Some value -> value
+        | None ->
+            let value = fresh () in
+            Hashtbl.replace kept.values (Type.Id.uid id) (Kept (id, value));
+            value)
+  in
+  make (fun c ->
+      match c.resources.mono_clock with
+      | Some clock ->
+          Now (Ok (find_or_make c.resources.kept, Eio.Time.Mono.now clock))
+      | None ->
+          Now
+            (Error
+               (Refusal.internal
+                  ~detail:
+                    "a limit was read before its app was started: App.start \
+                     gives the app its monotonic clock, and Spindle.serve \
+                     calls that")))
+
+let is_supplied resources owner =
+  List.exists (fun (Binding b) -> Type.Id.uid b.id = owner) resources.supplied
+
 (* Once the handler returns the body is the loop's again, so a read left
    behind reads nothing. *)
-let run d ~table request ~params ~outgoing ~body =
+let run d ~table ~resources request ~params ~outgoing ~body =
   let table = if table then Some (Hashtbl.create 8) else None in
-  match exec d { request; params; outgoing; table } with
+  match exec d { request; params; outgoing; table; resources } with
   | Now v -> v
   | Later k ->
       let held = Body_repr.hold body ~pattern:outgoing.pattern in
