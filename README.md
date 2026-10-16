@@ -31,10 +31,16 @@ opam repo add hypha https://github.com/hyphatech/opam-repository.git
 opam install spindle spindle-postgres spindle-cli
 ```
 
+Add to your `bin/dune`:
+
 ```lisp
-(libraries spindle eio_main)
-(preprocess (pps ppx_wiretype))
+(executable
+ (name main)
+ (libraries spindle eio_main)
+ (preprocess (pps ppx_wiretype)))
 ```
+
+A whole project: [your first app](https://hyphatech.github.io/spindle/tutorial/first-app/).
 
 ## Example
 

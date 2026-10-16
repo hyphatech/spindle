@@ -100,4 +100,5 @@ support of your editor:
 opam install ocaml-lsp-server
 ```
 
-Next: [your first app](tutorial/first-app.md).
+A program names the libraries it uses in its `dune` file;
+[your first app](tutorial/first-app.md) writes one, next.
