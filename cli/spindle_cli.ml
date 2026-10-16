@@ -14,7 +14,7 @@ let generated ~title = function
   | `Openapi -> fun a -> Spindle.Openapi.document ~title a
   | `Zod ->
       fun a ->
-        Spindle.Zod.module_
+        Spindle.Zod.schemas
           ~header:
             (Printf.sprintf
                "Generated from %s's routes. Do not edit: change the routes, \

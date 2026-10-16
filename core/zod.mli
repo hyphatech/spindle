@@ -9,6 +9,6 @@
     what each reads as a body and answers -- named by method and pattern. The
     module imports ["zod/mini"], whose functions tree-shake. *)
 
-val module_ : ?header:string -> App.t -> (string, string list) result
+val schemas : ?header:string -> App.t -> (string, string list) result
 (** [header] is the comment the module opens with -- what wrote it, and how to
     write it again. [Error] as {!Openapi.document}'s. *)

@@ -80,7 +80,7 @@ let route_entry (r : D.route) =
        (Spindle_http.Meth.to_string r.info.meth ^ " " ^ r.info.pattern))
     body answer
 
-let module_ ?(header = "Generated from the server's routes. Do not edit.") app =
+let schemas ?(header = "Generated from the server's routes. Do not edit.") app =
   let d = D.of_app app in
   match d.errors with
   | _ :: _ -> Error d.errors

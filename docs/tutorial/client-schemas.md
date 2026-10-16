@@ -174,7 +174,7 @@ check-wire: ## fail when either is not what the routes make
 The command line calls one function you can call yourself:
 
 ```ocaml
-Spindle.Zod.module_ app   (* TypeScript: zod/mini *)
+Spindle.Zod.schemas app   (* TypeScript: zod/mini *)
 ```
 
 It answers a `result`; its `Error` names two different types described

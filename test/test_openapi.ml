@@ -473,7 +473,7 @@ let test_routes_told_apart_by_a_type_are_one_operation () =
   Alcotest.(check bool)
     "and the refusal one route declares" true
     (contains ~sub:"gone" (str [ "responses"; "410"; "description" ] op));
-  match Spindle.Zod.module_ a with
+  match Spindle.Zod.schemas a with
   | Error e -> Alcotest.failf "no module: %s" (String.concat "; " e)
   | Ok ts ->
       let entry = {|"GET /items/{key}": {|} in
@@ -566,15 +566,15 @@ let test_each_status_is_a_response () =
     "each with the body" true
     (member [ "200"; "content"; "application/json"; "schema" ] responses
     <> `Null);
-  match Spindle.Zod.module_ a with
+  match Spindle.Zod.schemas a with
   | Ok text ->
       Alcotest.(check bool)
         "zod lists them" true
         (contains ~sub:"statuses: [201, 200]" text)
   | Error e -> Alcotest.failf "no module: %s" (String.concat "; " e)
 
-let test_the_zod_module_says_the_same () =
-  match Spindle.Zod.module_ described with
+let test_the_zod_schemas_say_the_same () =
+  match Spindle.Zod.schemas described with
   | Error e -> Alcotest.failf "no module: %s" (String.concat "; " e)
   | Ok ts ->
       List.iter
@@ -674,7 +674,7 @@ let test_nothing_is_said_as_its_status () =
   Alcotest.(check bool)
     "with no content" true
     (Yojson.Safe.equal `Null (member [ "responses"; "204"; "content" ] op));
-  match Spindle.Zod.module_ a with
+  match Spindle.Zod.schemas a with
   | Error e -> Alcotest.failf "no module: %s" (String.concat "; " e)
   | Ok ts ->
       Alcotest.(check bool)
@@ -960,8 +960,8 @@ let () =
         ] );
       ( "the module",
         [
-          Alcotest.test_case "the zod module says the same" `Quick
-            test_the_zod_module_says_the_same;
+          Alcotest.test_case "the zod schemas say the same" `Quick
+            test_the_zod_schemas_say_the_same;
         ] );
       ( "docs",
         [

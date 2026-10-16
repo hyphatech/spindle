@@ -762,7 +762,7 @@ let test_a_socket_is_in_the_document () =
 
 let test_a_socket_is_in_the_zod_module () =
   let m =
-    match Spindle.Zod.module_ app with
+    match Spindle.Zod.schemas app with
     | Ok m -> m
     | Error e -> Alcotest.failf "no module: %s" (String.concat "; " e)
   in
