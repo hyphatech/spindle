@@ -15,7 +15,8 @@ hide:
 Fast, ergonomic and RFC-strict. Simple to start, ready for production.
 
 ```sh
-opam pin add https://github.com/hyphatech/spindle.git
+opam repo add hypha https://github.com/hyphatech/opam-repository.git
+opam install spindle
 ```
 
 [Get started](install.md){ .md-button .md-button--primary }
