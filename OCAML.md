@@ -46,9 +46,7 @@ A change is done when every box holds:
   run one; a stub stands in only for a third party's service. A
   refactoring adds no test and keeps every one passing.
 - [ ] **No partial functions**: nothing raises on an input the code has not
-  ruled out. No `failwith`, `Option.get`, `Result.get_ok`, `List.hd`,
-  `List.tl`, `List.nth`, `Obj.magic`, and `invalid_arg` only where the
-  `.mli` says it raises and the repository's rules name it; a stdlib call
+  ruled out. No name of the `refused` list (*Shared shapes*); a stdlib call
   that raises -- `String.sub`, an index, `Hashtbl.find`, `List.assoc`,
   `int_of_string`, `Char.chr`, `List.combine` -- only on an input already
   known to be in range, else its `_opt`.
@@ -114,9 +112,8 @@ A change is done when every box holds:
   boolean or a pair of booleans one combination of which is impossible; a
   unit or an identifier that travels unnamed -- a column, an element, a
   returned value -- is a type of its own, never a bare `int` or `string`
-  whose meaning the caller has to remember. A time is `Ptime.t` or
-  `Mtime.Span.t` (*Shared shapes*); a whole number a protocol fixes is
-  labelled with its unit at every call (`~retry_after_s`).
+  whose meaning the caller has to remember. A time is typed as *Shared
+  shapes* says.
 - [ ] **Advanced types only where they delete real duplication.** A GADT
   earns its place by describing a thing once that would otherwise be
   described twice; otherwise, records and variants. A polymorphic variant
@@ -162,9 +159,10 @@ What every Hypha OCaml repository does alike, so that a user of one finds
 the next where they expect it.
 
 - **OCaml 5.5 or later, `(lang dune 3.18)`.** Every `dune-project` asks
-  for the same, every switch is that OCaml, and CI builds on it with the
-  oldest versions the opam files allow. They move together, never one
-  repository alone.
+  for the same, every switch is that OCaml, and CI builds on it, a
+  library with the oldest versions its opam files allow and an
+  application from its lock. They move together, never one repository
+  alone.
 - **opam resolves the dependencies; dune only builds.** A package's
   dependencies are declared in `dune-project`, with ranges, and dune
   writes the opam files from it. A Hypha library comes from Hypha's opam
@@ -180,10 +178,8 @@ the next where they expect it.
   its users solving their own. Why: it is how the libraries' users get
   them, so the build every contributor runs is the one users run; and
   dune's own package management (`dune pkg`, `(pkg enabled)`, `(pin)`)
-  is not final, as its documentation says, its lock directories not yet
-  stable -- tried here and taken back on 2026-10-14, when a
-  `dune-workspace` asking for a newer dune than the opam files broke
-  installing every library with opam. It is weighed again when dune
+  is not final, as its documentation says, and tried here it broke
+  installing the libraries with opam; it is weighed again when dune
   calls it final. Symptom: a `dune-workspace`, a `(pin)`, a pin of a
   checkout by path, or a step that pins, upgrades or reinstalls a
   package by hand.
@@ -240,11 +236,6 @@ the next where they expect it.
   `Access-Control-Max-Age`. Why: it is a field's value, whole by the
   protocol's definition, not a wait the program counts; a span rounded on
   its way to the field would hide the rounding.
-
-  A time is one of these four in every library and every application,
-  with no exception: typed inside, and a bare number only where it
-  crosses to an interface that takes nothing else, as a wire's format is
-  reached only where it is written.
 - **A typed interface is used wherever one exists.** A clock, a sleep or
   a bound on work is reached through the form that takes or gives a
   `Ptime.t` or an `Mtime.Span.t` (`Eio.Time.Timeout.v`,
@@ -256,9 +247,9 @@ the next where they expect it.
   calls have no typed form: `Eio.Time.now`, the wall clock as a float, and
   `Unix.sleepf`, the one sleep for code no Eio loop runs (a domain or a
   thread of its own). A library that needs either keeps them in one
-  module, `Instant` (`instant.ml`), which takes and gives only `Ptime.t`
-  and `Mtime.Span.t` and converts on the spot (`Instant.of_clock`,
-  `Instant.sleep`); they are in the `only-in-the-clock-module` list
+  module, `Instant` (`instant.ml`), where the float either takes or gives
+  becomes a `Ptime.t` or an `Mtime.Span.t` on the spot; they are in the
+  `only-in-the-clock-module` list
   below, refused in every other file. Why: the boundary is one place a
   reader can find, typed on both sides, like a wire's codec; a library
   that never needs them has no such module.
@@ -278,8 +269,8 @@ the next where they expect it.
   that raises on purpose declares an exception of its own. `Eio_main.run`
   is a program's (*A library runs no event loop of its own*), and
   `Uri.query` a value with structure read without its parser. A name a
-  repository's own rules allow in a place they name -- `invalid_arg` where
-  a description is built and can mean nothing -- is allowed there alone. A
+  repository's own rules allow in a place they name is allowed there
+  alone, and where it can raise, the `.mli` says so. A
   name is read with a leading `Stdlib.` taken off, so `Stdlib.exit` is
   `exit`, and an alias hides nothing: `module L = List` then `L.hd` is
   `List.hd`. A search finds most of them in a change:
@@ -402,9 +393,6 @@ by dune from `dune-project`, and from an `*.opam.template` beside it for
 what dune cannot say, so either of those is edited, never the `.opam`.
 Nothing under `_build/` or in the switch is edited; a test's new expected
 output is taken with `dune promote`.
-
-**A worktree is outside the checkout** (`GIT.md`), so dune takes it as
-a root of its own, and nothing is added to it.
 
 `dune describe` lists every library, executable and module, so nothing is
 missed when the whole project is read.
