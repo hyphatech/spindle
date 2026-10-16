@@ -941,7 +941,7 @@ let test_a_resource_is_no_input () =
   let printed a =
     match
       ( Spindle.Openapi.document ~title:"Orders" ~version:"1" a,
-        Spindle.Zod.module_ a )
+        Spindle.Zod.schemas a )
     with
     | Ok document, Ok schemas -> document ^ schemas
     | Error e, _ | _, Error e -> Alcotest.fail (String.concat "; " e)
