@@ -1,4 +1,4 @@
-# Server-Sent Events
+# Server-Sent Events (SSE)
 
 A Server-Sent Events stream sends events until it is done. `Broadcast`
 sends one event to everyone listening.

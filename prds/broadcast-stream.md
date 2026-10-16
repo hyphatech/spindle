@@ -189,7 +189,7 @@ resolves may be sent or not, as `next ~until` says of one today.
   subscription's hub; `next`'s documentation names `forward` for a loop
   over it.
 - `core/spindle.mli`: `client_gone`'s example written with `stream`.
-- `docs/guide/streams.md`: *Broadcasting to many clients* with `stream`,
+- `docs/guide/sse.md`: *Broadcasting to many clients* with `stream`,
   and the state-first form.
 - `test/test_spindle.ml`: the rows in *Verification*.
 - `CHANGES.md`: its line.
@@ -262,7 +262,7 @@ resolves may be sent or not, as `next ~until` says of one today.
 - The three functions' contract, and why `until` drops rather than
   cancels: `core/broadcast.mli`, the reason in one clause.
 - How a route broadcasts, and the state-first form: the guide,
-  `docs/guide/streams.md`.
+  `docs/guide/sse.md`.
 - What changed for users: CHANGES.md.
 - Why the watcher and not the race: one clause in `core/broadcast.ml`
   beside the code, and the commit message.

@@ -98,7 +98,7 @@ The framework handles the rest of the protocol for you:
 
 To send one message to many sockets, encode it once with
 `Ws.encode (Ws.server protocol) value` and send that to each with
-`Ws.send_encoded`. A [`Spindle.Broadcast`](streams.md) of sockets carries
+`Ws.send_encoded`. A [`Spindle.Broadcast`](sse.md) of sockets carries
 encoded messages.
 
 ## Testing and OpenAPI

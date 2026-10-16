@@ -54,7 +54,7 @@ call's `~now`. `Test.Browser.cookies b` lists what it holds.
 ## Testing event streams
 
 `Test.events` hands each event to your function until it answers `` `Stop ``.
-Here, three events of the [count stream](streams.md):
+Here, three events of the [count stream](sse.md):
 
 ```ocaml
 let test_count () =
