@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.7.0 (2026-10-16)
 
 - Breaking: `Spindle.Zod.module_` is `Spindle.Zod.schemas`, a noun like
   `Openapi.document`, without the trailing underscore.
