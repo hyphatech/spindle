@@ -1,5 +1,13 @@
 # Changes
 
+## Unreleased
+
+- Installs from Hypha's opam repository:
+  `opam repo add hypha https://github.com/hyphatech/opam-repository.git`,
+  then `opam install spindle spindle-postgres spindle-cli`. The
+  `pin-depends` are gone: spindle takes wiretype 0.5 and rowtype 0.8, each
+  up to its next breaking release.
+
 ## 0.6.0 (2026-10-15)
 
 - An answer is written by the fiber that flushes it, where every flush was

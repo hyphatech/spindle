@@ -58,7 +58,8 @@ terminal does by itself:
 ## 3. Install Spindle
 
 ```sh
-opam pin add https://github.com/hyphatech/spindle.git
+opam repo add hypha https://github.com/hyphatech/opam-repository.git
+opam install spindle spindle-postgres spindle-cli
 ```
 
 This installs its three packages and everything they need:

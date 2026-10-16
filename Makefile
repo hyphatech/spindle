@@ -21,6 +21,7 @@ help: ## list targets
 setup: ## create the switch and install dependencies
 	@docker compose version >/dev/null 2>&1 || echo "The Postgres suites need docker compose."
 	@opam switch list --short | grep -qx $(SWITCH) || opam switch create $(SWITCH) --empty -y
+	opam repo add hypha https://github.com/hyphatech/opam-repository.git --switch=$(SWITCH) --rank=1
 	opam install . --switch=$(SWITCH) --deps-only --with-test --with-dev-setup -y
 
 build: ## build everything

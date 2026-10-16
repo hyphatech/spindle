@@ -37,7 +37,7 @@
   (ocaml
    (>= 5.5))
   (wiretype
-   (>= 0.5.0))
+   (and (>= 0.5.0) (< 0.6.0)))
   ; A UUID is Uuidm's, in a path or a query as in a body and a row.
   (uuidm
    (>= 0.9.10))
@@ -45,7 +45,7 @@
   ; the framework so one package is the whole of starting; no library here
   ; links it.
   (ppx_wiretype
-   (>= 0.5.0))
+   (and (>= 0.5.0) (< 0.6.0)))
   (eio
    (>= 1.6))
   (eio_main
@@ -146,13 +146,9 @@
   (spindle
    (= :version))
   (rowtype
-   (>= 0.7.0))
+   (and (>= 0.8.0) (< 0.9.0)))
   (rowtype-postgres
-   (>= 0.7.0))
-  ; Linked through rowtype-postgres alone, and named so that its pin is
-  ; one of this package's dependencies.
-  (postgres-eio
-   (>= 0.5.0))
+   (and (>= 0.8.0) (< 0.9.0)))
   (ptime
    (>= 1.2.0))
   (mtime
@@ -185,7 +181,8 @@
   (wiretype
    (and
     :with-test
-    (>= 0.5.0)))
+    (>= 0.5.0)
+    (< 0.6.0)))
   (uri
    (and
     :with-test

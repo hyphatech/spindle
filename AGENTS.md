@@ -301,3 +301,10 @@ release notes are that entry with each paragraph and bullet on one line,
 since GitHub keeps every line break in release notes. A release is
 pushed first and tagged only once CI is green on the commit the tag
 names: a broken build is never tagged.
+
+Publishing the GitHub release runs `.github/workflows/release.yml`, which
+uploads the source archive to it and publishes the release to Hypha's
+opam repository, `hyphatech/opam-repository`, where users install it from
+once that repository's CI has installed it. A published version never
+changes; running the workflow by hand with a tag publishes a release
+that missed it.

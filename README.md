@@ -27,7 +27,8 @@ The Eio-native web framework for modern OCaml.
 ## Install
 
 ```sh
-opam pin add https://github.com/hyphatech/spindle.git
+opam repo add hypha https://github.com/hyphatech/opam-repository.git
+opam install spindle spindle-postgres spindle-cli
 ```
 
 ```lisp
