@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.6.1 (2026-10-16)
 
 - Installs from Hypha's opam repository:
   `opam repo add hypha https://github.com/hyphatech/opam-repository.git`,
