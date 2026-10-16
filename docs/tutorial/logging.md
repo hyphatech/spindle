@@ -34,16 +34,19 @@ curl localhost:8080/charge/500
 
 Your line carries the request's id, `[trpw9jmqsz6a]`, without being handed
 it. The second line is the access line Spindle writes for every request:
-method, route, status, duration in nanoseconds, and body size.
+method, path, status, duration in nanoseconds, body size and route. When
+the answer is a refusal, the line also has `spindle.refusal.code` (say,
+`invalid`): search for that field to find every refused request.
 
-The format is pretty on a terminal and JSON otherwise. The JSON keys are the
+Lines go to stderr. The format is pretty on a terminal and JSON otherwise. The JSON keys are the
 ones Datadog and an OpenTelemetry Collector read without a mapping:
 
 ```json
 {"timestamp":"2026-10-08T09:24:07.936Z","level":"info","logger.name":"spindle.http","message":"GET /charge/500 200","request_id":"yxh81c3jxdrr","trace_id":"d94e1ed026bb56ed4360738efdab369b","span_id":"aa5e83d9ed21a352","http.request.method":"GET","url.path":"/charge/500","http.response.status_code":200,"duration":199000,"http.response.body.size":8,"http.route":"/charge/{pence}"}
 ```
 
-A level or format that cannot be read is an error, and the program stops:
+`Log.configure` returns an `Error` naming what it could not read, and this
+program prints it and exits:
 
 ```sh
 APP_LOG='info,shop=loud' dune exec ./bin/main.exe
@@ -53,8 +56,17 @@ APP_LOG='info,shop=loud' dune exec ./bin/main.exe
 "loud" is not a log level
 ```
 
-`Spindle.Log.setup ()` is the same without strings: `?level`, `?sources`
-and `?format`.
+`Spindle.Log.setup` is the same without strings. A level is a
+`Logs.level option`, where `None` turns a source off:
+
+```ocaml
+Spindle.Log.setup ~level:(Some Logs.Info)
+  ~sources:[ ("shop.billing", Some Logs.Debug) ]
+  ()
+```
+
+It also takes `?format`, and `?out`, a function that receives each line in
+place of stderr: a test's way to keep them.
 
 ??? example "The whole app"
 
@@ -65,12 +77,13 @@ and `?format`.
 ## What each line contains
 
 - **The request id** is on every line the request causes -- yours, the
-  database's, a call to another server's -- and on fibers it forks. To take
-  it onto another domain or a systhread, wrap the function in
-  `Spindle.Log.carry`.
-- **The trace.** Every line has `trace_id` and `span_id`. A request joins
-  the caller's W3C `traceparent`, or starts a trace, and `Spindle_client`
-  passes it on to the servers it calls.
+  database's, a call to another server's -- and on fibers it forks.
+  `Spindle.blocking` takes it onto its systhread for you. For a domain or a
+  thread you start yourself, wrap the function in `Spindle.Log.carry`.
+- **The trace.** In JSON, every line logged during a request also has
+  `trace_id` and `span_id`; the pretty format shows only the request id. A
+  request joins the caller's W3C `traceparent`, or starts a trace, and
+  `Spindle_client` passes it on to the servers it calls.
 - **Field names**: put your own under a prefix (`shop.pence`), since keys
   like `status`, `host` and `service` mean something to a collector.
 - **Failures**: Spindle logs what a handler raises with `error.kind` and
@@ -80,8 +93,8 @@ and `?format`.
   `bt = Printexc.get_raw_backtrace ()` first thing.
 - **Levels**: `error` is a bug, `warn` handled but degraded, `info` what
   happened (the access log), `debug` how. A route polled every few seconds
-  can log its access line at `Debug` with `Meta.access`, as the health
-  probes do.
+  can log its access line at `Debug`, as the health checks do:
+  `Spindle.get ~meta:Spindle.Meta.(empty |> add access Logs.Debug) …`.
 - **No secrets.** Spindle never logs a header value, a body, a query string
   or a statement's parameters, at any level.
 
@@ -97,9 +110,11 @@ Spindle_client.Otlp.run ~clock:(Eio.Stdenv.clock env)
 @@ fun trace -> Spindle.serve env ~trace routes
 ```
 
-Then every request is a span named by its method and route
-(`GET /users/{id}`), and so is each `Spindle_client` call and each Postgres
-statement. Add spans of your own with:
+Then every request is a span. A request's span is named by its method and
+route (`GET /users/{id}`), a `Spindle_client` call's by its method (`GET`),
+and a Postgres statement's `postgresql`. None is ever named by a path, so a
+collector keeps one series per route, not one per URL. Add spans of your
+own with:
 
 ```ocaml
 Spindle.Trace.span "price the order" (fun () -> price order)
@@ -112,6 +127,6 @@ Spindle.Trace.span "price the order" (fun () -> price order)
   are dropped and counted in a `warn` line.
 - Spans carry no secrets either: never a query string, header or
   statement parameter.
-- To send spans elsewhere, build your own with `Spindle_http.Trace.exporter`.
+- To send spans elsewhere, build your own with `Spindle.Trace.exporter`.
 
 Next: [static files](static-files.md).

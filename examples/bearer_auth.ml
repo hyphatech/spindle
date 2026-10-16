@@ -11,15 +11,12 @@ open Spindle.Syntax
 
 let ( let* ) = Result.bind
 
+(* --8<-- [start:bearer] *)
 (* A 401 names how to authenticate, in WWW-Authenticate, so the code carries
    the challenge. *)
 let signed_out =
   Spindle.Refusal.Code.make "signed_out" ~status:`Unauthorized
     ~challenge:{|Bearer realm="notes"|} ~doc:"No valid bearer token was sent."
-
-let no_such_note =
-  Spindle.Refusal.Code.make "no_such_note" ~status:`Not_found
-    ~doc:"There is no note by that id that is yours."
 
 let please_sign_in = Spindle.Refusal.make signed_out "Please sign in."
 
@@ -39,6 +36,11 @@ let bearer =
         match credentials with
         | Some { scheme = "bearer"; value = Token68 token } -> Ok token
         | Some _ | None -> Error please_sign_in))
+(* --8<-- [end:bearer] *)
+
+let no_such_note =
+  Spindle.Refusal.Code.make "no_such_note" ~status:`Not_found
+    ~doc:"There is no note by that id that is yours."
 
 (* What the application holds is closed over, not a dependency. The
    dependency hands over the token, and the handler decides whose it is. *)

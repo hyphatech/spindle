@@ -36,11 +36,15 @@ Visit number 2.
 - `Cookie.optional` reads it (`None` when absent) and `Cookie.required`
   refuses without it. A value that does not parse is `400 invalid` at
   `cookie.<name>`.
-- `Cookie.make` defaults to `Path=/; HttpOnly; SameSite=Lax`, and lasts the
-  browser's session unless you give `~max_age_s` (seconds).
-  `Cookie.clear` removes one.
-- **Spindle decides `Secure`:** on every host but a loopback one, where Safari
-  would drop it over plain http.
+- `Cookie.make` defaults to `Path=/; HttpOnly; SameSite=Lax`. A plain
+  cookie lasts until the browser closes unless you give `~max_age_s`
+  (seconds); a signed or encrypted one is given `Max-Age` from its own
+  `~max_age` (below). `Cookie.clear` removes one.
+- **Spindle adds `Secure` itself** on every host except a loopback one
+  (`localhost`, `127.0.0.1`, `::1`), where Safari would silently drop a
+  `Secure` cookie sent over plain http. Behind a proxy that ends TLS, list
+  the proxy in `~trusted_proxies` so that its word that the browser used
+  `https` is believed ([below](#the-clients-ip-address)).
 - **The value must be cookie-safe.** `Cookie.make` raises
   `Invalid_argument` on a value with a space, quote, comma, semicolon,
   backslash or control character. For text that arrived at run time, use
@@ -70,14 +74,18 @@ match Spindle.Key.of_secret secret with
   with any, so put the new key first and the old one after it.
 - **A cookie that fails its signature, its seal or its age is absent**
   (`None`), never an error.
-- **`~max_age` is required**, an `Mtime.Span.t`, and is checked by the
-  server too, not only sent as `Max-Age`, so a copied cookie stops working
-  when it expires. It is also the longest `Cookie.make` writes, in whole
-  seconds rounded up: a `~max_age_s` given there, the field's own number of
-  seconds, may shorten it, never lengthen it.
+- **`~max_age` is required**, an `Mtime.Span.t`. The server checks it on
+  every read, not only the browser, so a copied cookie stops working when it
+  expires. `Cookie.make` writes it as `Max-Age`, rounded up to whole
+  seconds; passing `~max_age_s` to `make` can make that shorter, never
+  longer.
+- **A signed or encrypted cookie holds any value its codec prints**, since
+  what is sent is encoded as base64url. You need the `encoded` codec only
+  for a plain cookie.
 - `Key.sign`/`Key.verify` and `Key.seal`/`Key.unseal` do the same for
-  anything else, such as a token in a link, under keys of their own: nothing
-  they make, over whatever text, is ever a cookie.
+  anything else, such as a token in a link. They use keys derived apart
+  from the cookies' keys, so nothing you sign or seal with them can ever be
+  passed off as a cookie.
 
 ## Sessions
 
@@ -102,15 +110,51 @@ let sessions =
 | `update` | new data under the same id |
 | `renew` | a new id with this data, the old one deleted: call it at sign-in |
 | `close` | deletes it and clears the cookie: sign-out |
-| `sweep` | deletes every expired session, for an `Alarm` to run |
+| `sweep` | deletes every expired session; run it periodically (see below) |
+
+Signing in gives the visitor a new session id, whether or not they had a
+session before, so an id somebody planted earlier signs them into nothing.
+Signing out deletes the session on the server:
+
+```ocaml
+let sign_in sessions id ~set_cookie ~now user =
+  let started =
+    match Spindle.Session.find sessions id ~now with
+    | Ok (Some session) ->
+        Spindle.Session.renew sessions session ~set_cookie ~now { user }
+    | Ok None -> Spindle.Session.start sessions ~set_cookie ~now { user }
+    | Error e -> Error e
+  in
+  match started with
+  | Ok _ -> Ok "Signed in."
+  | Error e -> Error (Spindle.Session.refusal e)
+
+let sign_out sessions id ~set_cookie ~now =
+  match Spindle.Session.find sessions id ~now with
+  | Ok None -> Ok "Signed out."
+  | Ok (Some session) -> (
+      match Spindle.Session.close sessions session ~set_cookie with
+      | Ok () -> Ok "Signed out."
+      | Error e -> Error (Spindle.Session.refusal e))
+  | Error e -> Error (Spindle.Session.refusal e)
+```
+
+`Session.data session` is the data a found session holds. A store that
+fails is `Error`; `Session.refusal` turns it into a `500` whose detail goes
+to the log.
 
 - A session ends `idle` after it was last used, or `absolute` after it
-  began, whichever is first; each is an `Mtime.Span.t`, and the instants are
-  `Spindle.now`'s `Ptime.t`. The cookie is named `session` unless you pass
-  `~cookie`, and its `Max-Age` is `absolute` in whole seconds, rounded up.
+  began, whichever comes first. Both are `Mtime.Span.t`s; pass `~now` from
+  the `Spindle.now` dependency. The cookie is named `session` unless you
+  pass `~cookie`, and its `Max-Age` is `absolute`, rounded up to whole
+  seconds.
+- `sweep` deletes the sessions nobody came back to, which `find` never sees.
+  Run it every so often from a [background fiber](background.md).
 - `Session.memory ()` lives in one process and ends with it.
   `Spindle_postgres.Session.store pool ~table` keeps sessions in your
-  database ([pool settings](../tutorial/database.md#pool-settings)).
+  database. The table must exist first: create it in a migration of your
+  own from the SQL that `Spindle_postgres.Session.schema ~table` gives
+  ([pool settings](../tutorial/database.md#pool-settings)).
 
 ## The client's IP address
 
@@ -142,9 +186,20 @@ host and whether the browser used `https`.
 
     Spindle answers the preflight itself and names an allowed origin in
     `Access-Control-Allow-Origin`, or answers `*` under `Any`; an origin you
-    did not allow is told nothing. An allowed origin also passes the forgery check. `~routes`
-    narrows the policy to some routes, say your API. `Any` with
-    `~credentials:true` raises. Under `Any`, a write from another site
+    did not allow is told nothing. An allowed origin also passes the forgery
+    check.
+
+    - `~allow_headers` lists the headers a request may send: `authorization`
+      and `content-type` unless you say otherwise. A page that sends any
+      other header fails the preflight, and the browser says only that the
+      request was blocked.
+    - `~expose` lists the response headers the page's script may read (none
+      by default).
+    - `~max_age_s` is how long a browser keeps a preflight's answer (600
+      seconds).
+    - `~routes` narrows the policy to some routes, say your API.
+
+    `Any` with `~credentials:true` raises. Under `Any`, a write from another site
     passes only with no credential the browser attaches by itself: no
     `Cookie`, and no `Authorization` in a scheme a browser keeps -- `Basic`,
     `Digest`, `Negotiate`, `NTLM`. A token the page sets itself, such as

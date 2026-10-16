@@ -6,27 +6,54 @@ answer sensibly when the database is slow or busy. Statements are
 its SQL and the types of its parameters and rows, run through a pure-OCaml
 Postgres driver with nothing to link.
 
+Install the package, which brings `rowtype` and `rowtype-postgres` with it:
+
+```sh
+opam install spindle-postgres
+```
+
+Add the libraries to your `bin/dune`. The preprocessor is the one from
+[your first app](first-app.md), for `[@@deriving wiretype]`:
+
 ```lisp
-(libraries spindle spindle-postgres rowtype rowtype-postgres eio_main)
+(executable
+ (name main)
+ (libraries spindle spindle-postgres rowtype rowtype-postgres eio_main)
+ (preprocess (pps ppx_wiretype)))
 ```
 
-## Connecting and querying
-
-```ocaml
---8<-- "sql_query.ml:query"
-```
-
-Make the pool where the program starts, and give it to the routes:
-
-```ocaml
---8<-- "sql_query.ml:pool"
-```
+To try the examples, start a throwaway Postgres in Docker. It listens on
+port 5432, with the user and password `postgres`, and is deleted when you
+stop it:
 
 ```sh
 docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:18-alpine
 ```
 
+## Connecting and querying
+
+A statement is a value: its SQL, the type of its parameters and the type of
+each row. `Pool.exec` runs it on a connection borrowed from the pool, and
+`Spindle_postgres.refusal` turns a database failure into an answer (see
+[Database errors](#database-errors)):
+
+```ocaml
+--8<-- "sql_query.ml:query"
+```
+
+Make the pool where the program starts, from a connection string, and give
+it to the routes:
+
+```ocaml
+let database = "postgres://postgres:postgres@localhost:5432/postgres"
+
+--8<-- "sql_query.ml:pool"
+```
+
+Run it from the repository's root, then ask for `/`:
+
 ```sh
+dune exec examples/sql_query.exe
 curl localhost:8080/
 ```
 
@@ -34,11 +61,11 @@ curl localhost:8080/
 ["postgres","template0","template1"]
 ```
 
-`Pool.run` opens every connection before the server listens, so a database
-that is not there stops the server with exit code 1, saying why:
+`Pool.run` opens every connection before the server listens. If the
+database is not there, the program logs why and exits with status 1:
 
 ```
-{"level":"error","logger.name":"spindle-postgres","message":"the pool could not be opened: Eio.Io Net Connection_failure Refused Unix_error (Connection refused, \"connect\", \"\")"}
+{"timestamp":"2026-10-16T09:24:46.621Z","level":"error","logger.name":"spindle-postgres","message":"the pool could not be opened: Eio.Io Net Connection_failure Refused Unix_error (Connection refused, \"connect\", \"\")"}
 ```
 
 ??? example "The whole app"
@@ -49,11 +76,26 @@ that is not there stops the server with exit code 1, saying why:
 
 ## Transactions
 
-Claiming a name is an insert and a read in one transaction; the answer is
+Claiming a name is an insert and a read in one transaction. The answer is
 `201` the first time and `200` every time after:
 
 ```ocaml
 --8<-- "sql_transaction.ml:claim"
+```
+
+The handler returns the status together with the value,
+`` (`Created, claim) `` or `` (`OK, claim) ``. A route whose status is chosen
+at run time says so with `Returns.json_response`, listing each status it may
+answer and when (see [Request bodies, responses and
+errors](bodies.md)):
+
+```ocaml
+Spindle.Returns.json_response claim_json
+  ~statuses:
+    [
+      (`Created, "The name was free, and is now claimed.");
+      (`OK, "The name was claimed already.");
+    ]
 ```
 
 ```sh
@@ -80,7 +122,7 @@ HTTP/1.1 200 OK
 
 `Pool.transaction` borrows a connection and runs your function in one
 transaction: `Ok` commits, `Error` rolls back. `let*` here is
-`Result.bind`, defined in the program.
+`Result.bind`, defined in the program (`let ( let* ) = Result.bind`).
 
 ??? example "The whole app"
 
@@ -96,11 +138,16 @@ transaction: `Ok` commits, `Error` rolls back. `let*` here is
   runs it, for a read that is the whole of the work. (`Pool.run` is the
   program's pool, above.)
 - `Pool.transaction pool (fun db -> ...)` -- one transaction; takes
-  `~isolation`, `~retries` and `~keep`.
+  `~isolation`, `~retries` and `~keep`. A transaction is never run again
+  unless you ask: at `~isolation:Serializable`, pass `~retries:3` to run it
+  again when Postgres reports a conflict with a concurrent one
+  (`` `Not_serializable ``). The work runs again in full, so keep anything
+  that is not a statement out of it.
 - `Pool.use pool (fun db -> ...)` -- a borrowed connection for several
   statements outside a transaction.
 - `Pool.check` -- the pool as a readiness check ([Health
-  probes](../guide/health.md)); `Pool.stats` and `Pool.measure` for metrics.
+  checks](../guide/health.md)); `Pool.stats` and `Pool.measure` for
+  [metrics](../guide/metrics.md).
 - `Pool.create ~sw ~net ~mono_clock target` -- the same pool answering a
   `result`, for a program that can go on without its database. `target` is a
   `Rowtype_postgres.Conninfo.t`, read from a connection string by
@@ -115,8 +162,10 @@ its locks for ever:
 | `~idle_in_transaction_timeout` | 30 s | so is a transaction left open and idle |
 | `~size` | 8 | connections, all opened at start-up |
 | `~wait` | 5 s | a borrow waiting longer is `` `Pool `Busy ``, a `503` |
+| `~parameters` | none | Postgres settings for each connection, such as `[ ("application_name", "shop") ]`; yours win over the framework's |
 
-Each is an `Mtime.Span.t`, written `Mtime.Span.(2 * s)`. Connecting waits
+`~size` is a count. The three durations are `Mtime.Span.t`s, written
+`Mtime.Span.(2 * s)`. Connecting waits
 10 s for each address unless the connection string says `connect_timeout`
 (`Conninfo.with_connect_timeout`). Postgres is given
 the two bounds in whole milliseconds, rounded up, so a span under a
@@ -126,9 +175,9 @@ does.
 `~statement_cache:0` is for a pooler in front of Postgres that cannot carry
 named statements.
 
-**Sessions in the database** are `Spindle_postgres.Session.store pool
-~table`, over a table you create in a migration from
-`Session.schema ~table`. Migrations are
+**[Sessions](../guide/cookies.md#sessions) in the database** are
+`Spindle_postgres.Session.store pool ~table`, over a table you create in a
+migration from `Session.schema ~table`. Migrations are
 [`rowtype-migrate`](https://github.com/hyphatech/rowtype)'s, run before the
 server starts.
 
@@ -149,8 +198,9 @@ handle into a status, with the detail in the log:
   `` `Db ``, a closed connection, ... -- `500 internal`.
 
 Where a failure is logged rather than answered,
-`Spindle_postgres.error_to_string` tells any of them in words, and puts no
-value in them:
+`Spindle_postgres.error_to_string` describes it in words, without any
+parameter's value. Here the program cannot create its table, so it logs
+why and exits:
 
 ```ocaml
 --8<-- "sql_transaction.ml:log"
@@ -173,7 +223,16 @@ let sign_up pool ~name ~email =
   | Error e -> Error (Spindle_postgres.refusal e)
 ```
 
-Declare `email_taken` in the route's `~refuses`. The transaction's failures
+`email_taken` is a refusal code of your own. Make it once, and list it in
+the route's `~refuses` so the route's documentation shows it:
+
+```ocaml
+let email_taken =
+  Spindle.Refusal.Code.make "email_taken" ~status:`Conflict
+    ~doc:"An account already uses this email address."
+```
+
+The transaction's failures
 join your work's error type as polymorphic variants; if your own errors are
 an ordinary variant, wrap the work's errors once:
 

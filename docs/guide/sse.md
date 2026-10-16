@@ -38,16 +38,22 @@ data: 42
 ...
 ```
 
+- **The producer** is the function the route answers with, `fun send ->
+  ...` (here `count_from ~mono_clock n`). It runs after the response's head
+  is sent, and the stream ends when it returns.
 - **Declare each kind of event**: `Event.json "count" Wiretype.int`, or
-  `Event.text "token"` for plain text. The stream's own type (`counting`)
-  stops you sending another stream's events.
+  `Event.text "token"` for plain text. `type counting` is declared and never
+  defined: it is a label every kind of this stream carries, so the compiler
+  refuses an event declared for another stream.
 - **`send` answers `Error Gone` once the client has gone**, so a loop
-  written with `let*` ends there. It answers the same once the producer has
-  returned: a fiber that kept `send` sends nothing after the stream ended.
+  written with `let*` ends there. It also answers `Error Gone` after the
+  producer has returned, so a fiber left holding `send` writes nothing.
 - **Resuming:** give each event an id (`Event.make ~id`). A browser sends
   the last one back as `Last-Event-ID` when it reconnects.
+  `Event.retry ~ms` tells the browser how long to wait before it reconnects.
 - A quiet stream gets a `: keep-alive` comment every 15 seconds
-  (`Returns.events ~keep_alive`).
+  (`Returns.events ~keep_alive`). `Event.comment` sends one of your own.
+- The OpenAPI document describes each kind of event the route declares.
 
 ## Broadcasting to many clients
 
@@ -106,3 +112,6 @@ let () =
   states, not changes, and a client that reconnects is up to date.
 - Each subscriber carries a tag (`()` here), which `Broadcast.subscribers`
   lists: who is present, say. `Broadcast.close` ends every subscription.
+
+To read a stream from OCaml, see [the HTTP client](client.md#server-sent-events);
+to test one, see [Testing event streams](testing.md#testing-event-streams).

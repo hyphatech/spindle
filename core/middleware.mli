@@ -11,13 +11,13 @@
     ]}
 
     A middleware wraps the whole application -- every route and the not-found
-    answer -- so a page gets what an endpoint gets. It cannot reroute a request,
-    which is matched before it runs: a moved page is a redirect, which a
-    middleware may answer, and a second address for a route is the route listed
-    under both. It sees the request before the routes do and the response after,
-    may answer without calling the handler at all, and may change the response's
-    status and headers. It cannot rewrite a stream's body, which is written
-    after it has returned.
+    answer -- so a page gets what an API route gets. It cannot reroute a
+    request, which is matched before it runs: a moved page is a redirect, which
+    a middleware may answer, and a second address for a route is the route
+    listed under both. It sees the request before the routes do and the response
+    after, may answer without calling the handler at all, and may add headers or
+    cookies to the response or answer one of its own instead. It cannot rewrite
+    a stream's body, which is written after it has returned.
 
     What one route needs is not middleware: it is a {!Dep}endency, or a function
     the route calls, so that a route's needs stay listed in the route. Logging

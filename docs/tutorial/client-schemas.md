@@ -10,7 +10,11 @@ compiler shows you every place that must change with it.
 Your OCaml project gets a command line of its own: a second executable,
 named after the app, built beside the server from the same routes. It never
 serves anything; it writes the OpenAPI document and the client schemas into
-your front end's folder -- `web/src/` below -- and exits.
+your front end's folder -- `web/src/` below -- and exits. Install it:
+
+```sh
+opam install spindle-cli
+```
 
 ```
 bin/
@@ -103,9 +107,37 @@ export const routes = {
 } as const;
 ```
 
-Each type is a schema with its TypeScript type beside it, then the refusal,
-the codes a client may branch on, and a table of the routes. Objects strip
-unknown keys, so a server that gains a field breaks no client.
+Each type is a schema with its TypeScript type beside it, the error shapes
+(`Problem`, `Refusal`) among them; then the codes a client may branch on,
+and a table of the routes. Objects strip unknown keys, so a server that gains
+a field breaks no client.
+
+## Using them in the front end
+
+The module imports `zod/mini`, which is in Zod 4 and later:
+
+```sh
+npm install zod
+```
+
+Parse each answer with its schema. A refusal has the same shape on every
+route, so one schema reads all of them:
+
+```typescript
+import { NoteSchema, RefusalSchema } from "./wire.gen";
+
+const res = await fetch("/notes/1");
+if (res.ok) {
+  const note = NoteSchema.parse(await res.json()); // a Note, checked
+  console.log(note.text);
+} else {
+  const refusal = RefusalSchema.parse(await res.json());
+  console.log(refusal.error, refusal.message); // "invalid", "..."
+}
+```
+
+`routes["GET /notes/{note_id}"].answer.schema` is the same `NoteSchema`, for
+code that works from the table rather than by name.
 
 ## Checking them in CI
 
@@ -146,7 +178,7 @@ Spindle.Zod.module_ app   (* TypeScript: zod/mini *)
 ```
 
 It answers a `result`; its `Error` names two different types described
-under one name, two routes whose paths make one operation
+under one name, two routes whose paths make one `operationId`
 (`/a-b` and `/a_b`), two whose paths differ only in a parameter's
 name (`/items/{id}` and `/items/{item}`), and routes told apart by a
 parameter's type that answer in different ways or read different bodies.

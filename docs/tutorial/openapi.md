@@ -68,12 +68,21 @@ let session =
     (Spindle.Cookie.optional (Spindle.Cookie.named "session" Spindle.Codec.string))
 ```
 
-An app lists its routes without running any of them, with `App.routes` and
-`Route.pp_info`:
+You can also print what each route reads and answers, without running any
+of them. `Spindle.serve` makes the app from your routes for you; to get the
+app yourself, call `Spindle.App.make`, which answers an `Error` naming the
+route when the table is wrong:
 
 ```ocaml
-List.iter (Format.printf "%a@." Spindle.Route.pp_info) (Spindle.App.routes app)
+match Spindle.App.make routes with
+| Ok app ->
+    List.iter (Format.printf "%a@." Spindle.Route.pp_info) (Spindle.App.routes app)
+| Error e -> prerr_endline e
 ```
+
+For a route that reads the `session` above and declares two codes of its
+own -- `signed_out` for a request with no session, `gone` for an order that
+was deleted -- it prints:
 
 ```
 POST /orders/{order_id}/items  -- Add an item
@@ -87,9 +96,10 @@ POST /orders/{order_id}/items  -- Add an item
 
 ## The OpenAPI document
 
-To write the document to a file, use your app's
-[command line](client-schemas.md#setting-up-the-command-line): `api openapi -o FILE`.
-From your own code -- a test, a script -- it is two functions:
+To write the document to a file, use your app's command line, which the
+[next page](client-schemas.md#setting-up-the-command-line) sets up:
+`api openapi -o FILE`. From your own code -- a test, a script -- it is two
+functions, over the `app` from `App.make`:
 
 ```ocaml
 Spindle.Openapi.document ~title:"Orders" app (* OpenAPI 3.2, as JSON *)
@@ -108,8 +118,10 @@ read the document:
 - **Each type with a name is a component.** Names are unique within an app.
   If a type's request and answer forms differ, the request's is
   `<Name>Input`.
-- **A member that may be left out says `~absent`**, even in a type only ever
-  encoded; otherwise the document calls it required.
+- **A field that may be left out is an `option`, or has `[@default v]`**
+  (`~absent` when you write a description by hand). This holds even for a
+  type you only ever send: otherwise the document calls the field
+  required.
 - **Codes are responses**, grouped by status, each with what it means; the
   framework's own (`400 invalid`, `503 busy`, ...) are added from what the
   route reads, and a route answering one the document does not list is a

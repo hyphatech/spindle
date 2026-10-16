@@ -27,8 +27,9 @@ cd hello
 ```
 
 `bin/dune` builds a program named `main` that uses Spindle and Eio's event
-loop. The `preprocess` line turns your types into JSON, which the tutorial
-uses from the next page on:
+loop. The `preprocess` line lets `[@@deriving wiretype]` write a JSON
+description of each of your types, which the tutorial uses from the next
+page on:
 
 ```lisp title="bin/dune"
 (executable
@@ -75,12 +76,14 @@ Good morning, world!
 
 ## 3. What the code says
 
-- **The handler**, `good_morning`, is the answer. `Ok` means success; an
-  `Error` would refuse the request.
+- **The answer**, `good_morning`, is `Ok` of the text to send. An `Error`
+  would refuse the request instead.
 - **The routes** are a list. `Spindle.get` is the method,
   `Spindle.Path.root` the path `/`, and `Spindle.Returns.text` says it
-  answers text. The last argument is what the handler needs from the
-  request -- nothing here, so `Spindle.Dep.return` of the answer.
+  answers text. The last argument says what the route reads from the
+  request and how it works out its answer. This route reads nothing and
+  always gives the same answer, so it is `Spindle.Dep.return good_morning`.
+  The [next page](routes.md) shows routes that read their inputs.
 - **The server**: `Eio_main.run` starts the event loop, and `Spindle.serve`
   serves the routes until you stop it.
 
@@ -94,12 +97,15 @@ let () =
   Eio_main.run @@ fun env -> Spindle.serve env routes
 ```
 
-Every request is now a line with its method, path, status, duration and an
-id:
+Every request is now a line with its method, path, status, duration (in
+nanoseconds) and an id:
 
 ```
 10:11:03.331 info  spindle.http [cm5nxptpka21] GET / 200  http.request.method=GET  url.path=/  http.response.status_code=200  duration=14875  http.response.body.size=20  http.route=/
 ```
+
+Lines look like this in a terminal. When stderr is not a terminal -- a
+container, a file, a log collector -- each line is JSON instead.
 
 The same id is in the answer's `x-request-id` header, so a request a user
 reports can be found in the log. More in [logging](logging.md).

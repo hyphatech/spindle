@@ -14,7 +14,7 @@ let name = Spindle.Path.str "name"
    quote is still one JSON string. *)
 type user = { user_id : string; name : string } [@@deriving wiretype]
 
-(* The endpoints take values, not a request: the route below says where each
+(* The handlers take values, not a request: the route below says where each
    value comes from. *)
 let user_text id = Ok (Printf.sprintf "User %Ld" id)
 let user_answer id name = Ok { user_id = Int64.to_string id; name }

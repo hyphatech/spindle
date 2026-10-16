@@ -26,15 +26,14 @@ let () =
 `Spindle_client.run env f` makes a client for as long as `f` runs and closes
 its connections when `f` returns.
 
-`call client meth url` answers `Ok` with the `status`, a
-`Spindle_http.Status.t` as a route answers with, the `headers` (names
+`call client meth url` answers `Ok` with the `status` (the same
+`Spindle_http.Status.t` variant your routes answer with), the `headers` (names
 lower-cased) and the whole `body` -- **any status is an answer**, so a
 `` `Not_found `` is `Ok`. `Error` says whether the request went out:
 `` `Unsent `` (no connection, bad TLS, a URL it cannot call -- the server never
 saw it, so sending it again is safe) or `` `Lost `` (it may have gone, and the
 answer was cut short, unreadable, or never came before the deadline -- the
-server may have acted on it). They are the words every Hypha library uses, so
-a handler's one `let*` runs over a call and a database statement alike. Send a
+server may have acted on it). Send a
 body with `~body` and `~headers`:
 
 ```ocaml

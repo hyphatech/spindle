@@ -27,7 +27,7 @@ content-type: application/json
 {"number":1,"item":"tea","quantity":2}
 ```
 
-A body of the wrong shape is answered before your endpoint runs, with every
+A body of the wrong shape is answered before your handler runs, with every
 problem at once:
 
 ```sh
@@ -48,7 +48,7 @@ curl localhost:8080/orders -H 'content-type: application/json' \
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"body.quantity","code":"too_small","message":"This must be at least 1."}]}
 ```
 
-A rule only your data can check is the endpoint's own refusal:
+A rule only your data can check is the handler's own refusal:
 
 ```sh
 curl -i localhost:8080/orders -H 'content-type: application/json' \
@@ -72,8 +72,8 @@ What happened:
   [`wiretype`'s combinators](https://github.com/hyphatech/wiretype#by-hand).
 - `Spindle.json order_json` reads the body. Types, required fields and bounds
   like `[@min 1]` are checked for you; a body that fails is a `400`.
-- `Returns.json ~status:`Created placed_json` declares the answer. The
-  endpoint returns the plain record and the framework encodes it.
+- ``Returns.json ~status:`Created placed_json`` declares the answer. The
+  handler returns the plain record and the framework encodes it.
 - `sold_out` is a refusal code, declared once with its status. The route
   lists it in `~refuses`.
 
@@ -87,7 +87,7 @@ What happened:
 
 A route is `Spindle.get`, `post`, `put`, `patch` or `delete` (or
 `Spindle.route meth`), then a path, what it returns, and its inputs. What it
-returns decides what the endpoint must give back:
+returns decides what the handler must give back:
 
 ```ocaml
 Spindle.get path Returns.html
@@ -112,7 +112,9 @@ Spindle.get path (Returns.websocket chat)
   (let+ ... in Ok (fun ws -> ...))                       (* a WebSocket *)
 ```
 
-`Returns.json` defaults to `200` and `Returns.empty` to `204`.
+`Returns.json` defaults to `200` and `Returns.empty` to `204`. Event streams
+have [their own guide](../guide/sse.md), and so do
+[WebSockets](../guide/websockets.md).
 
 **When success can be one of several statuses** -- made or replaced, queued
 or done -- list them, each with a sentence for the document, and return the
@@ -129,7 +131,7 @@ Spindle.put Path.(s "users" / user_id)
    | Error e -> Error (Spindle_postgres.refusal e))
 ```
 
-`Returns.empty_response ~statuses` is the same with no body: the endpoint
+`Returns.empty_response ~statuses` is the same with no body: the handler
 returns `` Ok `Created `` or `` Ok `No_content ``. Every listed status must
 be a `2xx`; failing is a refusal. A JSON answer is never `204` or `205`,
 which HTTP sends without a body: an answer with nothing to say is
@@ -138,36 +140,37 @@ which HTTP sends without a body: an answer with nothing to say is
 ## Setting cookies and headers
 
 To set a cookie or a header, take `Spindle.set_cookie` or
-`Spindle.add_header` as an input -- it is a function -- and call it:
+`Spindle.add_header` as an input -- each is a function -- and call it:
 
 ```ocaml
-let sign_out sessions id ~set_cookie ~now =
-  match Spindle.Session.find sessions id ~now with
-  | Ok None -> Ok false
-  | Ok (Some session) -> (
-      match Spindle.Session.close sessions session ~set_cookie with
-      | Ok () -> Ok true
-      | Error e -> Error (Spindle.Session.refusal e))
-  | Error e -> Error (Spindle.Session.refusal e)
+let visits = Spindle.Cookie.named "visits" Spindle.Codec.int
 
-Spindle.post Path.(s "sign-out") (Returns.json Wiretype.bool)
-  (let+ id = Spindle.Session.cookie sessions
-   and+ set_cookie = Spindle.set_cookie
-   and+ now = Spindle.now in
-   sign_out sessions id ~set_cookie ~now)
+Spindle.get Path.(s "welcome") Returns.text
+  (let+ set_cookie = Spindle.set_cookie
+   and+ add_header = Spindle.add_header in
+   set_cookie (Spindle.Cookie.make visits 3);
+   add_header ("cache-control", "max-age=60");
+   Ok "Welcome back.")
 ```
 
 - What you set is sent with an `Ok` answer only, never with a refusal.
-- The framework writes `Content-Type`, `Content-Length` and the other fields
-  that frame the answer. Setting one yourself, or a header value containing
-  a line break, answers `500`.
+- Set cookies with `set_cookie`, never with `add_header ("set-cookie", …)`.
+- Some fields are the server's alone to write. A handler that sets one of
+  them itself, or a header value containing a line break, answers `500`:
+    - how the answer is framed: `Content-Length`, `Transfer-Encoding`,
+      `Connection`, `Keep-Alive`, `Upgrade`, `TE` and `Trailer`;
+    - what the server derives: `Content-Type` (from the route's `Returns`),
+      `Set-Cookie` (from `set_cookie`), `Date` and `X-Request-Id`.
 - To end the connection after an answer, return
   `Response.close_connection response` from a `Returns.response` route.
 
+Signing in and out with a session is shown in
+[Sessions](../guide/cookies.md#sessions).
+
 A route that builds its own answer uses `Returns.response` and `Response`:
 `make`, `html`, `json`, `empty`, `redirect`, `stream`, `events`, `refusal`,
-and `takeover` for a protocol spoken after HTTP (see the `Response`
-reference).
+and `takeover` for a protocol spoken after HTTP (see the
+[`Response` reference](../reference/spindle/Spindle/Response/index.html)).
 
 ## Errors
 
@@ -189,8 +192,8 @@ The `~detail` goes to the log only.
   JSON body's `unsupported_media_type`, say) are added for you, and so are
   the framework's own the route's document lists from what it reads:
   `invalid` where it reads an input, `unreadable` and `too_large` where it
-  reads a body, `cross_origin` for a method that changes something, and
-  `busy` and `internal` everywhere. Any other -- `Refusal.not_found` from a
+  reads a body, `cross_origin` for a method that changes something,
+  `upgrade_required` for a WebSocket, and `busy` and `internal` everywhere. Any other -- `Refusal.not_found` from a
   handler, say -- goes in `~refuses` like your own. A code nobody declared
   is still answered, but logged as a bug, and `Spindle.Test.call` raises on
   it.
@@ -201,8 +204,11 @@ The `~detail` goes to the log only.
   either the other way round is refused when the app is made.
 - **A `401` code needs `~challenge`**, the `WWW-Authenticate` value, e.g.
   `~challenge:{|Bearer realm="api"|}`.
-- **Your own wording for a bad body**:
-  `Spindle.json ~refusal:(bad_body, "That is not an order.") order_json`.
+- **Your own answer for a bad body**:
+  `Spindle.json ~refusal:(bad_body, "That is not an order.") order_json`,
+  where `bad_body` is a code you made with `Refusal.Code.make`. The
+  dependency declares it for you. The client gets only your code and
+  sentence; the list of problems goes to the log.
 
 ## Forms and file uploads
 
@@ -227,11 +233,34 @@ Spindle.post Path.(s "sign-up") (Spindle.Returns.json account_json)
   the app is made.
 - **Files** are `Form.File.required`, `optional` and `list`, each a
   `Form.File.t` with a `filename` (text a person chose, never a path to
-  trust), a `content_type` and the `content`. An upload too large to hold in memory is read with
-  `Spindle.multipart` ([large bodies](dependencies.md#large-bodies)).
+  trust), a `content_type` and the `content`. An upload too large to hold
+  in memory is read with `Spindle.multipart` ([large bodies](#large-bodies)).
 
 **No CSRF token is needed.** A cross-site `POST` is refused with `403
-cross_origin` before any route sees it. Turning that check off removes your
-forms' protection.
+cross_origin` before any route sees it. `~check_origin:false` on
+`Spindle.serve` turns that check off, and with it your forms' protection;
+to accept another site of your own, list it in `~trusted_origins` instead.
+
+## Large bodies
+
+`Spindle.json` and `Spindle.body` hold the whole body, up to the server's
+`max_body`. For an upload too large to hold, read it as it arrives:
+
+- **`Spindle.body_stream ~max ()`** hands the handler a `Spindle.Body.t`,
+  limited to the route's own `max` bytes. Read it a part at a time with
+  `Body.read`. A failure (too large, stopped arriving) is a value you can
+  answer with `Body.refusal`.
+- **`~content_types:[ "text/csv" ]`** accepts only those types, each
+  `type/subtype`, `type/*` or `type/*+suffix`, compared without case or
+  parameters. Any other type is answered `415` before a byte is read, and
+  the API's document lists them as the body's types.
+- **`Spindle.multipart ~max ()`** is the same body, split into the parts of
+  a `multipart/form-data` upload. `Multipart.next` gives a part's head (its
+  `name`, `filename` and content type), `Multipart.read` its bytes. Nothing
+  is written to a temporary file; where a part goes is up to you.
+
+A stream can only be read while the handler runs. A route reads one body,
+one way: listing a stream beside `Spindle.json` is refused when the app is
+made.
 
 Next: [logging](logging.md).

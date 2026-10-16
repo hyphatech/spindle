@@ -1,7 +1,8 @@
 # Routes
 
-A route says *when somebody sends this method to this path, call that
-function*. An app is a list of routes.
+A route says *when somebody sends this method to this path, read these
+inputs from the request and pass them to this function*. An app is a list of
+routes.
 
 ## Anatomy of a route
 
@@ -11,16 +12,22 @@ Every route has four parts:
 Spindle.get                                  (* 1. the method *)
   Spindle.Path.(s "todos" / id)              (* 2. the path: /todos/{id} *)
   (Spindle.Returns.json todo_json)           (* 3. what it answers *)
-  (let+ id = Spindle.param id in             (* 4. what the handler needs, *)
-   get_todo id)                              (*    and the call to it *)
+  (let+ id = Spindle.param id in             (* 4. what it reads, *)
+   get_todo id)                              (*    and what it does with it *)
 ```
 
-1. **The method**: `Spindle.get`, `post`, `put`, `patch` or `delete`.
+`let+` and `and+` come from `open Spindle.Syntax` at the top of the file.
+
+1. **The method**: `Spindle.get`, `post`, `put`, `patch` or `delete`. Any
+   other method is `Spindle.route`, as in ``Spindle.route `OPTIONS``.
 2. **The path**: `s "todos"` is a fixed segment; `id` is a typed parameter,
    so `/todos/7` hands the handler the number `7`.
-3. **What it answers**: text, JSON of a type, or nothing.
-4. **The inputs and the call**: `let+` reads what the handler needs from the
-   request, then calls it. A request that doesn't fit -- `/todos/seven` --
+3. **What it answers**: text, HTML, JSON of a type, nothing, or a response
+   you build yourself, such as a redirect. [Request bodies, responses and
+   errors](bodies.md) lists them all.
+4. **What it reads, and what it does with it**: a value built with `let+`.
+   It reads inputs from the request and passes them to your function, the
+   handler, here `get_todo`. A request that doesn't fit -- `/todos/seven` --
    gets a `400` saying what is wrong, and the handler never runs.
 
 ## One route per method
@@ -83,6 +90,10 @@ curl localhost:8080/todos/seven
 ```
 
 - **`GET /todos`** reads nothing, so its input is `Spindle.Dep.return ()`.
+  Written `let+ () = Spindle.Dep.return () in list_todos ()`, it calls
+  `list_todos` on every request. `Spindle.Dep.return (list_todos ())` would
+  call it once, when the routes are built, and answer that same list for
+  ever.
 - **`GET /todos/{id}`** reads the `id` with `Spindle.param`.
 - **`POST /todos`** reads a JSON body with `Spindle.json draft_json`, and
   answers `201 Created` through `~status`.
@@ -103,6 +114,11 @@ let order_id = Path.str "order_id"               (* any segment *)
 let page = Path.int "page"                       (* an int *)
 let user_id = Path.int64 "user_id"               (* an int64 *)
 let file = Path.rest "file"                      (* every segment left *)
+let invoice = Path.param "invoice" Codec.uuid    (* a UUID, as a Uuidm.t *)
+let colour =
+  Path.param "colour"
+    (Codec.enum ~kind:"colour" colour_to_string
+       [ Red; Green; Blue ])                     (* one of a set of words *)
 let sku =
   Path.param "sku"
     (Codec.custom ~kind:"sku" ~parse:Sku.of_string
@@ -113,8 +129,11 @@ Path.(s "static" / file)                         (* /static/{file*} *)
 Path.root                                        (* / *)
 ```
 
-- Make a parameter once and use it in every path that has it. `/` joins
-  pieces into a path; `Spindle.param` takes the parameter, not the path.
+- Make each parameter once and use it in every path that has it. Read it in
+  a route with `Spindle.param order_id`: you pass the parameter, never the
+  path built from it.
+- `Codec` also has `float`, `bool` and `date` (`2026-09-30`, read as
+  `(year, month, day)`).
 - A segment arrives percent-decoded: `/orders/Kim%20Li` is `"Kim Li"`.
 - A `custom` codec's `~parse` answers `Ok` the value, or `Error` the
   sentence a client is told: `Error "This is not a SKU."`.
@@ -163,12 +182,15 @@ reported.
   `~unparsed:Next_route` (`Path.(s "posts" / int ~unparsed:Next_route
   "key")`) to make it "not this route" instead, so the next route whose
   path matches answers -- `/posts/42` by its number, `/posts/blue-lamp` by
-  its name. Such routes share the parameter's name, and the API's document
-  describes them as one operation, so they answer the same way and read the
-  same body: the document is refused otherwise.
+  its name. Routes like these, that differ only by the parameter's type,
+  must give it the same name. The OpenAPI document describes them as one
+  operation, so they must also answer the same way and read the same body;
+  otherwise `Spindle.Openapi.docs` refuses them.
 - **A path no route names** is `404`, or your own answer with
   `Spindle.serve env ~not_found:page routes`. A path another method's route
   names is `405`, with `Allow` listing the methods it has.
+- **A method no route declares and Spindle does not know** -- `PROPFIND`,
+  say -- is `501 Not Implemented`.
 - **`OPTIONS`** of a path a route names is answered for you, `204` with that
   `Allow`, unless you declare an `OPTIONS` route there; `OPTIONS *`, which
   asks of the server, is `204` as well.
@@ -181,7 +203,9 @@ A route table that can't be right is refused before the server listens:
 `Spindle.serve` raises `Invalid_argument` naming the route. That covers two
 routes of one method that could answer the same URL, a parameter named twice
 in a path, a `Path.rest` that isn't last, a `Spindle.param` its route's path
-doesn't have, and a `HEAD` route.
+doesn't have, and a `HEAD` route. The one `Spindle.param` this cannot check
+is one inside `Spindle.Dep.bind`, whose inputs are only known when it runs:
+if its route's path lacks the parameter, the request answers `500`.
 
 ## Building URLs
 

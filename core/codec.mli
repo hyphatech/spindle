@@ -46,7 +46,7 @@ val float : float t
 
 val uuid : Uuidm.t t
 (** RFC 9562, any version, the nil and the max UUID included, read in either
-    case and printed lower-cased: the [Uuidm.t] a body's {!Wiretype.uuid} and a
+    case and printed lower-cased: the [Uuidm.t] a body's [Wiretype.uuid] and a
     row's are, so one identifier crosses them as one type. *)
 
 val date : (int * int * int) t

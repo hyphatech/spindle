@@ -23,6 +23,10 @@ Spindle brings **dune**, the build tool, with it.
     winget install Git.Git OCaml.opam
     ```
 
+    Spindle should work on Windows, but it is not tested there. If something
+    fails, [WSL](https://learn.microsoft.com/windows/wsl/install) gives you a
+    Linux to follow the Linux steps in.
+
 ## 2. Set up OCaml
 
 ```sh
@@ -59,14 +63,17 @@ terminal does by itself:
 
 ```sh
 opam repo add hypha https://github.com/hyphatech/opam-repository.git
-opam install spindle spindle-postgres spindle-cli
+opam install spindle
 ```
 
-This installs its three packages and everything they need:
+This installs the framework and everything it needs, `dune` and the
+`ppx_wiretype` deriver included. The database and the command line are
+packages of their own, so an app that uses neither never installs them;
+their tutorials install them when you get there:
 
-| Package | Library | What for |
+| Package | Libraries | What for |
 |---|---|---|
-| `spindle` | `spindle` | The framework, and `spindle.client` for calling other servers |
+| `spindle` | `spindle`, `spindle.http`, `spindle.client` | The framework, HTTP itself, and a client for calling other servers |
 | `spindle-postgres` | `spindle-postgres` | [Database](tutorial/database.md) |
 | `spindle-cli` | `spindle-cli` | [Client schemas](tutorial/client-schemas.md#setting-up-the-command-line) |
 
@@ -85,10 +92,17 @@ dune --version
 ```
 
 ```text
-3.18.0
+3.24.2
 ```
 
-OCaml 5.5 or later and dune 3.18 or later means you are ready.
+```sh
+opam list spindle
+```
+
+It lists `spindle` with a version, not `--`, under *Installed*.
+
+OCaml 5.5 or later, dune 3.19 or later and an installed `spindle` mean you
+are ready.
 
 ## Your editor
 

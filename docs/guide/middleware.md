@@ -28,44 +28,60 @@ Saw 2 request(s)!
 
 ## Writing middleware
 
+Two middlewares: one built in, and one that applies only to the routes that
+ask for it.
+
 ```ocaml
+open Spindle.Syntax
+
 let security =
   Spindle.Middleware.headers
     [ ("x-content-type-options", "nosniff"); ("referrer-policy", "same-origin") ]
 
-let closed_for_maintenance _handler _request =
-  Spindle.Response.refusal (Spindle.Refusal.make closed "Back in a minute.")
+(* A policy for some routes: a key a route sets, read from the route the
+   request matched, never from its path. *)
+let noindex : bool Spindle.Meta.key = Spindle.Meta.key ()
 
-(* A policy for some routes reads the matched route, never the path. *)
-let limit : int Spindle.Meta.key = Spindle.Meta.key ()
-
-let limited handler request =
+let hide_from_search handler request =
+  let response = handler request in
   match
-    Option.bind (Spindle.Route.matched request) (fun r ->
-        Spindle.Meta.find limit r.meta)
+    Option.bind (Spindle.Route.matched request) (fun (r : Spindle.Route.info) ->
+        Spindle.Meta.find noindex r.meta)
   with
-  | Some n when over n request ->
-      Spindle.Response.refusal (Spindle.Refusal.make slow_down "Too fast.")
-  | Some _ | None -> handler request
+  | Some true ->
+      Spindle.Response.add_headers [ ("x-robots-tag", "noindex") ] response
+  | Some false | None -> response
+
+let routes =
+  [
+    Spindle.get
+      ~meta:Spindle.Meta.(empty |> add noindex true)
+      Spindle.Path.(s "drafts")
+      Spindle.Returns.text
+      (let+ () = Spindle.Dep.return () in
+       Ok "Not for search engines.");
+  ]
 
 let () =
   Eio_main.run @@ fun env ->
-  Spindle.serve env ~middleware:[ security; limited ]
-    ~codes:[ closed; slow_down ] routes
+  Spindle.serve env ~middleware:[ security; hide_from_search ] routes
 ```
 
 - **Order:** `[a; b]` is `a (b app)`: the first listed sees the request
   first and the response last.
-- **It may answer alone**, without calling the handler, and may change a
-  response's status and headers (`Response.add_headers`). It cannot rewrite
-  a stream's body.
+- **It may answer alone**, without calling the handler -- a maintenance page,
+  say. Around the handler, it may add headers
+  (`Response.add_headers`) or cookies (`Response.add_cookies`) to the
+  response, or answer a response of its own instead. It cannot rewrite a
+  stream's body, which is written after the middleware has returned.
 - **It cannot reroute.** The request is matched before any middleware runs;
-  `Route.matched request` is that route's `Route.info` (with its `Meta`), or
-  `None` when no route answered. To send someone elsewhere, answer a
-  redirect.
-- **Declare its refusal codes** in `~codes` (on `Spindle.serve` or
-  `App.make`). A code nobody declared is logged as a bug, and raises in a
-  test. These codes are not written into the OpenAPI document.
+  `Route.matched request` is that route's `Route.info`, or `None` when no
+  route answered. A route puts a value there with `~meta`, as `/drafts` does
+  above, and the middleware reads it with `Meta.find`. To send someone
+  elsewhere, answer a redirect.
+- **Declare its refusal codes** in `~codes`, on
+  `Spindle.serve` or `App.make`. A code nobody declared is logged as a bug,
+  and raises in a test. These codes are not written into the OpenAPI document.
 - **A raise is a `500`**, as a handler's is.
 - `Middleware.headers` is the one built in. It never overrides a header the
   route set itself.

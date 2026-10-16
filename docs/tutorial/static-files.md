@@ -9,10 +9,11 @@ stylesheets, a favicon.
 --8<-- "static.ml:app"
 ```
 
-Run it from `examples/`, since `"public"` is relative to the working
-directory:
+`"public"` is a folder next to where you start the program. The example's is
+`examples/public`, so start it from `examples/` and ask for a file:
 
 ```sh
+cd examples && dune exec ./static.exe
 curl -I localhost:8080/style.css
 ```
 
@@ -41,9 +42,13 @@ framework's `404`.
   (`304`), and one `Range` is answered with `206`.
 - **Every file carries `X-Content-Type-Options: nosniff`**, so a browser
   takes the type it is given and never guesses one from the bytes.
-- **A name that starts with a dot is skipped**, at any depth -- what a build
-  leaves beside a site, `.env` or `.git`, is never served -- but
-  `.well-known` at the site's root, which is the site's. `~dotfiles:true` reads them all.
+- **A precompressed copy is served when the browser accepts it.** Beside
+  `app.js`, an `app.js.br`, `app.js.zst` or `app.js.gz` your build made is
+  sent with `Content-Encoding` and `Vary: Accept-Encoding`. See
+  [Compression](../guide/compression.md).
+- **Names that start with a dot are skipped**, at any depth, so `.env` and
+  `.git` are never served. The one exception is `.well-known` at the root,
+  which belongs to the site (RFC 8615). `~dotfiles:true` serves them all.
 
 ## Static files beside an API
 
@@ -61,14 +66,18 @@ let routes =
 let () = Eio_main.run @@ fun env -> Spindle.serve env routes
 ```
 
-The options of `Static.directory`:
+The options of `Static.directory`. The files and prefixes they name are
+request paths, starting with `/` (`"/404.html"`, not `"404.html"`); a file
+that is not in the directory stops the server at start:
 
 - `~immutable` -- prefixes whose files are cached for a year. Every other
   file is `no-cache`; there is nothing in between, so a page never outlives
   the assets it names.
 - `~not_found` -- the file answered, with a `404`, for a path with no file.
 - `~shell:(file, prefixes)` -- answers every path under the prefixes with one
-  document and a `200`, for client-side pages whose ids are made at run time.
+  document and a `200`, for client-side pages whose ids are made at run time:
+  `~shell:("/app/index.html", [ "/orders/" ])`. A prefix ends in `/`, so
+  `/ordersheet` is not under `/orders/`.
 - `~index` -- the file a directory answers with, `"index.html"` unless told.
 - `~at` -- serve under a prefix instead of the root:
   `~at:Path.(s "static")`.
@@ -76,8 +85,15 @@ The options of `Static.directory`:
   `[ (".wasm", "application/wasm") ]`. An unknown extension is served as
   bytes.
 
-In a test, which has no filesystem, load the directory with
-`Static.load` and serve it with `Static.route`.
+`Spindle.Test.app` refuses `Static.directory`, which reads its files when a
+real server starts. In a test, load the directory yourself and serve it with
+`Static.route`:
+
+```ocaml
+match Spindle.Static.load Eio.Path.(Eio.Stdenv.cwd env / "public") with
+| Ok files -> Spindle.Test.app (routes @ [ Spindle.Static.route files ])
+| Error e -> Alcotest.fail e
+```
 
 ## Files that change at run time
 
@@ -107,5 +123,10 @@ Spindle.Files.directory ~at:Path.(s "uploads") ~download:true "var/uploads"
 - **Replace a file by writing it elsewhere and renaming it over the old
   one.** A file rewritten in place, at the same size within the clock's tick,
   keeps its `etag`.
+
+`Spindle.Test.app` refuses `Files.directory` too. `Spindle.Files.route` takes
+the same options over a directory you already hold as an `Eio.Path.t`, so a
+test can serve one of its own:
+`Spindle.Files.route Eio.Path.(Eio.Stdenv.cwd env / "uploads")`.
 
 Next: [database](database.md).

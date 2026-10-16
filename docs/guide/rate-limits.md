@@ -1,17 +1,24 @@
 # Rate limits
 
 Limit how often a client may call a route. A limit is a dependency: you list
-it in the route, and the route's API document shows its `429`.
+it in the route, and the route's OpenAPI document shows its `429`.
 
 ```ocaml
-let sign_ins = Spindle.Rate.create ~mono_clock ~limit:10 ~per:Mtime.Span.min ()
-
-let sign_in =
+let sign_in sign_ins =
   Spindle.post
     Spindle.Path.(s "sign-in")
     Spindle.Returns.text
     (let+ () = Spindle.Rate.limit sign_ins ~key:Spindle.client in
      Ok "in")
+
+let () =
+  Eio_main.run @@ fun env ->
+  let sign_ins =
+    Spindle.Rate.create
+      ~mono_clock:(Eio.Stdenv.mono_clock env)
+      ~limit:10 ~per:Mtime.Span.min ()
+  in
+  Spindle.serve env [ sign_in sign_ins ]
 ```
 
 Ten sign-ins a minute per client pass; the eleventh is refused:
@@ -43,4 +50,5 @@ retry-after: 6
   vouch for; without them every request has the proxy's address.
 - Counts live in this one process: several processes each count their own.
 - In a test, pass `Eio_mock.Clock.Mono.make ()` as `~mono_clock` and move it
-  with `Eio_mock.Clock.Mono.set_time`.
+  with `Eio_mock.Clock.Mono.set_time`. Add `eio.mock` to the test's
+  `libraries` in its `dune` file.

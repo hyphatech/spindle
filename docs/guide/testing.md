@@ -28,6 +28,10 @@ let test_echo () =
   `Files.route`, instead.
 - `Test.call app meth target` takes `?now` (a `Ptime.t`, default `Ptime.epoch`),
   `?peer` (default `127.0.0.1`), `?headers` and `?body`.
+- To test what a route sees behind a proxy, pass `~proxied:true`: the peer
+  is then a proxy the server trusts, and `~proxy_header` says which
+  forwarding header it writes. `~version:Spindle_http.Head.Http_1_0`
+  sends the request as HTTP/1.0.
 - The answer's status and headers are exactly what the server would write,
   cookies included, minus `connection`. A stream is run to its end.
 - `r.status` is a `Spindle_http.Status.t`, as every status in the API is,
@@ -70,7 +74,8 @@ let test_count () =
   | Error r -> Alcotest.failf "no stream: %d" (Spindle_http.Status.to_int r.status)
 ```
 
-Each event has its `name`, `data` and `id`, as a client reads them.
+Each event has its `name`, `data`, `id` and `retry_ms`, as a client reads
+them.
 `` `Stop `` is the client leaving: the route's next `send` is `Error Gone`,
 and `Spindle.client_gone` is resolved.
 `Error r` is the answer when the route did not stream.

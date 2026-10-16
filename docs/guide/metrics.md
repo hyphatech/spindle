@@ -37,8 +37,9 @@ With `~metrics`, the server counts, under OpenTelemetry's names:
 
 `Spindle_postgres.Pool.measure` adds the pool's
 `db.client.connection.count` (by state, `idle` or `used`) and
-`db.client.connection.pending_requests`, labelled with the pool's `?name`
-(`postgres` by default).
+`db.client.connection.pending_requests`, labelled
+`db.client.connection.pool.name`: `postgres`, unless you pass
+`Pool.measure ~name`. Two pools measured on one registry need two names.
 
 Prometheus sees each name with dots as underscores, its unit after and a
 counter's `_total`: `http_server_request_duration_seconds`.

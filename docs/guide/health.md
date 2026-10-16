@@ -20,7 +20,8 @@ connections are all busy passes without waiting; a closed one fails.
 ## Custom checks
 
 A check is `Spindle.Health.check name f`, where `f ()` answers `Ok ()` or
-`Error why`. This server is taken out of service while a file named
+`Error why`. Return `Error`, never raise: a check that raises is a bug, and
+is answered `500`, not `503 not_ready`. This server is taken out of service while a file named
 `maintenance` exists:
 
 ```ocaml
@@ -70,4 +71,5 @@ Good to know:
 - A stopping server refuses new connections, so probes fail without any
   check.
 - Probes are logged at `debug`, since something asks every few seconds.
-- `~live` and `~ready` move the routes to other paths.
+- `~live` and `~ready` move the routes to other paths:
+  `Spindle.Health.routes ~live:Spindle.Path.(s "healthz") checks`.

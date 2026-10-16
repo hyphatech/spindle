@@ -219,12 +219,12 @@ val now : Ptime.t Dep.t
 (** The application's clock: the instant the request is answered at. *)
 
 val set_cookie : (Cookie.t -> unit) Dep.t
-(** A function that sets a cookie on this request's answer: an endpoint that
-    sets one takes it among its inputs and calls it, and one that sets nothing
-    never mentions it. What it set goes with an [Ok] and never with a refusal.
-    It is this request's alone; a call after the answer has gone -- from a fibre
-    the endpoint left behind -- changes nothing and is logged as the route's
-    bug. Whether the cookie is [Secure] is the framework's to say ({!Cookie}).
+(** A function that sets a cookie on this request's answer: a handler that sets
+    one takes it among its inputs and calls it, and one that sets nothing never
+    mentions it. What it set goes with an [Ok] and never with a refusal. It is
+    this request's alone; a call after the answer has gone -- from a fibre the
+    handler left behind -- changes nothing and is logged as the route's bug.
+    Whether the cookie is [Secure] is the framework's to say ({!Cookie}).
 
     {[
     let sign_out session set_cookie =

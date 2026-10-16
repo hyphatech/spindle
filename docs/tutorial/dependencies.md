@@ -20,12 +20,15 @@ open Spindle.Syntax
 ```
 
 `open Spindle.Syntax` brings in `let+` and `and+` and nothing else. Every
-line runs before the body, which sees plain values: an `int64`, an
-`int option`, a time.
+input is worked out before the code after `in` runs, and that code sees
+plain values: an `int64` (if `user_id` is a `Path.int64`), an `int option`,
+a `Ptime.t`.
 
-- **A bad request is answered all at once.** Every input that is wrong is a
-  problem at its place -- `path.user_id`, `query.page`,
-  `body.items[2].count` -- collected into one `400`. The handler never runs.
+- **A bad request is answered all at once.** Every wrong path parameter,
+  query parameter, header and cookie is reported in one `400`, each problem
+  at its place (`path.user_id`, `query.page`). Only when those are all fine
+  is the body read, and its problems (`body.items[2].count`) are then
+  reported together the same way. The handler never runs.
 - **A route's inputs are known without running it.** That is what the API's
   [document](openapi.md) is made from.
 - **A dependency can be made of other dependencies**, and a route lists it
@@ -107,10 +110,27 @@ curl 'localhost:8080/books?page=two&per_page=x'
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.page","code":"malformed","message":"This is not a whole number."},{"at":"query.per_page","code":"malformed","message":"This is not a whole number."}]}
 ```
 
-- `Dep.join` turns a check that returns a `result` into a dependency: an
-  `Error` refuses the request.
+- `Dep.join` makes a dependency that may refuse, as `paging` above does:
+  write a `let+` block that answers `Ok` or `Error`, and wrap it. `Ok v`
+  gives `v`; `Error` refuses the request. `~refuses` names the codes it may
+  refuse with, so the document lists them; a `400` about an input, like
+  `paging`'s, needs none.
+
+  ```ocaml
+  let bearer =
+    Spindle.Dep.join ~refuses:[ signed_out ]
+      (let+ token = Spindle.Header.optional "authorization" Spindle.Codec.string in
+       Option.to_result ~none:(Spindle.Refusal.make signed_out "Sign in.") token)
+  ```
 - `Dep.problem ~at ~code message` reports a wrong value at its place,
   alongside every other problem in the request.
+- `Dep.map f d` derives a value that cannot fail:
+  `Spindle.Dep.map String.lowercase_ascii email`.
+- `Dep.refuse refusal` always refuses, for a route that is switched off.
+- `Dep.of_body ~need:(Raw { content_types = [ "text/csv" ] }) parse` reads
+  the whole body as a string and parses it into a type of your own. A
+  request of any other `Content-Type` is answered `415` before its body is
+  read.
 
 ??? example "The whole app"
 
@@ -125,26 +145,19 @@ with `~refuses`, so the route's document names it. A bearer token read from
 the `Authorization` header:
 
 ```ocaml
-let signed_out =
-  Spindle.Refusal.Code.make ~challenge:{|Bearer realm="api"|} "signed_out"
-    ~status:`Unauthorized ~doc:"Nobody is signed in."
-
-let bearer =
-  Spindle.Dep.join ~refuses:[ signed_out ]
-    (let+ credentials =
-       Spindle.Header.optional "authorization" Spindle.Codec.credentials
-     in
-     match credentials with
-     | Some { scheme = "bearer"; value = Token68 token } -> Ok token
-     | Some _ | None -> Error (Spindle.Refusal.make signed_out "Please sign in."))
+--8<-- "bearer_auth.ml:bearer"
 ```
 
 - The header is `optional`: a missing token should be a `401`, not a `400`.
 - A `401` code needs a `~challenge` (the `WWW-Authenticate` value);
   the app refuses to start without one.
 - Unlike an input problem, a refusal like this ends the request at once.
+- `Dep.credential ~scheme:"bearer"` tells the [document](openapi.md) that
+  this input proves who is asking, so it lists the scheme and which routes
+  need it.
 - The dependency hands over the token, not the account. Looking the account
-  up is a read, and belongs in the handler, next to the work it authorises.
+  up is a read, and belongs in the handler, next to the work it authorises
+  ([why](database.md#why-a-transaction-is-not-a-dependency)).
 
 ??? example "The whole app: a bearer token, and two routes that need it"
 
@@ -192,44 +205,39 @@ Spindle.Cookie.clear visits                      (* removes it *)
 ```
 
 A handler sets a cookie by listing `Spindle.set_cookie` among its inputs and
-calling it. For a cookie holding arbitrary text, use the
-`Spindle.Cookie.encoded` codec. Signed and encrypted cookies and sessions
-are on [their own page](../guide/cookies.md).
+calling it ([how](bodies.md#setting-cookies-and-headers)). For a cookie
+holding arbitrary text, use the `Spindle.Cookie.encoded` codec. Signed and
+encrypted cookies and sessions are on [their own page](../guide/cookies.md).
 
-**Other built-ins**: `Spindle.param`, `Spindle.now` (the instant, a `Ptime.t`),
-`Spindle.request`, `Spindle.request_id`, `Spindle.peer`, `Spindle.client`,
-`Spindle.body`, `Spindle.json`, `Spindle.body_stream` and
-`Spindle.multipart`.
+**Other built-ins**:
 
-## Large bodies
-
-`Spindle.json` and `Spindle.body` hold the whole body, up to the server's
-`max_body`. For an upload too large to hold, read it as it arrives:
-
-- **`Spindle.body_stream ~max ()`** hands the handler a `Spindle.Body.t`,
-  limited to the route's own `max` bytes. Read it a part at a time with
-  `Body.read`; a failure (too large, stopped arriving) is a value you can
-  answer with `Body.refusal`. `~content_types:[ "text/csv" ]` takes those
-  types alone -- each `type/subtype`, `type/*` or `type/*+suffix`, compared
-  without case or parameters -- and answers any other `415` before a byte
-  is read; the API's document lists them as the body's.
-- **`Spindle.multipart ~max ()`** is the same body, split into the parts of
-  a `multipart/form-data` upload. `Multipart.next` gives a part's head (its
-  `name`, `filename` and content type), `Multipart.read` its bytes. Nothing
-  is written to a temporary file; where a part goes is up to you.
-
-A stream can only be read while the handler runs, and a route reads one
-body, one way: listing a stream beside `Spindle.json` is refused when the app
-is made.
+- `Spindle.param`: a path parameter.
+- `Spindle.now`: the instant the request is answered at, a `Ptime.t`.
+- `Spindle.request`: the whole `Spindle.Request.t`.
+- `Spindle.request_id`: the id on every log line of this request.
+- `Spindle.peer`: the address that opened the connection, which is the
+  proxy when there is one.
+- `Spindle.client`: who is asking. It is the peer, or, when the peer is a
+  proxy you told the server to trust, the address that proxy forwarded for
+  ([the client's IP address](../guide/cookies.md#the-clients-ip-address)).
+- `Spindle.set_cookie` and `Spindle.add_header`: functions that add a
+  cookie or a header to the answer.
+- `Spindle.client_gone`: a promise resolved once the client has gone, for a
+  long-running [event stream](../guide/sse.md).
+- `Spindle.body`, `Spindle.json`, `Spindle.body_stream` and
+  `Spindle.multipart`: the body, [read whole or as it
+  arrives](bodies.md#large-bodies).
 
 ## How dependencies run
 
 - **The body is read last.** Everything else runs first, so a request
   refused for a missing token never has its body read.
 - **A dependency runs once per request**, however many others use it: two
-  dependencies that read the signed-in user make one database read. The
-  sharing is by value -- a dependency built anew by calling a function twice
-  is a new one. `Dep.uncached d` runs `d` at every use.
+  dependencies that both use `bearer` read the header once.
+- **Sharing works by identity.** Define a dependency once, `let current =
+  …`, and use that value everywhere. A function `let current () = …` called
+  twice makes two dependencies, which run twice. `Dep.uncached d` runs `d`
+  at every use on purpose.
 - **What the app holds is not a dependency.** A database pool, a client or
   a configuration exists once, at startup; close over it:
   `let routes pool = [ … ]`. [Database](database.md) shows that shape,

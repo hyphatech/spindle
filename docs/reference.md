@@ -5,17 +5,17 @@ function says what it does, what it refuses and what it defaults to.
 
 ## The packages
 
-Each library is one of its own, so a program links only what it uses; a
-library is named as it is installed -- `spindle.http` is `Spindle_http` in
-OCaml.
+Each library is separate, so a program links only what it uses. A `dune`
+file names a library as it is installed (`spindle.http`); OCaml code names
+it as a module (`Spindle_http`).
 
 | Package | Libraries | What it is |
 |---|---|---|
 | `spindle` | `spindle`, `spindle.http`, `spindle.client` | The framework; HTTP as both ends speak it; calling another server, which links no framework |
 | `spindle-postgres` | `spindle-postgres` | A server's Postgres: bounded connections, a pool, a transaction per borrow |
 | `spindle-cli` | `spindle-cli` | An application's command line: its API's document and Zod schemas |
-| [`wiretype`, `ppx_wiretype`](https://github.com/hyphatech/wiretype) | `wiretype` | JSON as descriptions, and the deriver that writes one, released on their own; installed with `spindle` |
-| [`rowtype`, `rowtype-postgres`, `rowtype-migrate`](https://github.com/hyphatech/rowtype) | the same | A statement described once, its Postgres backend, and migrations, released on their own |
+| [`wiretype`, `ppx_wiretype`](https://github.com/hyphatech/wiretype) | `wiretype`, `ppx_wiretype` | JSON as descriptions, and the deriver that writes one, released on their own; installed with `spindle` |
+| [`rowtype`, `rowtype-postgres`, `rowtype-migrate`](https://github.com/hyphatech/rowtype) | the same | A statement described once, its Postgres backend, and migrations, released on their own; `spindle-postgres` installs the first two, and `rowtype-migrate` is installed by itself (`opam install rowtype-migrate`) |
 | [`postgres-eio`](https://github.com/hyphatech/postgres-eio) | `postgres-eio` | The Postgres driver, released on its own |
 
 ## Spindle

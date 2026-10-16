@@ -7,17 +7,22 @@ a database pool, a client -- is made first, inside `Eio_main.run`:
 let () =
   Eio_main.run @@ fun env ->
   Spindle_postgres.Pool.run env database @@ fun pool ->
-  Spindle.serve env ~port:3000 ~max_connections:1024
-    ~on_stop:(fun () -> Spindle.Broadcast.close hub)
-    (routes ~pool)
+  Spindle.serve env ~port:3000 ~max_connections:1024 (routes ~pool)
 ```
 
 By default it serves on `localhost:8080`, on every CPU core, stops cleanly
 on SIGTERM or SIGINT, and prints where it listens. Every setting is an
 optional argument.
 
-A route table that cannot be right -- two routes answering one URL, say --
-raises `Invalid_argument` before the server listens, naming the route.
+Three mistakes stop the server before it listens:
+
+- A route table that cannot be right -- two routes answering one URL, say
+  -- raises `Invalid_argument`, naming the route. So does a limit out of
+  its range.
+- A `Static.directory` or a `Files.directory` that cannot be read logs an
+  error saying why, and the program exits with status 1.
+- A port already in use, or a `~host` name the resolver does not know,
+  raises Eio's I/O error.
 
 ## Where it listens
 
@@ -29,8 +34,8 @@ raises `Invalid_argument` before the server listens, naming the route.
 | a name | every address it resolves to |
 
 In a container, a pod or on a hosting platform, use `~host:"0.0.0.0"`.
-Listening beyond your machine is always written down; a laptop never serves
-the network it happens to be on.
+Serving beyond your machine has to be asked for in code, so a laptop never
+serves the network it happens to be on.
 
 TLS is the one thing Spindle leaves to a proxy or the platform. Behind one,
 name it in `~trusted_proxies` (an address or a CIDR range) so the client's
@@ -57,16 +62,16 @@ a reason.
 | `max_header_bytes` | 16 KiB | the head is `431` (`414` for a long request line) |
 | `head_timeout` | 10 s | a head still arriving is `408` |
 | `idle_timeout` | 60 s | an idle connection is closed |
-| `body_timeout` | 20 s | a body's allowance, which grows a second for every `min_body_rate` (500) bytes; a body that falls behind is closed |
+| `body_timeout` | 20 s | a body gets 20 s, plus one second for every `min_body_rate` (500) bytes received; one that falls behind is closed |
 | `send_timeout` | 30 s | a client that stops reading the answer is closed |
 | `max_connections` | 512 | connections held at once, per address; the rest wait in `backlog` (128) |
 
 A wait is an `Mtime.Span.t`, named for what it bounds:
-`~send_timeout:Mtime.Span.(60 * s)`. One of zero is refused, as a server
-that would wait for nothing.
+`~send_timeout:Mtime.Span.(60 * s)`. A timeout of zero is refused, since
+the server would wait for nothing; only `~drain` and `~linger` may be zero.
 
 A route that takes large uploads reads its body as a stream, with a limit of
-its own ([dependencies](../tutorial/dependencies.md#large-bodies)).
+its own ([large bodies](../tutorial/bodies.md#large-bodies)).
 
 Keep `max_connections` under the process's file descriptor limit
 (`ulimit -n`): every open stream and WebSocket holds a connection, and a
@@ -90,6 +95,15 @@ On the first SIGTERM or SIGINT:
 A second signal ends the process at once. To stop on something other than
 a signal, pass your own promise as `~stop`.
 
+If your routes publish to a [`Spindle.Broadcast`](sse.md#broadcasting-to-many-clients)
+-- here called `hub` -- close it in `~on_stop`, so every stream reading it
+ends and the drain can finish:
+
+```ocaml
+Spindle.serve env ~on_stop:(fun () -> Spindle.Broadcast.close hub) routes
+```
+
+
 ## What the server handles for you
 
 Spindle reads and writes HTTP/1.1 itself, and every requirement of RFC 9112
@@ -103,18 +117,44 @@ and RFC 9110 it meets is a test, as is every one of RFC 9111's
   connection.
 - `Expect: 100-continue` is answered only by a route that reads its body,
   and never for a body over `max_body`.
-- `Content-Length`, `Transfer-Encoding` and `Connection` are the server's
-  to write; a route that sets one itself answers `500`.
+- The server writes the fields that say how an answer is framed --
+  `Content-Length`, `Transfer-Encoding`, `Connection`, `Keep-Alive`,
+  `Upgrade`, `TE` and `Trailer` -- and the ones it works out itself:
+  `Content-Type` from the route's `Returns`, `Set-Cookie` from its cookies,
+  `Date` and `X-Request-Id`. A route that sets any of them as a header
+  answers `500`.
 - HTTP/1.0 clients are answered as HTTP/1.0.
 
 The same holds beyond HTTP itself: WebSockets are tested against RFC 6455,
 a form's multipart body against RFC 7578 and RFC 2046, and Structured
 Fields against RFC 9651's published test suite, run whole.
 
+## Every other argument
+
+`Spindle.serve` also takes these, each covered on its own page:
+
+| Argument | What it does |
+|---|---|
+| `~middleware` | wraps every route ([Middleware](middleware.md)) |
+| `~codes` | the refusal codes your middleware may answer ([Middleware](middleware.md#writing-middleware)) |
+| `~not_found` | answers a request no route claims ([Routes](../tutorial/routes.md#how-routes-are-matched)) |
+| `~trailing_slash` | `Strict` by default; `Redirect` answers `/a/` with a `308` to `/a` ([Routes](../tutorial/routes.md#how-routes-are-matched)) |
+| `~check_origin`, `~trusted_origins` | the cross-site check on requests that change something ([CSRF and CORS](cookies.md#csrf-and-cors)) |
+| `~cors` | lets other sites' pages call your routes ([CSRF and CORS](cookies.md#csrf-and-cors)) |
+| `~compress` | gzip for clients that accept it ([Compression](compression.md)) |
+| `~trusted_proxies`, `~proxy_header` | the proxies whose forwarding header is believed, and which header that is: `X_forwarded_for` (default) or `Forwarded` ([The client's IP address](cookies.md#the-clients-ip-address)) |
+| `~trace` | sends a span for every request ([Tracing](../tutorial/logging.md#tracing)) |
+| `~metrics` | counts requests and connections ([Metrics](metrics.md)) |
+| `~ready` | told the address once the server listens; by default it is printed to stdout |
+| `~read_clock` | the clock a handler reads as `Spindle.now`; the system clock by default |
+| `~discard_limit` | 64 KiB: how much of a body a route left unread is read and dropped; with more left, the connection is closed |
+| `~linger` | 1 s: how long a closing connection's last bytes are read and dropped, so the client gets the answer |
+
 ## Without Spindle.serve
 
-`Spindle.serve` is three steps, which a program that builds its routes at
-run time, or wants no signal handler, takes itself: `App.make` the routes,
-`App.start` the app (which reads any `Static.directory`), and `Server.run`
-it with every capability passed explicitly. `Server.serve_on` serves on
-sockets you already listen on -- a test's, on a port the system chose.
+A program that builds its routes at run time, or wants no signal handler,
+does what `Spindle.serve` does in three steps: `App.make` the routes,
+`App.start` the app (which reads any `Static.directory` or
+`Files.directory`), and `Server.run` it with every capability passed
+explicitly. `Server.serve_on` serves on sockets you already listen on -- a
+test's, on a port the system chose.

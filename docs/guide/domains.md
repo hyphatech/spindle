@@ -28,6 +28,12 @@ Each visit to `/pages/<name>` counts one, in a `Hashtbl` behind an
 dune exec examples/multidomain.exe
 ```
 
+or, on one domain with no lock:
+
+```sh
+dune exec examples/multidomain.exe -- --one-domain
+```
+
 ```sh
 curl localhost:8080/pages/home
 ```

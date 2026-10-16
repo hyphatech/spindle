@@ -68,5 +68,9 @@ let () =
   (* --8<-- [start:log] *)
   match Spindle_postgres.Pool.exec pool create_names () with
   | Ok () -> Spindle.serve env (routes pool)
-  | Error e -> prerr_endline (Spindle_postgres.error_to_string e)
+  | Error e ->
+      Logs.err (fun m ->
+          m "could not create the table: %s"
+            (Spindle_postgres.error_to_string e));
+      exit 1
 (* --8<-- [end:log] *)

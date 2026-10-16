@@ -12,14 +12,14 @@ open Spindle.Syntax
 
 (* --8<-- [start:app] *)
 (* The shape and its bounds are the description's: a quantity of 0 is a 400
-   at body.quantity before the endpoint runs. *)
+   at body.quantity before the handler runs. *)
 type order = { item : string; quantity : int [@min 1] [@max 20] }
 [@@deriving wiretype]
 
 type placed = { number : int; item : string; quantity : int }
 [@@deriving wiretype]
 
-(* A rule the description cannot know is the endpoint's, refused with a code
+(* A rule the description cannot know is the handler's, refused with a code
    declared once, with its status and what it means. *)
 let sold_out =
   Spindle.Refusal.Code.make "sold_out" ~status:`Conflict

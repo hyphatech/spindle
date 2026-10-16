@@ -24,19 +24,19 @@
 
     {b A dependency runs once per request}, however many others read it: a value
     has an identity, made with it, and the answer it gave -- a refusal included
-    -- is what every other use of it in that request is given. So a signed-in
-    person that two dependencies read is one read of the database:
+    -- is what every other use of it in that request is given. So a token that
+    two dependencies read is checked once:
 
     {[
-      let current_user =
+      let claims =
         Spindle.Dep.join ~refuses:[ signed_out ]
           (let+ token = bearer in
-           Accounts.find pool token)
+           Token.verify key token)
 
-      let quota = Spindle.Dep.map Quota.of_user current_user
+      let scopes = Spindle.Dep.map Token.scopes claims
 
-      (* current_user runs once, though the route reads it twice *)
-      let+ user = current_user and+ left = quota in ...
+      (* claims runs once, though the route reads it twice *)
+      let+ claims = claims and+ scopes = scopes in ...
     ]}
 
     What is shared is the value, never its structure: a dependency made again --

@@ -1,8 +1,8 @@
-(* The smallest application: one endpoint, answering at /.
+(* The smallest application: one route, answering at /.
 
-   Every example keeps three things apart -- the endpoints, what each
-   answers; the routes, which URL reaches which endpoint; and the server --
-   so each reads on its own, and an endpoint is plain OCaml a test can call
+   Every example keeps three things apart -- the handlers, what each
+   answers; the routes, which URL reaches which handler; and the server --
+   so each reads on its own, and a handler is plain OCaml a test can call
    without a server. *)
 
 (* --8<-- [start:app] *)
