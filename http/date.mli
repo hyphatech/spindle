@@ -3,10 +3,10 @@
     recipient must still accept.
 
     {[
-    Date.parse ~now "Sun, 06 Nov 1994 08:49:37 GMT" Date.parse ~now
-      "Sunday, 06-Nov-94 08:49:37 GMT" Date.parse ~now
-      "Sun Nov  6 08:49:37 1994"
     (* each [Some] of the instant 1994-11-06T08:49:37Z *)
+    let imf = Date.parse ~now "Sun, 06 Nov 1994 08:49:37 GMT"
+    let rfc850 = Date.parse ~now "Sunday, 06-Nov-94 08:49:37 GMT"
+    let asctime = Date.parse ~now "Sun Nov  6 08:49:37 1994"
     ]}
 
     A date is case-sensitive and of a fixed shape, so anything else -- a date

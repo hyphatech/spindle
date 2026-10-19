@@ -4,6 +4,8 @@ Limit how often a client may call a route. A limit is a dependency: you list
 it in the route, and the route's OpenAPI document shows its `429`.
 
 ```ocaml
+open Spindle.Syntax
+
 let sign_ins = Spindle.Rate.create ~limit:10 ~per:Mtime.Span.min ()
 
 let sign_in =

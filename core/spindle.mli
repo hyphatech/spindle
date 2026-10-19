@@ -241,8 +241,10 @@ val set_cookie : (Cookie.t -> unit) Dep.t
     Whether the cookie is [Secure] is the framework's to say ({!Cookie}).
 
     {[
-    let theme =
-      Spindle.Cookie.named "theme" Spindle.Codec.string Spindle.post
+    let theme = Spindle.Cookie.named "theme" Spindle.Codec.string
+
+    let save_theme =
+      Spindle.post
         Path.(s "theme" / name)
         Returns.text
         (let+ name = Spindle.param name and+ set_cookie = Spindle.set_cookie in

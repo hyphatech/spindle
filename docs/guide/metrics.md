@@ -5,12 +5,15 @@
 its route:
 
 ```ocaml
-let metrics = Spindle.Metrics.create () in
-Spindle_postgres.Pool.run env database @@ fun pool ->
-Spindle_postgres.Pool.measure pool metrics;
-Spindle.serve env ~metrics
-  ~resources:[ Spindle.Dep.resource db pool ]
-  (routes @ Spindle.Metrics.routes metrics)
+let metrics = Spindle.Metrics.create ()
+
+let () =
+  Eio_main.run @@ fun env ->
+  Spindle_postgres.Pool.run env database @@ fun pool ->
+  Spindle_postgres.Pool.measure pool metrics;
+  Spindle.serve env ~metrics
+    ~resources:[ Spindle.Dep.resource db pool ]
+    (routes @ Spindle.Metrics.routes metrics)
 ```
 
 ```sh

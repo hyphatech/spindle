@@ -1,8 +1,10 @@
-(* An application's command line: its API's document and its client's Zod
-   schemas, written from the routes without serving them.
+(* An application's command line: its API's document, its client's Zod
+   schemas and its OCaml client for Melange, written from the routes without
+   serving them.
 
      dune exec examples/api_cli.exe -- api openapi
      dune exec examples/api_cli.exe -- api zod -o wire.gen.ts
+     dune exec examples/api_cli.exe -- api melange -o api.ml
      dune exec examples/api_cli.exe -- api check \
        --openapi openapi.json --zod wire.gen.ts *)
 

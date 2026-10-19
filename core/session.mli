@@ -7,7 +7,10 @@
         ~store:(Spindle.Dep.return (Spindle.Session.memory ()))
         ~idle:Mtime.Span.(14 * day)
         ~absolute:Mtime.Span.(90 * day)
-        visit_json Spindle.get
+        visit_json
+
+    let me =
+      Spindle.get
         Path.(s "me")
         Returns.text
         (let+ session = session in

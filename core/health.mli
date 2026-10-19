@@ -6,12 +6,12 @@
 
     {[
     let routes =
-      app_routes
-      @ Spindle.Health.routes
-          [ Spindle_postgres.Pool.check db ]
-          Spindle.serve env
-          ~resources:[ Spindle.Dep.resource db pool ]
-          routes
+      app_routes @ Spindle.Health.routes [ Spindle_postgres.Pool.check db ]
+
+    let () =
+      Eio_main.run @@ fun env ->
+      Spindle_postgres.Pool.run env database @@ fun pool ->
+      Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes
     ]}
 
     {b [/livez] runs no check.} It answers [ok] for as long as the process can

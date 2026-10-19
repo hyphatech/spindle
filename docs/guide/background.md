@@ -5,6 +5,8 @@ something later. `Spindle.Background` runs work now, on its own fiber;
 `Spindle.Alarm` runs it after a delay.
 
 ```ocaml
+open Spindle.Syntax
+
 let background : Spindle.Background.t Spindle.Dep.t =
   Spindle.Dep.of_resource "background"
 

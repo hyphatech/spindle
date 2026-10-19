@@ -6,7 +6,8 @@
 
     let colour =
       Spindle.Path.param "colour"
-        (Codec.enum ~kind:"colour" Colour.to_string Colour.[ Red; Green ])
+        (Spindle.Codec.enum ~kind:"colour" Colour.to_string
+           Colour.[ Red; Green ])
     ]}
 
     One codec reads the same way wherever the text arrives, and says what it
