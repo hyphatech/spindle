@@ -54,5 +54,13 @@ val check : string -> (unit -> (unit, string) result) Dep.t -> check
 val not_ready : Refusal.Code.t
 (** [503 not_ready]: a check failed. *)
 
-val routes : ?live:Path.path -> ?ready:Path.path -> check list -> Route.t list
-(** [GET /livez] and [GET /readyz], or [live] and [ready]. *)
+val routes :
+  ?live:Path.path ->
+  ?ready:Path.path ->
+  ?guard:unit Dep.t ->
+  check list ->
+  Route.t list
+(** [GET /livez] and [GET /readyz], or [live] and [ready]. Both are as public as
+    any probe; an application that must not show them says who may with [guard],
+    a dependency run first, whose refusal is the answer, as {!Metrics.routes}'
+    is. *)

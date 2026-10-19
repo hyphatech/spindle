@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `Spindle.Health.routes`, `Spindle.Openapi.docs` and `Spindle.Openapi.routes`
+  take `?guard`, as `Spindle.Metrics.routes` does: a `unit Dep.t` run first,
+  whose refusal is the answer, so the probes and the API's reference can be
+  kept from whoever must not read them, where only the metrics could.
+
 - Breaking: the not-found answer is written as a route's handler is, with
   no method or path, as Axum's fallback is a handler like any other.
   `~not_found` -- on `Spindle.serve`, `App.make` and `Test.app` -- is a

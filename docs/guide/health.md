@@ -69,3 +69,6 @@ Good to know:
 - Probes are logged at `debug`, since something asks every few seconds.
 - `~live` and `~ready` move the routes to other paths:
   `Spindle.Health.routes ~live:Spindle.Path.(s "healthz") checks`.
+- Both are public unless you guard them, as `/metrics` is. `~guard` is a
+  `unit Dep.t` run first, whose refusal is the answer:
+  `Spindle.Health.routes ~guard:only_the_cluster checks`.

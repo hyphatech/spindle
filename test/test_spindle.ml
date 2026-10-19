@@ -3942,6 +3942,38 @@ let test_metrics_are_guarded_as_a_route_is () =
   check_status "and read with" 200 r.status;
   check_string "the exposition" "# TYPE up gauge\n" r.body
 
+(* The probes and the API's reference are guarded as the metrics are: the
+   guard runs first, and its refusal is the answer. *)
+let test_probes_and_the_reference_are_guarded () =
+  let forbidden = code "forbidden" `Forbidden in
+  let guard =
+    Spindle.Dep.of_request ~refuses:[ forbidden ] (fun req ->
+        match Spindle.Request.header req "authorization" with
+        | Some "Bearer staff" -> Ok ()
+        | Some _ | None -> Error (Spindle.Refusal.make forbidden "Not you."))
+  in
+  let staff = [ ("authorization", "Bearer staff") ] in
+  let probes = Spindle.Test.app (Spindle.Health.routes ~guard []) in
+  List.iter
+    (fun path ->
+      check_status
+        (path ^ " refused without")
+        403 (Spindle.Test.call probes `GET path).status;
+      check_status (path ^ " read with") 200
+        (Spindle.Test.call probes ~headers:staff `GET path).status)
+    [ "/livez"; "/readyz" ];
+  let reference =
+    Spindle.Test.app (hello :: Spindle.Openapi.docs ~guard [ hello ])
+  in
+  List.iter
+    (fun path ->
+      check_status
+        (path ^ " refused without")
+        403 (Spindle.Test.call reference `GET path).status;
+      check_status (path ^ " read with") 200
+        (Spindle.Test.call reference ~headers:staff `GET path).status)
+    [ "/openapi.json"; "/docs"; "/docs/scalar.js"; "/docs/start.js" ]
+
 (* ------------------------------------------------------------------ *)
 (* Calling out *)
 
@@ -10108,6 +10140,8 @@ let () =
             test_a_server_counts_its_requests;
           Alcotest.test_case "guarded as a route is" `Quick
             test_metrics_are_guarded_as_a_route_is;
+          Alcotest.test_case "probes and the reference are guarded" `Quick
+            test_probes_and_the_reference_are_guarded;
         ] );
       ( "broadcast and alarms",
         [

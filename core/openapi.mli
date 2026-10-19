@@ -32,6 +32,7 @@ val routes :
   ?document:Path.path ->
   ?title:string ->
   ?version:string ->
+  ?guard:unit Dep.t ->
   Route.t list ->
   (Route.t list, string list) result
 (** The document of the routes it is given, at [document] ([/openapi.json]
@@ -39,15 +40,19 @@ val routes :
     scripts beneath it -- all from this server, so the page works offline and
     asks no other host for anything. The application adds them to the routes it
     described and makes its app once, so the document describes its API and not
-    itself. [Error] names routes {!Spindle.App.make} refuses, what {!document}
-    answers [Error] for, and a path with a parameter, which is no one place.
-    {!docs} is this for routes written in source. *)
+    itself. Each is as public as the API it describes; an application that must
+    not show it says who may with [guard], a dependency run first, whose refusal
+    is the answer, as {!Metrics.routes}' is. [Error] names routes
+    {!Spindle.App.make} refuses, what {!document} answers [Error] for, and a
+    path with a parameter, which is no one place. {!docs} is this for routes
+    written in source. *)
 
 val docs :
   ?at:Path.path ->
   ?document:Path.path ->
   ?title:string ->
   ?version:string ->
+  ?guard:unit Dep.t ->
   Route.t list ->
   Route.t list
 (** [docs routes]: {!val-routes}, as routes to serve beside the ones they

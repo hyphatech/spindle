@@ -36,6 +36,9 @@ what it means.*
 - Only the routes you pass are described: `api @ site @ Spindle.Openapi.docs
   api` keeps a static site out of the document.
 - `~at` and `~document` move the page and the document.
+- Both are public unless you guard them, as `/metrics` is. `~guard` is a
+  `unit Dep.t` run first, whose refusal is the answer:
+  `Spindle.Openapi.docs ~guard:staff_only api`.
 - A mistake in the descriptions -- two different types under one name,
   two paths that make one `operationId`, one path under two parameter
   names, or one operation whose routes answer in different ways or read
