@@ -94,11 +94,15 @@ val run :
     lives beside a server, for as long as the program does, is made with
     {!create} on the program's own switch. *)
 
-type response = {
+type 'body response = {
   status : Spindle_http.Status.t;
   headers : (string * string) list;  (** names lower-cased *)
-  body : string;
+  body : 'body;
+      (** the whole of it, a [string], from {!call}; a {!Body.t} to read as it
+          arrives, from {!stream} *)
 }
+(** A response, its body's type saying how it arrived, so what reads its status
+    and headers reads either. *)
 
 type error =
   [ `Unsent of string
@@ -130,7 +134,7 @@ val call :
   ?body:string ->
   Spindle_http.Meth.t ->
   string ->
-  (response, error) result
+  (string response, error) result
 (** [call t meth url]. Any status is an answer: what a [4xx] means is the
     caller's to say. The URL's path and query are sent byte for byte as it wrote
     them, so a signed URL arrives as it was signed, and its fragment is not
@@ -152,13 +156,6 @@ module Body : sig
       after the function it was handed to has returned is [`End]. *)
 end
 
-type answer = {
-  status : Spindle_http.Status.t;
-  headers : (string * string) list;
-  body : Body.t;
-}
-(** A response whose body is read as it arrives: headers lower-cased. *)
-
 val stream :
   t ->
   ?timeout:Mtime.Span.t ->
@@ -167,7 +164,7 @@ val stream :
   ?body:string ->
   Spindle_http.Meth.t ->
   string ->
-  (answer -> 'a) ->
+  (Body.t response -> 'a) ->
   ('a, error) result
 (** [stream t meth url f]: [f] handed the answer as its head arrives, its body
     to read as it comes -- a model's streamed answer, a download too large to
@@ -183,7 +180,7 @@ type events_end =
   | Finished of string option
       (** the server ended it: the last event id it set, to carry on from *)
   | Stopped of string option  (** the function stopped it, at that id *)
-  | Answered of response
+  | Answered of string response
       (** the server answered with something other than a [200]
           [text/event-stream]: that answer, read whole *)
 
@@ -206,7 +203,8 @@ val events :
 
 type websocket_error =
   [ error
-  | `Not_upgraded of response  (** the server answered, without a [101] *)
+  | `Not_upgraded of string response
+    (** the server answered, without a [101] *)
   | `Websocket of Spindle_http.Websocket.error
     (** how the function's socket ended *) ]
 (** A handshake that could not be made is a call's {!error}. *)

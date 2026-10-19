@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Breaking: `Spindle_client` has one response, `'body response`, its
+  body's type saying how it arrived: `call` answers a `string response`,
+  the whole body, and `stream` hands its function a `Body.t response`,
+  read as it arrives, as Java's `HttpResponse<T>` is one type for both.
+  `answer` is gone, so what reads a status or a header reads either. A
+  type written as `Spindle_client.response` is `string
+  Spindle_client.response`.
+
 - Breaking: `Spindle.client` is `Spindle.client_ip`, and `Request.client`
   and `Request.make ?client` are `client_ip`: the caller's address, as
   `req.ip` and `remote_ip` name it, where "client" also named the HTTP

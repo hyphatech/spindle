@@ -108,10 +108,10 @@ type t = {
           its own domain's and no lock is needed *)
 }
 
-type response = {
+type 'body response = {
   status : Status.t;
   headers : (string * string) list;
-  body : string;
+  body : 'body;
 }
 
 type error = [ `Unsent of string | `Lost of string ]
@@ -785,12 +785,6 @@ module Body = struct
               match error_of_exn ex with Some e -> failed e | None -> raise ex))
 end
 
-type answer = {
-  status : Status.t;
-  headers : (string * string) list;
-  body : Body.t;
-}
-
 (* The connection and the answer's head, retried as a call is. *)
 let open_answer ~sw t ~headers ~body meth target =
   (match
@@ -901,7 +895,7 @@ let stream t ?timeout ?read_timeout ?(headers = []) ?body meth url f =
 type events_end =
   | Finished of string option
   | Stopped of string option
-  | Answered of response
+  | Answered of string response
 
 let is_event_stream headers =
   match
@@ -974,7 +968,7 @@ let events t ?timeout ?read_timeout ?(headers = []) ?last_event_id url on_event
 (* A WebSocket *)
 
 type websocket_error =
-  [ error | `Not_upgraded of response | `Websocket of Websocket.error ]
+  [ error | `Not_upgraded of string response | `Websocket of Websocket.error ]
 
 let websocket_error_to_string : websocket_error -> string = function
   | #error as e -> error_to_string e

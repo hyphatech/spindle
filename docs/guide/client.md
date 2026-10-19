@@ -103,9 +103,9 @@ Good to know:
 large to hold:
 
 ```ocaml
-Spindle_client.stream client `GET url (fun answer ->
+Spindle_client.stream client `GET url (fun response ->
     let rec copy () =
-      match Spindle_client.Body.read answer.body with
+      match Spindle_client.Body.read response.body with
       | Ok (`Data piece) -> print_string piece; copy ()
       | Ok `End -> Ok ()
       | Error e -> Error e

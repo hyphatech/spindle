@@ -931,7 +931,7 @@ let opening ?extra key =
 
 let outcome = function
   | Ok said -> "opened: " ^ said
-  | Error (`Not_upgraded (r : Spindle_client.response)) ->
+  | Error (`Not_upgraded (r : string Spindle_client.response)) ->
       Printf.sprintf "refused %d: %s"
         (Spindle_http.Status.to_int r.status)
         r.body

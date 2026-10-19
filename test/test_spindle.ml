@@ -4695,7 +4695,7 @@ let who =
     (let+ client = Spindle.client_ip and+ id = Spindle.request_id in
      Ok (Spindle.Response.json Wiretype.(list string) [ client; id ]))
 
-let who_of (r : Spindle_client.response) =
+let who_of (r : string Spindle_client.response) =
   match Wiretype.decode Wiretype.(list string) r.body with
   | Ok [ client; id ] -> (client, id)
   | _ -> Alcotest.failf "not who: %s" r.body
