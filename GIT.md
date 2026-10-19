@@ -20,6 +20,11 @@ How work becomes a commit on `main`, the same in every Hypha repository.
   alone.
 - **No trailers**: no `Co-Authored-By`, no `Signed-off-by`, no "Generated
   with". Who wrote a line is not why it changed.
+- **A message names no commit by its id.** It says what the change does
+  and why, in words; where it builds on earlier work, it names that work
+  by what it did. Why: an id means nothing to a reader of the log,
+  changes when a branch is rebased or squashed, and a copied one points
+  into a repository its reader may not have.
 
 ## Where work happens
 
