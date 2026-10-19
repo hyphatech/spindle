@@ -138,6 +138,15 @@ A change is done when every box holds:
   rule can be cited for it; where no natural name comes, the plainer one
   stays, since a name assembled from parts to satisfy a rule
   (`renewals_per_idle`) is worse than none.
+- [ ] **A keyword used as a name takes a trailing underscore, and no
+  other name begins or ends with one.** A name that is a keyword because
+  something else chose it -- an HTML attribute, a Solid prop, an RFC's
+  parameter, a JSON member -- is spelt as that word with `_` after it,
+  everywhere alike: `type_`, `for_`, `when_`, `lazy_`. Any other name is
+  a word, with no underscore at either end: a value nothing reads is
+  `_`, never `_req`, and a name we choose that would be a keyword is a
+  better word (`Zod.schemas`, never `Zod.module_`). A binding keeps its
+  library's spelling (`Js.Promise.then_`).
 - [ ] **A number with a reason is named where nothing beside it already
   says it**, the reason beside it: a field, a label or a comment that
   says its purpose and its unit (`send_timeout = Mtime.Span.(10 * s)`)
