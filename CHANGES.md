@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.8.0 (2026-10-19)
 
 - `Spindle.Melange.client` prints the routes as one OCaml module for
   Melange, from the same walk as the OpenAPI document and the Zod schemas:
