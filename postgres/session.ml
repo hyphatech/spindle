@@ -52,7 +52,7 @@ type statements = {
   find : (string, (string * Ptime.t * Ptime.t * Ptime.t) option) S.statement;
   save : (string * string * Ptime.t * Ptime.t * Ptime.t, unit) S.statement;
   delete : (string, unit) S.statement;
-  sweep : (Ptime.t, int) S.statement;
+  sweep : (Ptime.t * int, int) S.statement;
 }
 
 let statements_for ~table =
@@ -77,9 +77,17 @@ let statements_for ~table =
     delete =
       S.exec ~params:S.text
         (Printf.sprintf "delete from %s where digest = $1" t);
+    (* The soonest ended first, by the index on expires_at, and none another
+       server's sweep holds: two servers sweeping at once share the work and
+       never wait on each other. *)
     sweep =
-      S.exec_count ~params:S.instant
-        (Printf.sprintf "delete from %s where expires_at <= $1" t);
+      S.exec_count
+        ~params:S.(t2 instant int)
+        (Printf.sprintf
+           "delete from %s where digest in (select digest from %s where \
+            expires_at <= $1 order by expires_at limit $2 for update skip \
+            locked)"
+           t t);
   }
 
 let statements ~table =
@@ -104,5 +112,5 @@ let store pool ~table =
       (fun digest (e : Spindle.Session.entry) ->
         run s.save (digest, e.data, e.created, e.seen, e.expires));
     delete = (fun digest -> run s.delete digest);
-    sweep = (fun ~now -> run s.sweep now);
+    sweep = (fun ~now ~limit -> run s.sweep (now, limit));
   }

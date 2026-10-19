@@ -1,13 +1,17 @@
 (** Whether the server is up, and whether it can serve: [GET /livez] and
     [GET /readyz], the two questions an orchestrator, a load balancer or a
     person asks of a running server. They are routes, added to the application's
-    own:
+    own, and a check reads what it asks about as a route does, so they are made
+    with the rest before any of it exists:
 
     {[
-    Spindle_postgres.Pool.run env database @@ fun pool ->
-    Spindle.serve env
-      ~resources:[ Spindle.Dep.resource db pool ]
-      (routes @ Spindle.Health.routes [ Spindle_postgres.Pool.check pool ])
+    let routes =
+      app_routes
+      @ Spindle.Health.routes
+          [ Spindle_postgres.Pool.check db ]
+          Spindle.serve env
+          ~resources:[ Spindle.Dep.resource db pool ]
+          routes
     ]}
 
     {b [/livez] runs no check.} It answers [ok] for as long as the process can
@@ -33,11 +37,19 @@
 
 type check
 
-val check : string -> (unit -> (unit, string) result) -> check
-(** [check name f]: [f] answers [Ok ()] when what it checks can serve, and
-    [Error why] when it cannot, [why] for the log. [name] is what the refusal
-    names -- a word, such as [postgres] -- so it is for whoever runs the server.
-*)
+val check : string -> (unit -> (unit, string) result) Dep.t -> check
+(** [check name f]: [f] is a dependency, read for each probe -- a
+    {!Dep.of_resource} the server is handed, or [Dep.return] for one that reads
+    nothing -- and the function it gives answers [Ok ()] when what it checks can
+    serve, and [Error why] when it cannot, [why] for the log. [name] is what the
+    refusal names -- a word, such as [postgres] -- so it is for whoever runs the
+    server. Only [/readyz] reads it, so [/livez] needs nothing the server holds.
+
+    {[
+    Spindle.Health.check "cache"
+      (let+ cache = cache in
+       fun () -> Cache.ping cache)
+    ]} *)
 
 val not_ready : Refusal.Code.t
 (** [503 not_ready]: a check failed. *)

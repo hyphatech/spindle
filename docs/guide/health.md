@@ -10,19 +10,28 @@ balancer probes:
   probes only one path here.
 
 ```ocaml
-Spindle_postgres.Pool.run env database @@ fun pool ->
-Spindle.serve env
-  ~resources:[ Spindle.Dep.resource db pool ]
-  (routes @ Spindle.Health.routes [ Spindle_postgres.Pool.check pool ])
+let routes = app_routes @ Spindle.Health.routes [ Spindle_postgres.Pool.check db ]
+
+let () =
+  Eio_main.run @@ fun env ->
+  Spindle_postgres.Pool.run env database @@ fun pool ->
+  Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes
 ```
 
-`Pool.check` borrows a connection and runs `select 1`. A pool whose
+`Pool.check db` reads the pool as your routes do, through the
+[resource](../tutorial/dependencies.md#resources) `db`, so the probes are
+routes like the rest, made before the pool is. It borrows a connection and
+runs `select 1`. A pool whose
 connections are all busy passes without waiting; a closed one fails.
 
 ## Custom checks
 
-A check is `Spindle.Health.check name f`, where `f ()` answers `Ok ()` or
-`Error why`. Return `Error`, never raise: a check that raises is a bug, and
+A check is `Spindle.Health.check name f`, where `f` is a
+[dependency](../tutorial/dependencies.md) giving the function a probe runs,
+which answers `Ok ()` or `Error why`. A check that reads nothing is
+`Spindle.Dep.return (fun () -> ...)`; one that reads what the application
+holds reads it as a route does:
+`Spindle.Health.check "cache" (let+ cache = cache in fun () -> Cache.ping cache)`. Return `Error`, never raise: a check that raises is a bug, and
 is answered `500`, not `503 not_ready`. This server is taken out of service while a file named
 `maintenance` exists:
 

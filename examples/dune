@@ -18,6 +18,7 @@
   bearer_auth
   middleware
   cookie
+  session
   static
   openapi
   sse

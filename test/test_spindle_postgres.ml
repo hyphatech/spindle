@@ -390,6 +390,9 @@ let test_a_connection_that_keeps_no_statements_reads_text () =
       | Some _ -> Alcotest.fail "a value read in text is not what was sent"
       | None -> Alcotest.fail "no row")
 
+let db : Spindle_postgres.Pool.t Spindle.Dep.t =
+  Spindle.Dep.of_resource "database"
+
 (* The pool as /readyz asks it: ready at rest, and ready while every
    connection is lent, since a server taken out of service for being busy is
    one taken out when it is needed most. *)
@@ -398,7 +401,8 @@ let test_a_busy_pool_is_ready () =
       let pool = pool target in
       let app =
         Spindle.Test.app
-          (Spindle.Health.routes [ Spindle_postgres.Pool.check pool ])
+          ~resources:[ Spindle.Dep.resource db pool ]
+          (Spindle.Health.routes [ Spindle_postgres.Pool.check db ])
       in
       let ready () =
         Spindle_http.Status.to_int (Spindle.Test.call app `GET "/readyz").status
@@ -419,7 +423,8 @@ let test_a_closed_pool_is_not_ready () =
       let pool = pool target in
       let app =
         Spindle.Test.app
-          (Spindle.Health.routes [ Spindle_postgres.Pool.check pool ])
+          ~resources:[ Spindle.Dep.resource db pool ]
+          (Spindle.Health.routes [ Spindle_postgres.Pool.check db ])
       in
       Spindle_postgres.Pool.close pool;
       Alcotest.(check int)
@@ -930,9 +935,17 @@ let test_sessions_are_kept_in_a_table () =
             (Option.map
                (fun (e : Spindle.Session.entry) -> e.seen)
                (got (store.find "d1")));
+          got (store.save "d3" (entry 4_000));
           Alcotest.(check int)
-            "a sweep deletes what has expired" 1
-            (got (store.sweep ~now:(Instants.of_ms 6_000)));
+            "a sweep stops at its limit" 1
+            (got (store.sweep ~now:(Instants.of_ms 6_000) ~limit:1));
+          Alcotest.(check bool)
+            "having taken the soonest ended" true
+            (Option.is_none (got (store.find "d3"))
+            && Option.is_some (got (store.find "d2")));
+          Alcotest.(check int)
+            "and the next takes the rest that ended" 1
+            (got (store.sweep ~now:(Instants.of_ms 6_000) ~limit:10));
           got (store.delete "d1");
           Alcotest.(check bool)
             "and a delete, what it names" true
@@ -942,6 +955,53 @@ let test_sessions_are_kept_in_a_table () =
             (match Spindle_postgres.Session.schema ~table:"x; drop" with
             | _ -> false
             | exception Invalid_argument _ -> true)))
+
+(* Sessions kept in a table read the pool as every route does, so they and
+   the routes that use them are values made before the pool, which the
+   server is handed. *)
+let test_sessions_read_the_pool_as_a_resource () =
+  Db_target.with_postgres (fun target ->
+      let open Spindle.Syntax in
+      let connection = Db_target.connect target in
+      ok
+        (Pg.exec_raw connection
+           (Spindle_postgres.Session.schema ~table:"visits"));
+      Pg.close connection;
+      let session =
+        Spindle.Session.create
+          ~store:
+            (let+ pool = db in
+             Spindle_postgres.Session.store pool ~table:"visits")
+          ~idle:Mtime.Span.hour ~absolute:Mtime.Span.day Wiretype.string
+      in
+      let routes =
+        [
+          Spindle.post
+            Spindle.Path.(s "sign-in")
+            Spindle.Returns.text
+            (let+ session = session in
+             match Spindle.Session.put session "kim" with
+             | Ok () -> Ok "in"
+             | Error e -> Error (Spindle.Session.refusal e));
+          Spindle.get
+            Spindle.Path.(s "me")
+            Spindle.Returns.text
+            (let+ session = session in
+             match Spindle.Session.get session with
+             | Ok (Some user) -> Ok user
+             | Ok None -> Ok "nobody"
+             | Error e -> Error (Spindle.Session.refusal e));
+        ]
+      in
+      let pool = pool target in
+      let b =
+        Spindle.Test.browser
+          (Spindle.Test.app ~resources:[ Spindle.Dep.resource db pool ] routes)
+      in
+      ignore (Spindle.Test.Browser.call b `POST "/sign-in");
+      Alcotest.(check string)
+        "found in the table" "kim" (Spindle.Test.Browser.call b `GET "/me").body;
+      Spindle_postgres.Pool.close pool)
 
 (* A lowercase identifier is a table's name even where SQL reserves it as
    a word: [user] and [order] are tables an application names. *)
@@ -1065,6 +1125,8 @@ let () =
         [
           Alcotest.test_case "sessions are kept in a table" `Quick
             test_sessions_are_kept_in_a_table;
+          Alcotest.test_case "sessions read the pool as a resource" `Quick
+            test_sessions_read_the_pool_as_a_resource;
           Alcotest.test_case "a reserved word is a table's name" `Quick
             test_a_reserved_word_is_a_table's_name;
           Alcotest.test_case "the longest name is a table's name" `Quick

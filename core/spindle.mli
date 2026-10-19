@@ -241,14 +241,13 @@ val set_cookie : (Cookie.t -> unit) Dep.t
     Whether the cookie is [Secure] is the framework's to say ({!Cookie}).
 
     {[
-    let sign_out session set_cookie =
-      Sessions.close session;
-      set_cookie clear_session;
-      Ok true
-
-    Spindle.post Path.(s "sign-out") (Returns.json Wiretype.bool)
-      (let+ session = session and+ set_cookie = Spindle.set_cookie in
-       sign_out session set_cookie)
+    let theme =
+      Spindle.Cookie.named "theme" Spindle.Codec.string Spindle.post
+        Path.(s "theme" / name)
+        Returns.text
+        (let+ name = Spindle.param name and+ set_cookie = Spindle.set_cookie in
+         set_cookie (Spindle.Cookie.make theme name);
+         Ok "Saved.")
     ]} *)
 
 val add_header : (string * string -> unit) Dep.t

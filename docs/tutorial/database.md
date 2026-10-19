@@ -148,7 +148,7 @@ transaction: `Ok` commits, `Error` rolls back. `let*` here is
   that is not a statement out of it.
 - `Pool.use pool (fun db -> ...)` -- a borrowed connection for several
   statements outside a transaction.
-- `Pool.check` -- the pool as a readiness check ([Health
+- `Pool.check db` -- the pool as a readiness check ([Health
   checks](../guide/health.md)); `Pool.stats` and `Pool.measure` for
   [metrics](../guide/metrics.md).
 - `Pool.create ~sw ~net ~mono_clock target` -- the same pool answering a
@@ -180,7 +180,9 @@ named statements.
 
 **[Sessions](../guide/cookies.md#sessions) in the database** are
 `Spindle_postgres.Session.store pool ~table`, over a table you create in a
-migration from `Session.schema ~table`. Migrations are
+migration from `Session.schema ~table`, read through `db` as every route
+reads the pool:
+`Spindle.Session.create ~store:(let+ pool = db in Spindle_postgres.Session.store pool ~table:"sessions") ...`. Migrations are
 [`rowtype-migrate`](https://github.com/hyphatech/rowtype)'s, run before the
 server starts.
 

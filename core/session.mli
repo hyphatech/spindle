@@ -2,14 +2,27 @@
     holds only its id.
 
     {[
-    let sessions =
-      Spindle.Session.create ~store:(Spindle.Session.memory ())
-        ~idle:Mtime.Span.(14 * day) ~absolute:Mtime.Span.(90 * day) visit_json
-
-    (let+ session = Spindle.Session.cookie sessions
-     and+ set_cookie = Spindle.set_cookie and+ now = Spindle.now in
-     match Spindle.Session.find sessions session ~now with ...)
+    let session =
+      Spindle.Session.create
+        ~store:(Spindle.Dep.return (Spindle.Session.memory ()))
+        ~idle:Mtime.Span.(14 * day)
+        ~absolute:Mtime.Span.(90 * day)
+        visit_json Spindle.get
+        Path.(s "me")
+        Returns.text
+        (let+ session = session in
+         match Spindle.Session.get session with
+         | Ok (Some visit) -> Ok visit.user
+         | Ok None -> Ok "nobody"
+         | Error e -> Error (Spindle.Session.refusal e))
     ]}
+
+    {b A session is a dependency}, read as every input is: {!create} makes it,
+    and a route that reads it is handed the session its request's cookie names,
+    with nothing asked of the store yet. Every use of it in one request is the
+    same session, so what a {!put} wrote a later {!get} reads. Its cookie is set
+    and its limits are timed by the session itself, from the request's answer
+    and its clock.
 
     {b The cookie holds an id, and the store its digest.} An id is 128 bits from
     the operating system's generator, so there is nothing to sign and nothing to
@@ -17,17 +30,27 @@
     nobody in. The cookie is [HttpOnly; SameSite=Lax], and [Secure] is the
     framework's, as every cookie's is.
 
-    {b A session ends on the server.} {!close} deletes it, so a copy of its
-    cookie signs nobody in afterwards, and {!renew} at sign-in gives it a new id
-    and deletes the old, so an id somebody planted before sign-in signs them
-    into nothing. Two limits end it by themselves: [idle] since it was last
-    used, moved on by a {!val-find} that finds more than a tenth of it spent --
-    so a busy session is not a write per request -- and [absolute] since it
-    began, never moved. Past either, {!val-find} answers [None] and deletes it.
+    {b A session ends on the server.} {!destroy} deletes it, so a copy of its
+    cookie signs nobody in afterwards, and {!rotate} at sign-in moves it to a
+    new id and deletes the old, so an id somebody planted before sign-in signs
+    them into nothing. Two limits end it by themselves: [idle] since it was last
+    used, moved on by a {!get} that finds more than a tenth of it spent -- so a
+    busy session is not a write per request -- and [absolute] since it began.
+    Past either, {!get} answers [None] and deletes it.
 
-    {b Reading the store is the handler's}: {!cookie} hands over what the
-    request carries, as every input does, and {!val-find} is called where the
-    handler decides. A flash message is a value in the session's data. *)
+    {b A session nobody returns to is swept by the sessions themselves}: the
+    first request that reads one ten minutes after the last sweep deletes up to
+    a batch of the expired, and the next request another batch while a sweep
+    finds a full one, so a store never grows with visits that ended and a
+    request never waits on more than a batch. The ten minutes are the app's own
+    and counted on its monotonic clock, as a {!Rate} limit's are; a failed sweep
+    is a warning in the log, and the request goes on.
+
+    {b The store is read as a route reads anything the application holds}: a
+    dependency -- [Dep.return] of one made at the top level, a
+    {!Dep.of_resource} the server is handed, or one made from another, as
+    [Spindle_postgres.Session.store] is from the pool -- so a session, and the
+    routes that read it, are values made before it exists. *)
 
 (** {1 Stores} *)
 
@@ -43,42 +66,35 @@ type store = {
   find : string -> (entry option, string) result;
   save : string -> entry -> (unit, string) result;  (** insert or replace *)
   delete : string -> (unit, string) result;
-  sweep : now:Ptime.t -> (int, string) result;
-      (** delete every entry expired by [now]: how many went *)
+  sweep : now:Ptime.t -> limit:int -> (int, string) result;
+      (** delete up to [limit] entries expired by [now], the soonest expired
+          first: how many went *)
 }
 (** Where sessions are kept: anything that can hold these, a table in a database
     ([Spindle_postgres.Session.store]) as much as memory. An [Error] is the
     store's failure, in words for the log. *)
 
 val memory : unit -> store
-(** A table behind a lock, for one process: its sessions end with it. *)
+(** A table behind a lock, for one process: its sessions end with it. A sweep
+    costs the entries it deletes, never the table. *)
 
 (** {1 Sessions} *)
 
 type 'a t
+(** The session a request has, if any, and the store it is kept in. *)
 
 val create :
   ?cookie:string ->
-  store:store ->
+  store:store Dep.t ->
   idle:Mtime.Span.t ->
   absolute:Mtime.Span.t ->
   'a Wiretype.t ->
-  'a t
-(** A session of data ['a], kept in [store] under a cookie named [cookie]
-    ([session]), whose [Max-Age] is [absolute] in whole seconds, rounded up.
-    Raises as {!Cookie.val-named} does for a name no cookie can have. *)
-
-type id
-(** What a session's cookie carries. *)
-
-val cookie : 'a t -> id option Dep.t
-(** The session a request says it has: a credential, read as every input is, and
-    nothing the store has been asked about yet. *)
-
-type 'a session
-(** A session found, started or renewed. *)
-
-val data : 'a session -> 'a
+  'a t Dep.t
+(** A session of data ['a], kept in the store [store] reads for each request,
+    under a cookie named [cookie] ([session]), whose [Max-Age] is [absolute] in
+    whole seconds, rounded up. Its cookie is a credential, in the document of
+    every route that reads it. Raises as {!Cookie.val-named} does for a name no
+    cookie can have. *)
 
 type error =
   | Store of string  (** the store failed, in words for the log *)
@@ -90,38 +106,20 @@ val error_to_string : error -> string
 val refusal : error -> Refusal.t
 (** {!Refusal.internal}, the detail in the log. *)
 
-val find : 'a t -> id option -> now:Ptime.t -> ('a session option, error) result
-(** The session the id names, if it is kept and within both limits; one that is
-    not, or whose data no longer reads as ['a], is deleted and [None]. *)
+val get : 'a t -> ('a option, error) result
+(** The session's data, if its cookie names one that is kept and within both
+    limits; one that is not, or whose data no longer reads as ['a], is deleted
+    and [None]. The store is asked once a request. *)
 
-val start :
-  'a t ->
-  set_cookie:(Cookie.t -> unit) ->
-  now:Ptime.t ->
-  'a ->
-  ('a session, error) result
-(** A new session of this data, and its cookie: sign-in for a visitor who had
-    none. *)
+val put : 'a t -> 'a -> (unit, error) result
+(** The session's data, replaced -- or a new session holding it, and its cookie,
+    where there was none. Its limits run on. *)
 
-val renew :
-  'a t ->
-  'a session ->
-  set_cookie:(Cookie.t -> unit) ->
-  now:Ptime.t ->
-  'a ->
-  ('a session, error) result
-(** The session under a new id with this data, the old deleted: sign-in for a
-    visitor who had one. Its limits begin again, as a new session's do. *)
+val rotate : 'a t -> (unit, error) result
+(** The session moved to a new id, its data kept and the old id deleted, its
+    limits begun again: at sign-in, beside the {!put} of who signed in, in
+    either order. Nothing, where there is no session. *)
 
-val update :
-  'a t -> 'a session -> now:Ptime.t -> 'a -> ('a session, error) result
-(** New data under the same id: for data that changes nothing about who is
-    signed in -- a basket, a flash. What does is {!renew}'s. *)
-
-val close :
-  'a t -> 'a session -> set_cookie:(Cookie.t -> unit) -> (unit, error) result
-(** Deleted from the store, and its cookie cleared. *)
-
-val sweep : 'a t -> now:Ptime.t -> (int, error) result
-(** Every expired session deleted: for an {!Alarm} to run, since one nobody
-    returns to is never found. *)
+val destroy : 'a t -> (unit, error) result
+(** The session deleted from the store, and its cookie cleared: sign-out.
+    Nothing, where there is no session. *)

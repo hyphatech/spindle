@@ -33,7 +33,8 @@
   gzip
   compress_repr
   file_types
-  melange_route)
+  melange_route
+  outgoing)
  (libraries
   spindle_http
   eio

@@ -82,71 +82,72 @@ match Spindle.Key.of_secret secret with
 ## Sessions
 
 `Spindle.Session` keeps a visit's data on the server; its cookie holds only
-a random id.
+a random id. A session is a [dependency](../tutorial/dependencies.md): a
+route reads it, and is handed the session its request's cookie names.
 
 ```ocaml
-let sessions =
-  Spindle.Session.create ~store:(Spindle.Session.memory ())
-    ~idle:Mtime.Span.(14 * day) ~absolute:Mtime.Span.(90 * day) visit_json
+--8<-- "session.ml"
+```
 
-(let+ session = Spindle.Session.cookie sessions
- and+ set_cookie = Spindle.set_cookie
- and+ now = Spindle.now in
- match Spindle.Session.find sessions session ~now with ...)
+```console
+$ curl -c jar -b jar -X POST localhost:8080/sign-in/kim
+Signed in.
+
+$ curl -c jar -b jar localhost:8080/me
+You are kim.
+
+$ curl -c jar -b jar -X POST localhost:8080/sign-out
+Signed out.
+
+$ curl -c jar -b jar localhost:8080/me
+Nobody is signed in.
 ```
 
 | Call | What it does |
 |---|---|
-| `find` | the session, if it exists and is within both limits |
-| `start` | a new session, and its cookie |
-| `update` | new data under the same id |
-| `renew` | a new id with this data, the old one deleted: call it at sign-in |
-| `close` | deletes it and clears the cookie: sign-out |
-| `sweep` | deletes every expired session; run it periodically (see below) |
+| `get` | the session's data, if its cookie names one within both limits |
+| `put` | replaces the data, or starts a session holding it, with its cookie |
+| `rotate` | moves the session to a new id, keeping its data: at sign-in |
+| `destroy` | deletes the session and clears its cookie: sign-out |
 
-Signing in gives the visitor a new session id, whether or not they had a
-session before, so an id somebody planted earlier signs them into nothing.
-Signing out deletes the session on the server:
+Each answers a `result`: a store that fails is `Error`, and
+`Session.refusal` turns it into a `500` whose detail goes to the log.
 
-```ocaml
-let sign_in sessions id ~set_cookie ~now user =
-  let started =
-    match Spindle.Session.find sessions id ~now with
-    | Ok (Some session) ->
-        Spindle.Session.renew sessions session ~set_cookie ~now { user }
-    | Ok None -> Spindle.Session.start sessions ~set_cookie ~now { user }
-    | Error e -> Error e
-  in
-  match started with
-  | Ok _ -> Ok "Signed in."
-  | Error e -> Error (Spindle.Session.refusal e)
-
-let sign_out sessions id ~set_cookie ~now =
-  match Spindle.Session.find sessions id ~now with
-  | Ok None -> Ok "Signed out."
-  | Ok (Some session) -> (
-      match Spindle.Session.close sessions session ~set_cookie with
-      | Ok () -> Ok "Signed out."
-      | Error e -> Error (Spindle.Session.refusal e))
-  | Error e -> Error (Spindle.Session.refusal e)
-```
-
-`Session.data session` is the data a found session holds. A store that
-fails is `Error`; `Session.refusal` turns it into a `500` whose detail goes
-to the log.
-
-- A session ends `idle` after it was last used, or `absolute` after it
-  began, whichever comes first. Both are `Mtime.Span.t`s; pass `~now` from
-  the `Spindle.now` dependency. The cookie is named `session` unless you
-  pass `~cookie`, and its `Max-Age` is `absolute`, rounded up to whole
-  seconds.
-- `sweep` deletes the sessions nobody came back to, which `find` never sees.
-  Run it every so often from a [background fiber](background.md).
-- `Session.memory ()` lives in one process and ends with it.
+- **Sign-in rotates**, so an id somebody planted in the browser before
+  signs them into nothing after. `rotate` and `put` end in the same place
+  in either order, and `rotate` with no session does nothing.
+- **A session is the request's.** Every use of it in one request is the
+  same session, so what a `put` wrote a later `get` reads, and the store is
+  asked once.
+- **A session ends** `idle` after it was last used, or `absolute` after it
+  began, whichever comes first, on the request's clock. The cookie is named
+  `session` unless you pass `~cookie`, and its `Max-Age` is `absolute`,
+  rounded up to whole seconds.
+- **Ended sessions are swept for you.** Nobody comes back for a session
+  that ended, so the first request to read one ten minutes after the last
+  sweep deletes a batch of them, and the next request another while there
+  are more: the store never fills with old visits, and no request waits on
+  more than a batch. Several servers on one database share the work.
+- **Where it is kept** is `~store`, a dependency like any other.
+  `Session.memory ()` lives in one process and ends with it.
   `Spindle_postgres.Session.store pool ~table` keeps sessions in your
-  database. The table must exist first: create it in a migration of your
-  own from the SQL that `Spindle_postgres.Session.schema ~table` gives
-  ([pool settings](../tutorial/database.md#pool-settings)).
+  database, read through the pool's
+  [resource](../tutorial/dependencies.md#resources):
+
+    ```ocaml
+    let session =
+      Spindle.Session.create
+        ~store:
+          (let+ pool = db in
+           Spindle_postgres.Session.store pool ~table:"sessions")
+        ~idle:Mtime.Span.(14 * day)
+        ~absolute:Mtime.Span.(90 * day)
+        visit_json
+    ```
+
+    The table must exist first: create it in a migration of your own from
+    the SQL that `Spindle_postgres.Session.schema ~table` gives
+    ([pool settings](../tutorial/database.md#pool-settings)).
 
 ## The client's IP address
 

@@ -4,9 +4,11 @@
     {[
     (* the table, made by a migration of the application's own, is
        Spindle_postgres.Session.schema ~table:"sessions" *)
-    let sessions =
+    let session =
       Spindle.Session.create
-        ~store:(Spindle_postgres.Session.store pool ~table:"sessions")
+        ~store:
+          (let+ pool = db in
+           Spindle_postgres.Session.store pool ~table:"sessions")
         ~idle:Mtime.Span.(14 * day)
         ~absolute:Mtime.Span.(90 * day)
         visit_json

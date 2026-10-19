@@ -101,13 +101,13 @@ val measure : ?name:string -> t -> Spindle.Metrics.t -> unit
     Spindle_postgres.Pool.measure pool metrics
     ]} *)
 
-val check : ?name:string -> t -> Spindle.Health.check
-(** The pool as a readiness check, [postgres] unless named: a connection
-    borrowed and [select 1] answered, within the pool's wait and the statement
-    timeout. A pool with no connection idle passes without a borrow, since every
-    one of them is lent to a request the database is answering -- failing it
-    would take a server out of service for being busy, which is when it is
-    needed most. A pool {!close}d, or closing, fails it. *)
+val check : ?name:string -> t Spindle.Dep.t -> Spindle.Health.check
+(** The pool [db] reads as a readiness check, [postgres] unless named: a
+    connection borrowed and [select 1] answered, within the pool's wait and the
+    statement timeout. A pool with no connection idle passes without a borrow,
+    since every one of them is lent to a request the database is answering --
+    failing it would take a server out of service for being busy, which is when
+    it is needed most. A pool {!close}d, or closing, fails it. *)
 
 val close : t -> unit
 (** As [Rowtype_postgres.Pool.close]. *)

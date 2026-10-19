@@ -1246,83 +1246,97 @@ let test_an_encrypted_cookie_ages () =
 (* ---------------------------------------------------------------- *)
 (* Sessions *)
 
-(* The memory store, recording every key it was given and every save. *)
-let recorded () =
-  let store = Spindle.Session.memory () and keys = ref [] and saves = ref 0 in
-  ( {
-      store with
-      Spindle.Session.save =
-        (fun digest e ->
-          keys := digest :: !keys;
-          incr saves;
-          store.save digest e);
-    },
-    keys,
-    saves )
+(* The memory store, recording every key it was given, every save and what
+   each sweep deleted. *)
+type recorded = {
+  store : Spindle.Session.store;
+  keys : string list ref;
+  saves : int ref;
+  swept : int list ref;
+}
 
-let session_routes sessions =
+let recorded () =
+  let memory = Spindle.Session.memory ()
+  and keys = ref []
+  and saves = ref 0
+  and swept = ref [] in
+  {
+    store =
+      {
+        memory with
+        Spindle.Session.save =
+          (fun digest e ->
+            keys := digest :: !keys;
+            incr saves;
+            memory.save digest e);
+        sweep =
+          (fun ~now ~limit ->
+            let r = memory.sweep ~now ~limit in
+            (match r with Ok n -> swept := n :: !swept | Error _ -> ());
+            r);
+      };
+    keys;
+    saves;
+    swept;
+  }
+
+let string_session ?(idle = Mtime.Span.hour) ?(absolute = Mtime.Span.day)
+    (r : recorded) =
+  Spindle.Session.create
+    ~store:(Spindle.Dep.return r.store)
+    ~idle ~absolute Wiretype.string
+
+let session_routes ?mono_clock session =
+  let ( let* ) = Result.bind in
   let v = Spindle.Path.str "v" in
-  let me = Spindle.Session.cookie sessions in
-  let found f =
-    let+ session = me
-    and+ set_cookie = Spindle.set_cookie
-    and+ now = Spindle.now
-    and+ value = Spindle.Dep.return () in
-    ignore value;
-    match Spindle.Session.find sessions session ~now with
-    | Error e -> Error (Spindle.Session.refusal e)
-    | Ok s -> f s ~set_cookie ~now
-  in
-  let answered = function
-    | Ok s -> Ok (Spindle.Session.data s)
+  let finished = function
+    | Ok () -> Ok "done"
     | Error e -> Error (Spindle.Session.refusal e)
   in
-  Spindle.Test.app
+  let read session =
+    match Spindle.Session.get session with
+    | Ok (Some v) -> Ok v
+    | Ok None -> Ok "nobody"
+    | Error e -> Error (Spindle.Session.refusal e)
+  in
+  Spindle.Test.app ?mono_clock
     [
-      Spindle.post
-        Spindle.Path.(s "start" / v)
-        Spindle.Returns.text
-        (let+ v = Spindle.param v
-         and+ set_cookie = Spindle.set_cookie
-         and+ now = Spindle.now in
-         answered (Spindle.Session.start sessions ~set_cookie ~now v));
       Spindle.get
         Spindle.Path.(s "me")
         Spindle.Returns.text
-        (found (fun s ~set_cookie:_ ~now:_ ->
-             Ok
-               (match s with
-               | Some s -> Spindle.Session.data s
-               | None -> "nobody")));
+        (let+ session = session in
+         read session);
       Spindle.post
-        Spindle.Path.(s "renew" / v)
+        Spindle.Path.(s "put" / v)
         Spindle.Returns.text
-        (Spindle.Dep.bind (Spindle.param v) (fun v ->
-             found (fun s ~set_cookie ~now ->
-                 match s with
-                 | Some s ->
-                     answered
-                       (Spindle.Session.renew sessions s ~set_cookie ~now v)
-                 | None -> Ok "nobody")));
+        (let+ v = Spindle.param v and+ session = session in
+         finished (Spindle.Session.put session v));
       Spindle.post
-        Spindle.Path.(s "update" / v)
+        Spindle.Path.(s "sign-in" / v)
         Spindle.Returns.text
-        (Spindle.Dep.bind (Spindle.param v) (fun v ->
-             found (fun s ~set_cookie:_ ~now ->
-                 match s with
-                 | Some s -> answered (Spindle.Session.update sessions s ~now v)
-                 | None -> Ok "nobody")));
+        (let+ v = Spindle.param v and+ session = session in
+         finished
+           (let* () = Spindle.Session.rotate session in
+            Spindle.Session.put session v));
       Spindle.post
-        Spindle.Path.(s "close")
+        Spindle.Path.(s "put-then-rotate" / v)
         Spindle.Returns.text
-        (found (fun s ~set_cookie ~now:_ ->
-             match s with
-             | Some s ->
-                 Result.map
-                   (fun () -> "closed")
-                   (Result.map_error Spindle.Session.refusal
-                      (Spindle.Session.close sessions s ~set_cookie))
-             | None -> Ok "nobody"));
+        (let+ v = Spindle.param v and+ session = session in
+         finished
+           (let* () = Spindle.Session.put session v in
+            Spindle.Session.rotate session));
+      Spindle.post
+        Spindle.Path.(s "put-then-get" / v)
+        Spindle.Returns.text
+        (let+ v = Spindle.param v and+ session = session in
+         match Spindle.Session.put session v with
+         | Ok () -> read session
+         | Error e -> Error (Spindle.Session.refusal e));
+      Spindle.post
+        Spindle.Path.(s "destroy")
+        Spindle.Returns.text
+        (let+ session = session in
+         finished (Spindle.Session.destroy session));
     ]
 
 let session_cookie (r : Spindle.Test.response) =
@@ -1335,22 +1349,20 @@ let as_visitor ?(now = Ptime.epoch) app cookie meth target =
   Spindle.Test.call ~now app meth target ~headers:[ ("cookie", cookie) ]
 
 let test_a_session_is_kept_on_the_server () =
-  let store, keys, _ = recorded () in
-  let sessions =
-    Spindle.Session.create ~store ~idle:Mtime.Span.hour ~absolute:Mtime.Span.day
-      Wiretype.string
-  in
-  let app = session_routes sessions in
-  let started = Spindle.Test.call app `POST "/start/kim" in
+  let r = recorded () in
+  let app = session_routes (string_session r) in
+  let put = Spindle.Test.call app `POST "/put/kim" in
   let header =
-    Option.value ~default:"" (Spindle.Test.header started "set-cookie")
+    Option.value ~default:"" (Spindle.Test.header put "set-cookie")
   in
   Alcotest.(check bool)
-    "its cookie is HttpOnly, SameSite=Lax, and lasts its absolute limit" true
+    "a put with no session makes one, its cookie HttpOnly, SameSite=Lax, \
+     lasting its absolute limit"
+    true
     (contains ~sub:"HttpOnly" header
     && contains ~sub:"SameSite=Lax" header
     && contains ~sub:"Max-Age=86400" header);
-  let cookie = session_cookie started in
+  let cookie = session_cookie put in
   let id = String.sub cookie 8 (String.length cookie - 8) in
   check_string "the session is found by its cookie" "kim"
     (as_visitor app cookie `GET "/me").body;
@@ -1358,101 +1370,173 @@ let test_a_session_is_kept_on_the_server () =
     "and the store holds its digest, never its id" true
     (List.for_all
        (fun k -> String.length k = 64 && not (String.equal k id))
-       !keys);
-  check_string "an update keeps the id" "kim+"
-    (as_visitor app cookie `POST "/update/kim+").body;
+       !(r.keys));
+  let again = as_visitor app cookie `POST "/put/kim+" in
+  Alcotest.(check (option string))
+    "a put on a session keeps its id" None
+    (Spindle.Test.header again "set-cookie");
   check_string "and is found under it" "kim+"
     (as_visitor app cookie `GET "/me").body;
-  let renewed = as_visitor app cookie `POST "/renew/kim-signed-in" in
-  let fresh = session_cookie renewed in
+  check_string "a put is read back in its own request" "lee"
+    (Spindle.Test.call app `POST "/put-then-get/lee").body;
+  let destroyed = as_visitor app cookie `POST "/destroy" in
   Alcotest.(check bool)
-    "a renewal is a new id" false
-    (String.equal fresh cookie);
-  check_string "the old id signs nobody in" "nobody"
-    (as_visitor app cookie `GET "/me").body;
-  check_string "the new one does" "kim-signed-in"
-    (as_visitor app fresh `GET "/me").body;
-  let closed = as_visitor app fresh `POST "/close" in
-  Alcotest.(check bool)
-    "closing clears the cookie" true
+    "destroying clears the cookie" true
     (contains ~sub:"Max-Age=0"
-       (Option.value ~default:"" (Spindle.Test.header closed "set-cookie")));
+       (Option.value ~default:"" (Spindle.Test.header destroyed "set-cookie")));
   check_string "and a copy of it signs nobody in" "nobody"
-    (as_visitor app fresh `GET "/me").body;
+    (as_visitor app cookie `GET "/me").body;
   check_string "nor does an id nobody made" "nobody"
-    (as_visitor app "session=AAAAAAAAAAAAAAAAAAAAAA" `GET "/me").body
+    (as_visitor app "session=AAAAAAAAAAAAAAAAAAAAAA" `GET "/me").body;
+  Alcotest.(check (option string))
+    "and destroying no session sets nothing" None
+    (Spindle.Test.header (Spindle.Test.call app `POST "/destroy") "set-cookie")
+
+(* Sign-in moves a session to a new id, so one planted before signs nobody
+   in after; put and rotate end in the same place in either order. *)
+let test_sign_in_rotates_the_id () =
+  let app = session_routes (string_session (recorded ())) in
+  List.iter
+    (fun path ->
+      let planted =
+        session_cookie (Spindle.Test.call app `POST "/put/visitor")
+      in
+      let signed_in = session_cookie (as_visitor app planted `POST path) in
+      Alcotest.(check bool)
+        (path ^ ": a new id") false
+        (String.equal signed_in planted);
+      check_string
+        (path ^ ": the planted id signs nobody in")
+        "nobody" (as_visitor app planted `GET "/me").body;
+      check_string
+        (path ^ ": the new one signs in kim")
+        "kim" (as_visitor app signed_in `GET "/me").body)
+    [ "/sign-in/kim"; "/put-then-rotate/kim" ];
+  let fresh = session_cookie (Spindle.Test.call app `POST "/sign-in/lee") in
+  check_string "with no session, sign-in makes one" "lee"
+    (as_visitor app fresh `GET "/me").body
 
 (* [Max-Age] counts whole seconds, so a session's cookie lasts its absolute
    limit rounded up: the cookie outlives the session, never the reverse. *)
 let test_a_sessions_cookie_lasts_its_limit_rounded_up () =
-  let store, _, _ = recorded () in
-  let sessions =
-    Spindle.Session.create ~store ~idle:Mtime.Span.min
+  let session =
+    string_session ~idle:Mtime.Span.min
       ~absolute:Mtime.Span.(Mtime.Span.add (250 * s) ms)
-      Wiretype.string
+      (recorded ())
   in
-  let started =
-    Spindle.Test.call (session_routes sessions) `POST "/start/kim"
-  in
+  let put = Spindle.Test.call (session_routes session) `POST "/put/kim" in
   Alcotest.(check bool)
     "250.001 seconds is a Max-Age of 251" true
     (contains ~sub:"Max-Age=251"
-       (Option.value ~default:"" (Spindle.Test.header started "set-cookie")))
+       (Option.value ~default:"" (Spindle.Test.header put "set-cookie")))
 
 let test_a_session_ends_by_its_limits () =
-  let store, _, saves = recorded () in
-  let sessions =
-    Spindle.Session.create ~store
-      ~idle:Mtime.Span.(100 * s)
-      ~absolute:Mtime.Span.(250 * s)
-      Wiretype.string
+  let r = recorded () in
+  let app =
+    session_routes
+      (string_session
+         ~idle:Mtime.Span.(100 * s)
+         ~absolute:Mtime.Span.(250 * s)
+         r)
   in
-  let app = session_routes sessions in
-  let cookie = session_cookie (Spindle.Test.call app `POST "/start/kim") in
+  let cookie = session_cookie (Spindle.Test.call app `POST "/put/kim") in
   let me ms =
     (as_visitor ~now:(Instants.of_ms ms) app cookie `GET "/me").body
   in
-  let before = !saves in
+  let before = !(r.saves) in
   check_string "within its idle limit" "kim" (me 5_000);
-  check_int "and not written for it" before !saves;
+  check_int "and not written for it" before !(r.saves);
   check_string "found past a tenth of it" "kim" (me 50_000);
-  check_int "and moved on" (before + 1) !saves;
+  check_int "and moved on" (before + 1) !(r.saves);
   check_string "idle from there" "kim" (me 140_000);
   check_string "and again" "kim" (me 230_000);
   check_string "past its absolute limit, however busy" "nobody" (me 260_000);
-  let other = session_cookie (Spindle.Test.call app `POST "/start/lee") in
+  let other = session_cookie (Spindle.Test.call app `POST "/put/lee") in
   check_string "and one left alone past its idle limit" "nobody"
     (as_visitor ~now:(Instants.of_ms 101_000) app other `GET "/me").body;
-  let old =
-    session_cookie (Spindle.Test.call ~now:Ptime.epoch app `POST "/start/old")
-  in
-  ignore old;
-  (match Spindle.Session.sweep sessions ~now:(Instants.of_ms 1_000_000) with
-  | Ok n ->
-      Alcotest.(check bool) "a sweep deletes what has expired" true (n >= 1)
-  | Error _ -> Alcotest.fail "the sweep failed");
+  let cookie = session_cookie (Spindle.Test.call app `POST "/put/text") in
   let ints =
-    Spindle.Session.create ~store
+    Spindle.Session.create
+      ~store:(Spindle.Dep.return r.store)
       ~idle:Mtime.Span.(100 * s)
       ~absolute:Mtime.Span.(250 * s)
       Wiretype.int
   in
-  let cookie = session_cookie (Spindle.Test.call app `POST "/start/text") in
   let reads_ints =
     Spindle.Test.app
       [
         Spindle.get
           Spindle.Path.(s "n")
           Spindle.Returns.text
-          (let+ session = Spindle.Session.cookie ints and+ now = Spindle.now in
-           match Spindle.Session.find ints session ~now with
-           | Ok (Some s) -> Ok (string_of_int (Spindle.Session.data s))
+          (let+ session = ints in
+           match Spindle.Session.get session with
+           | Ok (Some n) -> Ok (string_of_int n)
            | Ok None -> Ok "nobody"
            | Error e -> Error (Spindle.Session.refusal e));
       ]
   in
   check_string "data that no longer reads is no session" "nobody"
     (as_visitor reads_ints cookie `GET "/n").body
+
+(* Nobody comes back for a session that ended, so the sessions sweep it
+   themselves: on the app's clock, a batch a request, until a sweep finds
+   less than one. *)
+let test_expired_sessions_are_swept () =
+  let r = recorded () in
+  let mono_clock = Eio_mock.Clock.Mono.make () in
+  let app =
+    session_routes ~mono_clock
+      (string_session ~idle:Mtime.Span.s ~absolute:Mtime.Span.s r)
+  in
+  for _ = 1 to 501 do
+    ignore (Spindle.Test.call app `POST "/put/kim")
+  done;
+  Alcotest.(check (list int))
+    "the first request swept, and found nothing ended" [ 0 ] !(r.swept);
+  let later () =
+    ignore (Spindle.Test.call ~now:(Instants.of_ms 60_000) app `GET "/me")
+  in
+  later ();
+  Alcotest.(check (list int))
+    "all have ended, but the sweep is not due" [ 0 ] !(r.swept);
+  Eio_mock.Clock.Mono.set_time mono_clock (Mtime.of_uint64_ns 600_000_000_000L);
+  later ();
+  Alcotest.(check (list int)) "ten minutes on, a batch" [ 500; 0 ] !(r.swept);
+  later ();
+  Alcotest.(check (list int))
+    "a full batch, so the next request sweeps the rest" [ 1; 500; 0 ] !(r.swept);
+  later ();
+  Alcotest.(check (list int))
+    "and then none until ten minutes more" [ 1; 500; 0 ] !(r.swept)
+
+(* A sweep takes the soonest ended first and stops at its limit, and a
+   session saved again is swept by its new end, not its old one. *)
+let test_the_memory_store_sweeps_by_expiry () =
+  let store = Spindle.Session.memory () in
+  let entry ms =
+    {
+      Spindle.Session.data = "x";
+      created = Ptime.epoch;
+      seen = Ptime.epoch;
+      expires = Instants.of_ms ms;
+    }
+  in
+  let ok = function Ok v -> v | Error m -> Alcotest.fail m in
+  ok (store.save "late" (entry 1_000));
+  ok (store.save "late" (entry 10_000));
+  ok (store.save "second" (entry 2_000));
+  ok (store.save "first" (entry 1_000));
+  check_int "the limit holds" 1
+    (ok (store.sweep ~now:(Instants.of_ms 5_000) ~limit:1));
+  Alcotest.(check bool)
+    "the soonest went first" true
+    (Option.is_none (ok (store.find "first"))
+    && Option.is_some (ok (store.find "second")));
+  check_int "then the rest that ended" 1
+    (ok (store.sweep ~now:(Instants.of_ms 5_000) ~limit:10));
+  Alcotest.(check bool)
+    "and one saved again is kept to its new end" true
+    (Option.is_some (ok (store.find "late")))
 
 let test_clearing_a_cookie () =
   check_string "no value, no lifetime"
@@ -2380,44 +2464,39 @@ let test_a_server_times_its_limit_on_its_monotonic_clock () =
 (* ---------------------------------------------------------------- *)
 (* Tests that keep cookies and read a stream *)
 
+(* The store here is a resource, as a server's would be: the session, and
+   the routes that read it, are made before it. *)
+let session_store : Spindle.Session.store Spindle.Dep.t =
+  Spindle.Dep.of_resource "sessions"
+
 let test_a_test_browser_keeps_what_the_app_set () =
-  let sessions =
-    Spindle.Session.create
-      ~store:(Spindle.Session.memory ())
-      ~idle:Mtime.Span.hour ~absolute:Mtime.Span.day Wiretype.string
+  let session =
+    Spindle.Session.create ~store:session_store ~idle:Mtime.Span.hour
+      ~absolute:Mtime.Span.day Wiretype.string
   in
-  let me = Spindle.Session.cookie sessions in
   let routes =
     [
       Spindle.post
         Spindle.Path.(s "sign-in")
         Spindle.Returns.text
-        (let+ set_cookie = Spindle.set_cookie and+ now = Spindle.now in
-         Result.map_error Spindle.Session.refusal
-           (Result.map
-              (fun _ -> "in")
-              (Spindle.Session.start sessions ~set_cookie ~now "kim")));
+        (let+ session = session in
+         match Spindle.Session.put session "kim" with
+         | Ok () -> Ok "in"
+         | Error e -> Error (Spindle.Session.refusal e));
       Spindle.get
         Spindle.Path.(s "me")
         Spindle.Returns.text
-        (let+ session = me and+ now = Spindle.now in
-         match Spindle.Session.find sessions session ~now with
-         | Ok (Some s) -> Ok (Spindle.Session.data s)
+        (let+ session = session in
+         match Spindle.Session.get session with
+         | Ok (Some user) -> Ok user
          | Ok None -> Ok "nobody"
          | Error e -> Error (Spindle.Session.refusal e));
       Spindle.post
         Spindle.Path.(s "sign-out")
         Spindle.Returns.text
-        (let+ session = me
-         and+ set_cookie = Spindle.set_cookie
-         and+ now = Spindle.now in
-         match Spindle.Session.find sessions session ~now with
-         | Ok (Some s) ->
-             Result.map_error Spindle.Session.refusal
-               (Result.map
-                  (fun () -> "out")
-                  (Spindle.Session.close sessions s ~set_cookie))
-         | Ok None -> Ok "nobody"
+        (let+ session = session in
+         match Spindle.Session.destroy session with
+         | Ok () -> Ok "out"
          | Error e -> Error (Spindle.Session.refusal e));
       Spindle.post
         Spindle.Path.(s "games" / Spindle.Path.str "g")
@@ -2439,7 +2518,13 @@ let test_a_test_browser_keeps_what_the_app_set () =
          Ok (Option.value seat ~default:"none"));
     ]
   in
-  let b = Spindle.Test.browser (Spindle.Test.app routes) in
+  let b =
+    Spindle.Test.browser
+      (Spindle.Test.app
+         ~resources:
+           [ Spindle.Dep.resource session_store (Spindle.Session.memory ()) ]
+         routes)
+  in
   let call ?now meth target =
     (Spindle.Test.Browser.call ?now b meth target).body
   in
@@ -8640,9 +8725,10 @@ let test_liveness_runs_no_check () =
   Eio_main.run @@ fun _ ->
   let asked = ref 0 in
   let down =
-    Spindle.Health.check "db" (fun () ->
+    Spindle.Health.check "db"
+      ( Spindle.Dep.return @@ fun () ->
         incr asked;
-        Error "down")
+        Error "down" )
   in
   let r = Spindle.Test.call (probes [ down ]) `GET "/livez" in
   check_status "alive" 200 r.status;
@@ -8651,7 +8737,9 @@ let test_liveness_runs_no_check () =
 
 let test_ready_when_every_check_passes () =
   Eio_main.run @@ fun _ ->
-  let up name = Spindle.Health.check name (fun () -> Ok ()) in
+  let up name =
+    Spindle.Health.check name (Spindle.Dep.return @@ fun () -> Ok ())
+  in
   let r = Spindle.Test.call (probes [ up "db"; up "cache" ]) `GET "/readyz" in
   check_status "ready" 200 r.status;
   check_string "says so" "ok" r.body
@@ -8668,9 +8756,10 @@ let test_not_ready_names_what_failed () =
             (Spindle.Test.call
                (probes
                   [
-                    Spindle.Health.check "db" (fun () ->
-                        Error "password rejected");
-                    Spindle.Health.check "cache" (fun () -> Ok ());
+                    Spindle.Health.check "db"
+                      (Spindle.Dep.return @@ fun () -> Error "password rejected");
+                    Spindle.Health.check "cache"
+                      (Spindle.Dep.return @@ fun () -> Ok ());
                   ])
                `GET "/readyz"))
   in
@@ -8693,6 +8782,29 @@ let test_not_ready_names_what_failed () =
       Alcotest.(check bool)
         "and nothing is an error" false
         (List.exists (contains ~sub:{|"level":"error"|}) lines)
+
+(* A check reads what the application holds as any route does, so the probes
+   are routes made before it exists and handed it where the server starts. *)
+let test_a_check_reads_a_resource () =
+  Eio_main.run @@ fun _ ->
+  let cache : bool ref Spindle.Dep.t = Spindle.Dep.of_resource "cache" in
+  let routes =
+    Spindle.Health.routes
+      [
+        Spindle.Health.check "cache"
+          (let+ up = cache in
+           fun () -> if !up then Ok () else Error "down");
+      ]
+  in
+  let up = ref false in
+  let app =
+    Spindle.Test.app ~resources:[ Spindle.Dep.resource cache up ] routes
+  in
+  check_status "down" 503 (Spindle.Test.call app `GET "/readyz").status;
+  up := true;
+  check_status "up" 200 (Spindle.Test.call app `GET "/readyz").status;
+  check_status "liveness reads none of it" 200
+    (Spindle.Test.call (Spindle.Test.app routes) `GET "/livez").status
 
 (* Something asks every few seconds, so a probe's access line is there at
    debug and buries nothing at info. *)
@@ -9355,6 +9467,12 @@ let () =
             test_a_session_is_kept_on_the_server;
           Alcotest.test_case "a session ends by its limits" `Quick
             test_a_session_ends_by_its_limits;
+          Alcotest.test_case "sign-in rotates the id" `Quick
+            test_sign_in_rotates_the_id;
+          Alcotest.test_case "expired sessions are swept" `Quick
+            test_expired_sessions_are_swept;
+          Alcotest.test_case "the memory store sweeps by expiry" `Quick
+            test_the_memory_store_sweeps_by_expiry;
           Alcotest.test_case "a session's cookie lasts its limit, rounded up"
             `Quick test_a_sessions_cookie_lasts_its_limit_rounded_up;
           Alcotest.test_case "refuses what it cannot hold" `Quick
@@ -9716,6 +9834,8 @@ let () =
             test_ready_when_every_check_passes;
           Alcotest.test_case "not ready names what failed" `Quick
             test_not_ready_names_what_failed;
+          Alcotest.test_case "a check reads a resource" `Quick
+            test_a_check_reads_a_resource;
           Alcotest.test_case "a probe is logged at debug" `Quick
             test_a_probe_is_logged_at_debug;
         ] );

@@ -10,19 +10,17 @@
 
 let hello = Ok "Hello."
 
-let routes =
-  [
-    Spindle.get Spindle.Path.root Spindle.Returns.text
-      (Spindle.Dep.return hello);
-  ]
-
 let in_service =
-  Spindle.Health.check "maintenance" (fun () ->
-      if Sys.file_exists "maintenance" then
-        Error "the maintenance file is there"
-      else Ok ())
+  Spindle.Health.check "maintenance"
+    (Spindle.Dep.return (fun () ->
+         if Sys.file_exists "maintenance" then
+           Error "the maintenance file is there"
+         else Ok ()))
+
+let routes =
+  Spindle.get Spindle.Path.root Spindle.Returns.text (Spindle.Dep.return hello)
+  :: Spindle.Health.routes [ in_service ]
 
 let () =
   Spindle.Log.setup ();
-  Eio_main.run @@ fun env ->
-  Spindle.serve env (routes @ Spindle.Health.routes [ in_service ])
+  Eio_main.run @@ fun env -> Spindle.serve env routes

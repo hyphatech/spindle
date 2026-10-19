@@ -174,28 +174,8 @@ let multipart ?max_head ~max () : Multipart.t Dep.t =
 
 module L = (val Logs.src_log Log.http : Logs.LOG)
 
-(* A function, so a route that sets nothing never mentions it. *)
-let outgoing_setter f : _ Dep.t =
-  Dep_repr.make (fun (c : Dep_repr.context) ->
-      Now
-        (Ok
-           (fun v ->
-             let o = c.outgoing in
-             if o.sent then
-               L.warn (fun m ->
-                   m
-                     "%s set a cookie or a header after its answer had gone, \
-                      which changed nothing"
-                     o.pattern)
-             else f o v)))
-
-let set_cookie =
-  outgoing_setter (fun (o : Dep_repr.outgoing) c ->
-      o.cookies <- o.cookies @ [ c ])
-
-let add_header =
-  outgoing_setter (fun (o : Dep_repr.outgoing) h ->
-      o.headers <- o.headers @ [ h ])
+let set_cookie = Outgoing.set_cookie
+let add_header = Outgoing.add_header
 
 (* Each at its path as a client writes it, [body.items[2].count]. *)
 let body_problems problems =

@@ -1,5 +1,44 @@
 # Changes
 
+## Unreleased
+
+- Breaking: a health check reads what it asks about as a route does, so
+  the probes are routes made with the rest, before the pool or anything
+  else the application holds exists, and a command line describes them
+  with none. `Spindle.Health.check name f` takes `f` as a dependency of
+  the function a probe runs: `Spindle.Dep.return (fun () -> ...)` for a
+  check that reads nothing, `let+ cache = cache in fun () -> ...` for one
+  that reads a resource. `Spindle_postgres.Pool.check` takes the pool's
+  resource, `Pool.check db`, where it took the pool, and the server is
+  handed the pool with `~resources` as for every other route. `/livez`
+  reads nothing.
+- Breaking: a session is a dependency, the request's session as other
+  frameworks have it. `Spindle.Session.create` answers it,
+  and a route reads it with `let+ session = session`, handed the session
+  its request's cookie names; `Session.get session` reads its data,
+  `Session.put session data` writes it, starting a session where there
+  was none, `Session.rotate session` moves it to a new id at sign-in, and
+  `Session.destroy session` ends it. Each sets the cookie and reads the
+  clock itself, so a route passes neither. Every use in one request is the
+  same session, and the store is asked once. `find`, `start`, `renew`,
+  `update`, `close`, `cookie`, `data` and the `id` and `session` types are
+  gone.
+- Breaking: `Session.create ~store` takes a `Session.store Dep.t`, so the
+  store is read as a route reads anything the application holds:
+  `Spindle.Dep.return (Spindle.Session.memory ())`, or
+  `let+ pool = db in Spindle_postgres.Session.store pool ~table` for the
+  database, and a session and the routes that read it are values made
+  before the pool.
+- Breaking: ended sessions are swept by the sessions themselves, and
+  `Session.sweep` is gone. The first request to read a session ten minutes
+  after the last sweep, on the app's monotonic clock, deletes up to 500 of
+  the ended, the soonest first, and the next request another batch while a
+  sweep finds a full one, so no request waits on more than a batch; a
+  failed sweep is a warning in the log. A store's `sweep` takes `~limit`.
+  The memory store keeps its sessions ordered by when they end, so a sweep
+  costs what it deletes, where it walked the table under its lock, and the
+  Postgres store skips rows another server's sweep holds.
+
 ## 0.8.0 (2026-10-19)
 
 - `Spindle.Melange.client` prints the routes as one OCaml module for

@@ -52,16 +52,19 @@ let measure ?(name = "postgres") t metrics =
 (* A busy pool is not borrowed from: the wait could end empty, a warning
    that a probe every few seconds would fill the log with. A closed one has
    nothing idle either, and is told apart first. *)
-let check ?(name = "postgres") t =
-  Spindle.Health.check name (fun () ->
-      if Atomic.get t.closed then Error "the pool is closed"
-      else if (stats t).idle = 0 then Ok ()
-      else
-        match use t (fun db -> Pg.exec_raw db "select 1") with
-        | Ok () -> Ok ()
-        | Error (`Pool `Busy) -> Ok ()
-        | Error (`Pool `Closed as e) -> Error (Pg.error_to_string e)
-        | Error (#Rowtype.error as e) -> Error (Rowtype.error_to_string e))
+let check ?(name = "postgres") db =
+  Spindle.Health.check name
+    (Spindle.Dep.map
+       (fun t () ->
+         if Atomic.get t.closed then Error "the pool is closed"
+         else if (stats t).idle = 0 then Ok ()
+         else
+           match use t (fun db -> Pg.exec_raw db "select 1") with
+           | Ok () -> Ok ()
+           | Error (`Pool `Busy) -> Ok ()
+           | Error (`Pool `Closed as e) -> Error (Pg.error_to_string e)
+           | Error (#Rowtype.error as e) -> Error (Rowtype.error_to_string e))
+       db)
 
 let transaction ?wait ?keep ?isolation ?retries t work =
   use ?wait t (fun db ->
