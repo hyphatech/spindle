@@ -9,8 +9,7 @@
    description cannot read closes it with 1007. *)
 
 module Ws = Spindle.Websocket
-
-let ( let* ) = Result.bind
+open Spindle.Syntax
 
 type said = { text : string } [@@deriving wiretype]
 

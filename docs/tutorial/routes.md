@@ -16,7 +16,8 @@ Spindle.get                                  (* 1. the method *)
    get_todo id)                              (*    and what it does with it *)
 ```
 
-`let+` and `and+` come from `open Spindle.Syntax` at the top of the file.
+`let+` and `and+` come from `open Spindle.Syntax` at the top of the file,
+with `let*` for a handler's `result`.
 
 1. **The method**: `Spindle.get`, `post`, `put`, `patch` or `delete`. Any
    other method is `Spindle.route`, as in ``Spindle.route `OPTIONS``.

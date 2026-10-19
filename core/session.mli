@@ -14,11 +14,14 @@
         Path.(s "me")
         Returns.text
         (let+ session = session in
-         match Spindle.Session.get session with
-         | Ok (Some visit) -> Ok visit.user
-         | Ok None -> Ok "nobody"
-         | Error e -> Error (Spindle.Session.refusal e))
+         let* visit = Spindle.Session.get session in
+         Ok (match visit with Some v -> v.user | None -> "nobody"))
     ]}
+
+    {b A session's failure is a refusal}: a store that fails, or data its
+    description cannot write, is {!Refusal.internal}, why in the log, since a
+    handler can do nothing with either but answer [500]. So each call goes on
+    with [let*] beside the handler's own.
 
     {b A session is a dependency}, read as every input is: {!create} makes it,
     and a route that reads it is handed the session its request's cookie names,
@@ -99,30 +102,20 @@ val create :
     every route that reads it. Raises as {!Cookie.val-named} does for a name no
     cookie can have. *)
 
-type error =
-  | Store of string  (** the store failed, in words for the log *)
-  | Unencodable of Wiretype.Unwritable.t
-      (** the data's description could not write it, and where *)
-
-val error_to_string : error -> string
-
-val refusal : error -> Refusal.t
-(** {!Refusal.internal}, the detail in the log. *)
-
-val get : 'a t -> ('a option, error) result
+val get : 'a t -> ('a option, Refusal.t) result
 (** The session's data, if its cookie names one that is kept and within both
     limits; one that is not, or whose data no longer reads as ['a], is deleted
     and [None]. The store is asked once a request. *)
 
-val put : 'a t -> 'a -> (unit, error) result
+val put : 'a t -> 'a -> (unit, Refusal.t) result
 (** The session's data, replaced -- or a new session holding it, and its cookie,
     where there was none. Its limits run on. *)
 
-val rotate : 'a t -> (unit, error) result
+val rotate : 'a t -> (unit, Refusal.t) result
 (** The session moved to a new id, its data kept and the old id deleted, its
     limits begun again: at sign-in, beside the {!put} of who signed in, in
     either order. Nothing, where there is no session. *)
 
-val destroy : 'a t -> (unit, error) result
+val destroy : 'a t -> (unit, Refusal.t) result
 (** The session deleted from the store, and its cookie cleared: sign-out.
     Nothing, where there is no session. *)

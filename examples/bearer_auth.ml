@@ -9,8 +9,6 @@
 
 open Spindle.Syntax
 
-let ( let* ) = Result.bind
-
 (* --8<-- [start:bearer] *)
 (* A 401 names how to authenticate, in WWW-Authenticate, so the code carries
    the challenge. *)

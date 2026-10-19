@@ -56,8 +56,6 @@ process:
 ```ocaml
 open Spindle.Syntax
 
-let ( let* ) = Result.bind
-
 type room
 
 let count : (int, room) Spindle.Event.kind =

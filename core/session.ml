@@ -86,17 +86,14 @@ type 'a t = {
       (** what the store said, kept so it is asked once a request *)
 }
 
-type error = Store of string | Unencodable of Wiretype.Unwritable.t
-
-let error_to_string = function
-  | Store m -> "a session store: " ^ m
-  | Unencodable e -> "a session's data: " ^ Wiretype.Unwritable.to_string e
-
-let refusal e = Refusal.internal ~detail:(error_to_string e)
+(* A handler can do nothing with a store's failure, or with data its own
+   description cannot write, but answer 500: each is that refusal, why
+   in its detail for the log. *)
+let failed detail = Refusal.internal ~detail
 
 (* The store knows a session by its id's digest, never by its id. *)
 let digest_of_id id = Digestif.SHA256.(to_hex (digest_string id))
-let of_store r = Result.map_error (fun m -> Store m) r
+let of_store r = Result.map_error (fun m -> failed ("a session store: " ^ m)) r
 let ( let* ) = Result.bind
 
 (* How long an expired session may outlive its end before a sweep deletes
@@ -158,7 +155,8 @@ let expiry t ~created =
 
 let save t ~digest ~created data =
   match Wiretype.encode t.sessions.description data with
-  | Error m -> Error (Unencodable m)
+  | Error m ->
+      Error (failed ("a session's data: " ^ Wiretype.Unwritable.to_string m))
   | Ok text ->
       let* () =
         of_store

@@ -125,7 +125,7 @@ HTTP/1.1 200 OK
 
 `Pool.transaction` borrows a connection and runs your function in one
 transaction: `Ok` commits, `Error` rolls back. `let*` here is
-`Result.bind`, defined in the program (`let ( let* ) = Result.bind`).
+`Result.bind`, from `open Spindle.Syntax` with `let+` and `and+`.
 
 ??? example "The whole app"
 

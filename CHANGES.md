@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `Spindle.Syntax` holds `let*`, `Result.bind`, beside `let+` and `and+`,
+  so a handler goes on through its `result` with the one `open` it already
+  writes, where each program defined its own: `Result.Syntax`, from OCaml
+  5.4, has a `let+` of its own that would hide the inputs'.
+- Breaking: a session's `get`, `put`, `rotate` and `destroy` answer a
+  `Refusal.t` -- a `500`, the store's words in the log -- since a handler
+  can do nothing else with a store that fails, so each goes on with `let*`
+  beside the handler's own. `Session.error`, `error_to_string` and
+  `refusal` are gone.
 - Breaking: the keys signed and encrypted cookies are sealed under are the
   server's, given where it starts -- `Spindle.serve ~keys`, `App.make ~keys`,
   `Test.app ~keys` -- as Rails and Phoenix take their secret, so a cookie,

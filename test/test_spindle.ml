@@ -1360,17 +1360,13 @@ let string_session ?(idle = Mtime.Span.hour) ?(absolute = Mtime.Span.day)
     ~idle ~absolute Wiretype.string
 
 let session_routes ?mono_clock session =
-  let ( let* ) = Result.bind in
   let v = Spindle.Path.str "v" in
-  let finished = function
-    | Ok () -> Ok "done"
-    | Error e -> Error (Spindle.Session.refusal e)
-  in
+  let finished = function Ok () -> Ok "done" | Error e -> Error e in
   let read session =
     match Spindle.Session.get session with
     | Ok (Some v) -> Ok v
     | Ok None -> Ok "nobody"
-    | Error e -> Error (Spindle.Session.refusal e)
+    | Error e -> Error e
   in
   Spindle.Test.app ?mono_clock
     [
@@ -1404,7 +1400,7 @@ let session_routes ?mono_clock session =
         (let+ v = Spindle.param v and+ session = session in
          match Spindle.Session.put session v with
          | Ok () -> read session
-         | Error e -> Error (Spindle.Session.refusal e));
+         | Error e -> Error e);
       Spindle.post
         Spindle.Path.(s "destroy")
         Spindle.Returns.text
@@ -1545,11 +1541,45 @@ let test_a_session_ends_by_its_limits () =
            match Spindle.Session.get session with
            | Ok (Some n) -> Ok (string_of_int n)
            | Ok None -> Ok "nobody"
-           | Error e -> Error (Spindle.Session.refusal e));
+           | Error e -> Error e);
       ]
   in
   check_string "data that no longer reads is no session" "nobody"
     (as_visitor reads_ints cookie `GET "/n").body
+
+let captured ?(level = Some Logs.Debug) ?sources f =
+  let lines = ref [] in
+  Spindle.Log.setup ~format:Spindle.Log.Json ~level ?sources
+    ~out:(fun l -> lines := l :: !lines)
+    ();
+  f ();
+  List.rev !lines
+
+(* A handler can do nothing with a store that fails but answer 500, so a
+   session's call is that refusal, the store's words in the log and none on
+   the wire. *)
+let test_a_failing_store_is_a_500 () =
+  let r = recorded () in
+  let failing =
+    { r.store with Spindle.Session.find = (fun _ -> Error "the disk is gone") }
+  in
+  let app = session_routes (string_session { r with store = failing }) in
+  let answer = ref None in
+  let lines =
+    captured (fun () ->
+        answer :=
+          Some (as_visitor app "session=AAAAAAAAAAAAAAAAAAAAAA" `GET "/me"))
+  in
+  match !answer with
+  | None -> Alcotest.fail "no answer"
+  | Some a ->
+      check_status "a 500" 500 a.status;
+      Alcotest.(check bool)
+        "its words are not on the wire" false
+        (contains ~sub:"disk" a.body);
+      Alcotest.(check bool)
+        "they are in the log" true
+        (List.exists (contains ~sub:"a session store: the disk is gone") lines)
 
 (* Nobody comes back for a session that ended, so the sessions sweep it
    themselves: on the app's clock, a batch a request, until a sweep finds
@@ -2258,7 +2288,6 @@ let test_a_stream_compresses_in_process () =
       (Spindle.Dep.return
          (Ok
             (Spindle.Response.events (fun send ->
-                 let ( let* ) = Result.bind in
                  let* () = send "data: one\n\n" in
                  send "data: two\n\n"))))
   in
@@ -2555,7 +2584,7 @@ let test_a_test_browser_keeps_what_the_app_set () =
         (let+ session = session in
          match Spindle.Session.put session "kim" with
          | Ok () -> Ok "in"
-         | Error e -> Error (Spindle.Session.refusal e));
+         | Error e -> Error e);
       Spindle.get
         Spindle.Path.(s "me")
         Spindle.Returns.text
@@ -2563,14 +2592,14 @@ let test_a_test_browser_keeps_what_the_app_set () =
          match Spindle.Session.get session with
          | Ok (Some user) -> Ok user
          | Ok None -> Ok "nobody"
-         | Error e -> Error (Spindle.Session.refusal e));
+         | Error e -> Error e);
       Spindle.post
         Spindle.Path.(s "sign-out")
         Spindle.Returns.text
         (let+ session = session in
          match Spindle.Session.destroy session with
          | Ok () -> Ok "out"
-         | Error e -> Error (Spindle.Session.refusal e));
+         | Error e -> Error e);
       Spindle.post
         Spindle.Path.(s "games" / Spindle.Path.str "g")
         Spindle.Returns.text
@@ -2644,7 +2673,6 @@ let test_a_test_reads_a_stream_that_never_ends () =
        heard_gone := Some gone;
        Ok
          (Spindle.Response.events (fun send ->
-              let ( let* ) = Result.bind in
               let* () = send "data: one\n\n" in
               Eio.Fiber.await_cancel ())))
   in
@@ -2695,14 +2723,6 @@ let test_json_is_only_json () =
 let src = Logs.Src.create "test.web" ~doc:"This suite's own"
 
 module L = (val Logs.src_log src : Logs.LOG)
-
-let captured ?(level = Some Logs.Debug) ?sources f =
-  let lines = ref [] in
-  Spindle.Log.setup ~format:Spindle.Log.Json ~level ?sources
-    ~out:(fun l -> lines := l :: !lines)
-    ();
-  f ();
-  List.rev !lines
 
 (* The default sink's writer is the program's, so a domain that logs can
    still end: one started by the first domain to log held that domain until
@@ -4433,7 +4453,6 @@ let test_the_client_reads_as_it_arrives () =
        in
        Ok
          (Spindle.Response.events (fun send ->
-              let ( let* ) = Result.bind in
               let* () =
                 send
                   (Printf.sprintf "data: after %s\n\n"
@@ -4509,7 +4528,6 @@ let test_each_wait_for_a_streamed_answer_is_bounded () =
       (Spindle.Dep.return
          (Ok
             (Spindle.Response.stream (fun send ->
-                 let ( let* ) = Result.bind in
                  let* () = send "first" in
                  (* Nothing more comes, so the reader's wait passes. *)
                  Eio.Fiber.await_cancel ()))))
@@ -4560,7 +4578,6 @@ let test_a_failed_read_is_answered_again () =
       (Spindle.Dep.return
          (Ok
             (Spindle.Response.stream (fun send ->
-                 let ( let* ) = Result.bind in
                  let* () = send "first" in
                  (* Nothing more comes, so every wait for more passes. *)
                  Eio.Fiber.await_cancel ()))))
@@ -5250,7 +5267,6 @@ let test_a_stop_lets_answers_finish domains () =
       (Spindle.Dep.return
          (Ok
             (Spindle.Response.events (fun send ->
-                 let ( let* ) = Result.bind in
                  let sub = Spindle.Broadcast.subscribe hub ~topic:"t" () in
                  let* () = send ": open\n\n" in
                  let rec loop () =
@@ -5318,7 +5334,6 @@ let test_a_stop_lets_a_stream_of_known_length_finish domains () =
       (Spindle.Dep.return
          (Ok
             (Spindle.Response.stream ~length:6 (fun send ->
-                 let ( let* ) = Result.bind in
                  let* () = send "abc" in
                  Eio.Time.Mono.sleep_span clock sending;
                  send "def"))))
@@ -5364,7 +5379,6 @@ let quiet_topic ~hub ~returned ~heard_gone ~until =
     (let+ gone = Spindle.client_gone in
      Ok
        (Spindle.Response.events (fun send ->
-            let ( let* ) = Result.bind in
             Eio.Promise.resolve heard_gone gone;
             let sub = Spindle.Broadcast.subscribe hub ~topic:"quiet" () in
             Fun.protect
@@ -6046,7 +6060,6 @@ let test_no_exception_message_reaches_the_log () =
         (Spindle.Dep.return
            (Ok
               (Spindle.Response.stream (fun send ->
-                   let ( let* ) = Result.bind in
                    let* () = send "a" in
                    raise (Charging secret)))));
       raises "socket"
@@ -8428,7 +8441,6 @@ let test_a_stream_sends_its_declared_events () =
       (Spindle.Dep.return
          (Ok
             (fun send ->
-              let ( let* ) = Result.bind in
               let* () = send (Spindle.Event.retry ~ms:1000) in
               let* () = send (Spindle.Event.make ~id:"7" state 7) in
               let* () = send (Spindle.Event.make token "two\r\nlines") in
@@ -8676,13 +8688,6 @@ let test_every_error_has_its_words () =
   let response : Spindle.Test.response =
     { status = `Forbidden; headers = []; body = "" }
   in
-  distinct "Session"
-    (List.map Spindle.Session.error_to_string
-       [
-         Spindle.Session.Store "down";
-         Spindle.Session.Unencodable
-           { at = []; code = Wiretype.Unwritable.Not_utf8; message = "bytes" };
-       ]);
   distinct "Body"
     (List.map Spindle.Body.error_to_string
        [ Spindle.Body.Too_large; Unreadable "cut"; Over_budget ]);
@@ -9544,6 +9549,8 @@ let () =
             test_a_session_ends_by_its_limits;
           Alcotest.test_case "sign-in rotates the id" `Quick
             test_sign_in_rotates_the_id;
+          Alcotest.test_case "a failing store is a 500" `Quick
+            test_a_failing_store_is_a_500;
           Alcotest.test_case "expired sessions are swept" `Quick
             test_expired_sessions_are_swept;
           Alcotest.test_case "the memory store sweeps by expiry" `Quick

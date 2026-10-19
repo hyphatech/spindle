@@ -51,15 +51,23 @@ module Cookie : sig
   (** Any text: written as one a cookie can hold, and read back as it was. *)
 end
 
-(** The binding operators a route's inputs are written with, and nothing else:
-    [open Spindle.Syntax] at the top of a file.
+(** The binding operators a route is written with, and nothing else:
+    [open Spindle.Syntax] at the top of a file. [let+] and [and+] read its
+    inputs; [let*] goes on through the [result] its handler answers, so a
+    handler opens one module for both, where [Result.Syntax]'s own [let+] would
+    hide the inputs'.
 
     {[
-    let+ id = Spindle.param user_id and+ now = Spindle.now in ...
+    let+ id = Spindle.param user_id and+ now = Spindle.now in
+    let* order = find_order id ~now in
+    Ok order
     ]} *)
 module Syntax : sig
   val ( let+ ) : 'a Dep.t -> ('a -> 'b) -> 'b Dep.t
   val ( and+ ) : 'a Dep.t -> 'b Dep.t -> ('a * 'b) Dep.t
+
+  val ( let* ) : ('a, 'e) result -> ('a -> ('b, 'e) result) -> ('b, 'e) result
+  (** [Result.bind]. *)
 end
 
 module Request = Request

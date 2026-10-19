@@ -996,7 +996,7 @@ let test_sessions_read_the_pool_as_a_resource () =
             (let+ session = session in
              match Spindle.Session.put session "kim" with
              | Ok () -> Ok "in"
-             | Error e -> Error (Spindle.Session.refusal e));
+             | Error e -> Error e);
           Spindle.get
             Spindle.Path.(s "me")
             Spindle.Returns.text
@@ -1004,7 +1004,7 @@ let test_sessions_read_the_pool_as_a_resource () =
              match Spindle.Session.get session with
              | Ok (Some user) -> Ok user
              | Ok None -> Ok "nobody"
-             | Error e -> Error (Spindle.Session.refusal e));
+             | Error e -> Error e);
         ]
       in
       let pool = pool target in

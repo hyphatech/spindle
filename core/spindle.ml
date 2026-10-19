@@ -77,6 +77,7 @@ end
 module Syntax = struct
   let ( let+ ) d f = Dep.map f d
   let ( and+ ) = Dep.both
+  let ( let* ) = Result.bind
 end
 
 module Request = Request

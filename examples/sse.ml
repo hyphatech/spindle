@@ -10,8 +10,6 @@
 
 open Spindle.Syntax
 
-let ( let* ) = Result.bind
-
 (* The events one stream may send are a type of their own, and each kind is
    declared as one of them. *)
 type counting

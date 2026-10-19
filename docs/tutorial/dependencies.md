@@ -19,7 +19,8 @@ open Spindle.Syntax
  answer id ~page ~now)
 ```
 
-`open Spindle.Syntax` brings in `let+` and `and+` and nothing else. Every
+`open Spindle.Syntax` brings in `let+` and `and+`, and `let*` for the
+`result` a handler answers (`Result.bind`), and nothing else. Every
 input is worked out before the code after `in` runs, and that code sees
 plain values: an `int64` (if `user_id` is a `Path.int64`), an `int option`,
 a `Ptime.t`.

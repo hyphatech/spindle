@@ -11,7 +11,6 @@ open Spindle.Syntax
 module S = Rowtype
 module Pg = Rowtype_postgres
 
-let ( let* ) = Result.bind
 let database = "postgres://postgres:postgres@localhost:5432/postgres"
 
 type claim = { name : string; claimed_at : Ptime.t } [@@deriving wiretype]

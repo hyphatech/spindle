@@ -119,8 +119,9 @@ Nobody is signed in.
 | `rotate` | moves the session to a new id, keeping its data: at sign-in |
 | `destroy` | deletes the session and clears its cookie: sign-out |
 
-Each answers a `result`: a store that fails is `Error`, and
-`Session.refusal` turns it into a `500` whose detail goes to the log.
+Each answers a `result` whose `Error` is a refusal: a store that fails is a
+`500`, its words in the log and none on the wire, so each call goes on with
+`let*` beside the handler's own.
 
 - **Sign-in rotates**, so an id somebody planted in the browser before
   signs them into nothing after. `rotate` and `put` end in the same place

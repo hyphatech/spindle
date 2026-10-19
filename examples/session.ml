@@ -11,8 +11,6 @@
 
 open Spindle.Syntax
 
-let ( let* ) = Result.bind
-
 type visit = { user : string } [@@deriving wiretype]
 
 (* Kept in this process's memory, and in the database with
@@ -26,36 +24,29 @@ let session =
 
 let user = Spindle.Path.str "user"
 
-let answered = function
-  | Ok text -> Ok text
-  | Error e -> Error (Spindle.Session.refusal e)
-
 let routes =
   [
     Spindle.post
       Spindle.Path.(s "sign-in" / user)
       Spindle.Returns.text
       (let+ user = Spindle.param user and+ session = session in
-       answered
-         (let* () = Spindle.Session.rotate session in
-          let* () = Spindle.Session.put session { user } in
-          Ok "Signed in.\n"));
+       let* () = Spindle.Session.rotate session in
+       let* () = Spindle.Session.put session { user } in
+       Ok "Signed in.\n");
     Spindle.get
       Spindle.Path.(s "me")
       Spindle.Returns.text
       (let+ session = session in
-       answered
-         (let* visit = Spindle.Session.get session in
-          match visit with
-          | Some { user } -> Ok (Printf.sprintf "You are %s.\n" user)
-          | None -> Ok "Nobody is signed in.\n"));
+       let* visit = Spindle.Session.get session in
+       match visit with
+       | Some { user } -> Ok (Printf.sprintf "You are %s.\n" user)
+       | None -> Ok "Nobody is signed in.\n");
     Spindle.post
       Spindle.Path.(s "sign-out")
       Spindle.Returns.text
       (let+ session = session in
-       answered
-         (let* () = Spindle.Session.destroy session in
-          Ok "Signed out.\n"));
+       let* () = Spindle.Session.destroy session in
+       Ok "Signed out.\n");
   ]
 
 let () =
