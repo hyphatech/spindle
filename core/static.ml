@@ -188,23 +188,15 @@ let site_route ?(at = Path.root) site =
     Path.(at / file)
     Returns.response
     (Dep.map
-       (fun (segments, req) ->
-         match site () with
-         | Some t -> serve_segments t segments req
-         | None ->
-             Error
-               (Refusal.internal
-                  ~detail:
-                    "a directory served before it was read: App.start reads \
-                     it, and Spindle.serve calls that"))
-       (Dep.both (Input.param file) Conditional.inputs))
+       (fun ((segments, req), t) -> serve_segments t segments req)
+       (Dep.both (Dep.both (Input.param file) Conditional.inputs) site))
 
-let route ?at t = site_route ?at (fun () -> Some t)
+let route ?at t = site_route ?at (Dep.return t)
 
-(* Written once, as the server starts, before it accepts anything. *)
+(* Read by each start, into a resource of that instance alone. *)
 let directory ?at ?index ?dotfiles ?not_found ?shell ?types path =
-  let site = Atomic.make None in
-  let r = site_route ?at (fun () -> Atomic.get site) in
+  let site = Dep.of_resource ("the directory " ^ path) in
+  let r = site_route ?at site in
   {
     r with
     Route_repr.start =
@@ -212,8 +204,7 @@ let directory ?at ?index ?dotfiles ?not_found ?shell ?types path =
         {
           read =
             (fun fs ->
-              Result.map
-                (fun t -> Atomic.set site (Some t))
+              Result.map (Dep.resource site)
                 (load ?index ?dotfiles ?not_found ?shell ?types
                    Eio.Path.(fs / path)));
           in_a_test =

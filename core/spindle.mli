@@ -180,9 +180,9 @@ val serve :
     does not hold, ends the program: an error in the log saying why, and exit
     code 1, since a server missing what it was written to serve is not the one
     that was written. A program that builds its routes at run time makes its app
-    with {!App.make}, starts it with {!App.start}, and serves it with
-    {!Server.run}, starting it on [env]'s monotonic clock, which times its
-    limits ({!Rate}). *)
+    with {!App.make}, starts it with {!App.start} on [env]'s monotonic clock,
+    which times its limits ({!Rate}), and serves the instance that answers with
+    {!Server.run}. *)
 
 val of_clock : _ Eio.Time.clock -> Ptime.t
 (** The clock's time now, {!Spindle_http.Instant.of_clock}: what [read_clock]

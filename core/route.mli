@@ -82,12 +82,15 @@ val matched : Request.t -> info option
     middleware that is a policy for some routes reads it here:
 
     {[
-    let limited handler request =
+    let noindex : unit Meta.key = Meta.key ()
+
+    let hidden handler request =
+      let response = handler request in
       match
-        Option.bind (Route.matched request) (fun r -> Meta.find limit r.meta)
+        Option.bind (Route.matched request) (fun r -> Meta.find noindex r.meta)
       with
-      | Some n when over n request -> Response.refusal too_fast
-      | Some _ | None -> handler request
+      | Some () -> Response.with_header ("x-robots-tag", "noindex") response
+      | None -> response
     ]} *)
 
 val pp_info : Format.formatter -> info -> unit

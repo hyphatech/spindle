@@ -22,14 +22,14 @@ val app :
   ?trailing_slash:App.trailing_slash ->
   ?keys:Key.ring ->
   Route.t list ->
-  App.t
-(** [app routes]: {!App.make}, for a test -- every argument its, of the same
-    name and default -- given [resources] as {!App.start} is
-    ({!Dep.val-resource}), but only those the routes it calls read: {!call}
-    raises on a route that reads one it was not given. Its limits ({!Rate})
-    count from none, apart from any other app's, on [mono_clock]: one that never
-    moves unless given, so a test that waits out a limit gives
-    [Eio_mock.Clock.Mono.make ()] and moves it with
+  App.instance
+(** [app routes]: {!App.make} and {!App.start}, for a test -- every argument
+    theirs, of the same name and default -- an instance of its own, given
+    [resources] as {!App.start} is ({!Dep.val-resource}), but only those the
+    routes it calls read: {!call} raises on a route that reads one it was not
+    given. Its limits ({!Rate}) count from none, apart from any other app's, on
+    [mono_clock]: one that never moves unless given, so a test that waits out a
+    limit gives [Eio_mock.Clock.Mono.make ()] and moves it with
     [Eio_mock.Clock.Mono.set_time]. Raises [Invalid_argument] with {!App.make}'s
     reason for a table it refuses, as [Spindle.serve] does: a route table is a
     constant written in source, and a test that made a bad one has nothing to do
@@ -49,7 +49,7 @@ val call :
   ?version:Spindle_http.Head.version ->
   ?headers:(string * string) list ->
   ?body:string ->
-  App.t ->
+  App.instance ->
   Spindle_http.Meth.t ->
   string ->
   response
@@ -99,7 +99,7 @@ module Browser : sig
   (** What it holds, by name, in the order they were set. *)
 end
 
-val browser : App.t -> Browser.t
+val browser : App.instance -> Browser.t
 (** A browser holding no cookie:
 
     {[
@@ -113,7 +113,7 @@ val browser : App.t -> Browser.t
 val events :
   ?now:Ptime.t ->
   ?headers:(string * string) list ->
-  App.t ->
+  App.instance ->
   string ->
   (Spindle_http.Event_stream.event -> [ `Continue | `Stop ]) ->
   (unit, response) result
@@ -139,7 +139,7 @@ val websocket_error_to_string : websocket_error -> string
 val websocket :
   ?now:Ptime.t ->
   ?headers:(string * string) list ->
-  App.t ->
+  App.instance ->
   ('c, 's) Spindle_http.Websocket.protocol ->
   string ->
   (('s, 'c) Spindle_http.Websocket.t ->

@@ -24,8 +24,9 @@ type info = {
 (** What a route says of itself, which the document and the route table read. *)
 
 type start = {
-  read : Eio.Fs.dir_ty Eio.Path.t -> (unit, string) result;
-      (** run as the server starts, reading the filesystem *)
+  read : Eio.Fs.dir_ty Eio.Path.t -> (Dep_repr.resource, string) result;
+      (** run as the app starts, reading the filesystem: what it read, supplied
+          as a resource of that instance, which the route reads *)
   in_a_test : string;
       (** what a test, which has no filesystem to start, does instead *)
 }

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Breaking: an app is made, then started, and each start is an instance
+  of its own. `App.start` answers an `App.instance` -- what
+  `App.handle`, `Server.run`, `Server.serve_on` and `Test.call` take --
+  where it wrote what it was given into the app, so one app started twice,
+  for a server and for a test, or from two directories, had the second's
+  resources and files in both. `App.make` takes what is written in source;
+  `App.start` takes what exists once the program runs: `~resources`,
+  `~keys`, which moved from `App.make`, `~mono_clock`, and `~fs`, now
+  optional, needed only where a route reads a directory as it starts.
+  `Test.app` answers an instance, and what describes an app --
+  `Openapi.document`, `Zod.schemas`, `Melange.client`, `App.routes` --
+  takes `App.t`, or `App.app instance`. An app that was never started can
+  no longer be called, so the `500` it answered is gone.
+
 - Breaking: `Spindle_client` has one response, `'body response`, its
   body's type saying how it arrived: `call` answers a `string response`,
   the whole body, and `stream` hands its function a `Body.t response`,
@@ -38,7 +52,7 @@
   beside the handler's own. `Session.error`, `error_to_string` and
   `refusal` are gone.
 - Breaking: the keys signed and encrypted cookies are sealed under are the
-  server's, given where it starts -- `Spindle.serve ~keys`, `App.make ~keys`,
+  server's, given where it starts -- `Spindle.serve ~keys`, `App.start ~keys`,
   `Test.app ~keys` -- as Rails and Phoenix take their secret, so a cookie,
   and the routes that read it, are values made before the secret is read.
   `Cookie.signed` and `Cookie.encrypted` take no ring:

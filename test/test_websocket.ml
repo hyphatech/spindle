@@ -736,7 +736,9 @@ let test_a_stopping_server_says_going_away env () =
 
 let test_a_socket_is_in_the_document () =
   let doc =
-    match Spindle.Openapi.document ~title:"T" ~version:"1" app with
+    match
+      Spindle.Openapi.document ~title:"T" ~version:"1" (Spindle.App.app app)
+    with
     | Ok d -> Yojson.Safe.from_string d
     | Error e -> Alcotest.failf "no document: %s" (String.concat "; " e)
   in
@@ -762,7 +764,7 @@ let test_a_socket_is_in_the_document () =
 
 let test_a_socket_is_in_the_zod_module () =
   let m =
-    match Spindle.Zod.schemas app with
+    match Spindle.Zod.schemas (Spindle.App.app app) with
     | Ok m -> m
     | Error e -> Alcotest.failf "no module: %s" (String.concat "; " e)
   in

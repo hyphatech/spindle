@@ -57,11 +57,14 @@ let who =
   Spindle.Cookie.signed ~max_age:Mtime.Span.(8 * hour) "who" Spindle.Codec.string
 
 let () =
-  match Spindle.Key.of_secret (Sys.getenv "COOKIE_SECRET") with
-  | Ok key ->
-      Eio_main.run @@ fun env ->
-      Spindle.serve env ~keys:(Spindle.Key.ring key []) routes
-  | Error sentence -> prerr_endline sentence
+  match Sys.getenv_opt "COOKIE_SECRET" with
+  | None -> prerr_endline "COOKIE_SECRET is not set."
+  | Some secret -> (
+      match Spindle.Key.of_secret secret with
+      | Ok key ->
+          Eio_main.run @@ fun env ->
+          Spindle.serve env ~keys:(Spindle.Key.ring key []) routes
+      | Error sentence -> prerr_endline sentence)
 ```
 
 - **No keys, no start.** A route that reads a signed or encrypted cookie in

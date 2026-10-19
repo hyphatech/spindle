@@ -44,10 +44,13 @@ type t = {
   cors : Cors_repr.t option;
   compress : Compress_repr.t option;
   trailing_slash : trailing_slash;
+}
+
+type instance = {
+  app : t;
+  resources : Dep_repr.resources;
   keys : Key_repr.ring option;
       (** what its signed and encrypted cookies are sealed under *)
-  resources : Dep_repr.resources Atomic.t;
-      (** written once, by [start], before the server accepts anything *)
 }
 
 let meth_of (r : Route_repr.t) = r.info.meth
@@ -471,7 +474,7 @@ let find_with_params ~rest t meth segs =
 
 let make ?(middleware = []) ?(codes = []) ?not_found ?cors ?compress
     ?(check_origin = true) ?(trusted_origins = []) ?(trailing_slash = Strict)
-    ?keys routes =
+    routes =
   let rec check_all = function
     | [] -> check_codes ~codes routes
     | r :: rest -> (
@@ -502,8 +505,6 @@ let make ?(middleware = []) ?(codes = []) ?not_found ?cors ?compress
         cors;
         compress;
         trailing_slash;
-        keys;
-        resources = Atomic.make (Dep_repr.unstarted ());
       })
     (check_all routes)
 
@@ -517,7 +518,6 @@ let path_segments path =
   | _ -> None
 
 let routes t = List.map Route.info t.routes
-let keys t = t.keys
 
 (* A trailing slash makes another path: two spellings split caches and
    links, so it is strict unless the application asks to redirect. *)
@@ -773,7 +773,7 @@ let preflight t req =
 
 (* The innermost handler. The origin check comes first: forgery is refused
    whatever route it names. *)
-let answer_resolution t ~body ~answered_route resolution req =
+let answer_resolution t ~resources ~body ~answered_route resolution req =
   let meth = match Request.meth req with `HEAD -> `GET | m -> m in
   (* A browser opens a socket with the page's cookies, so it is checked as
      a POST is. *)
@@ -824,9 +824,7 @@ let answer_resolution t ~body ~answered_route resolution req =
     | Route (r, params) ->
         answered_route := Some (pattern_of r);
         with_raise_as_500
-          (fun req ->
-            Route_repr.handle r req ~resources:(Atomic.get t.resources) ~params
-              ~body)
+          (fun req -> Route_repr.handle r req ~resources ~params ~body)
           req
     | Slash -> (
         match location_without_slash req with
@@ -1036,7 +1034,8 @@ let choose_gzip t req matched ~held response =
 (* A raise is caught at the route, so the access log names it, and again
    around the middleware, so a middleware's bug is one 500 rather than a
    dropped connection. *)
-let handle t req ~body =
+let handle (i : instance) req ~body =
+  let t = i.app in
   let answered_route = ref None in
   let resolution = resolve t req in
   let matched = matched_route resolution in
@@ -1056,7 +1055,8 @@ let handle t req ~body =
           (List.fold_right
              (fun m h -> m h)
              t.middleware
-             (answer_resolution t ~body ~answered_route resolution))
+             (answer_resolution t ~resources:i.resources ~body ~answered_route
+                resolution))
           req
   in
   (* On every answer of a covered route, a middleware's included, so an
@@ -1106,19 +1106,41 @@ let handle t req ~body =
   log_refusal req
     (response, { route = !answered_route; undeclared; access; gzip })
 
-(* The first route, in listed order, that reads a resource nobody supplied
-   or cannot start: a server missing one route's database or files is not
-   the server that was written. *)
-let start ?(resources = []) t ~fs ~mono_clock =
+(* What a route reads when it starts is read first, in listed order, and
+   supplied beside the program's own, so the check that follows finds every
+   route's: a server missing one route's database or files is not the server
+   that was written. *)
+let start ?(resources = []) ?keys ?fs t ~mono_clock =
   let ( let* ) = Result.bind in
-  let fs = (fs :> Eio.Fs.dir_ty Eio.Path.t) in
-  let resources =
-    match t.keys with
-    | Some ring -> Dep_repr.resource Dep_repr.cookie_keys ring :: resources
-    | None -> resources
+  let* read =
+    List.fold_left
+      (fun read (r : Route_repr.t) ->
+        let* read = read in
+        match r.start with
+        | None -> Ok read
+        | Some start ->
+            Result.map_error
+              (fun m -> Printf.sprintf "%s: %s" (route_name r) m)
+              (match fs with
+              | Some fs ->
+                  Result.map
+                    (fun resource -> resource :: read)
+                    (start.read (fs :> Eio.Fs.dir_ty Eio.Path.t))
+              | None ->
+                  Error
+                    "it reads a directory when the app starts, and App.start \
+                     was given no ~fs"))
+      (Ok []) t.routes
+  in
+  let keys_read =
+    match keys with
+    | Some ring -> [ Dep_repr.resource Dep_repr.cookie_keys ring ]
+    | None -> []
   in
   let* supplied =
-    Dep_repr.supply resources ~unsupplied:Dep_repr.Refused ~mono_clock
+    Dep_repr.supply
+      (keys_read @ List.rev read @ resources)
+      ~unsupplied:Dep_repr.Refused ~mono_clock
   in
   let* () =
     match
@@ -1127,30 +1149,23 @@ let start ?(resources = []) t ~fs ~mono_clock =
           List.find_map
             (fun (owner, name) ->
               if Dep_repr.is_supplied supplied owner then None
-              else Some (r, name))
+              else Some (r, owner, name))
             r.resources_read)
         t.routes
     with
-    | Some (r, name) when String.equal name "cookie keys" ->
+    | Some (r, owner, _) when Dep_repr.is_cookie_keys owner ->
         Error
           (Printf.sprintf
              "%s reads the server's keys -- a signed or encrypted cookie, or \
-              Spindle.keys -- and the app was given no ~keys"
+              Spindle.keys -- and the app was started with no ~keys"
              (route_name r))
-    | Some (r, name) ->
+    | Some (r, _, name) ->
         Error
           (Printf.sprintf "%s reads the resource %s, which was not supplied"
              (route_name r) name)
     | None -> Ok ()
   in
-  Atomic.set t.resources supplied;
-  List.fold_left
-    (fun started (r : Route_repr.t) ->
-      Result.bind started (fun () ->
-          match r.start with
-          | None -> Ok ()
-          | Some start ->
-              Result.map_error
-                (fun m -> Printf.sprintf "%s: %s" (route_name r) m)
-                (start.read fs)))
-    (Ok ()) t.routes
+  Ok { app = t; resources = supplied; keys }
+
+let app (i : instance) = i.app
+let keys (i : instance) = i.keys

@@ -152,4 +152,5 @@ let routes =
        Ok "not an item");
   ]
 
-let app = Spindle.Test.app routes
+let app =
+  match Spindle.App.make routes with Ok a -> a | Error m -> invalid_arg m

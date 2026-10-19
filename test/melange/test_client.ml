@@ -20,7 +20,8 @@ let serve ~sw env =
         ~domains:1
         ~read_clock:(fun () -> Ptime.epoch)
         ~drain:Mtime.Span.(100 * ms)
-        [ socket ] App.app;
+        [ socket ]
+        (Spindle.Test.app App.routes);
       `Stop_daemon);
   port
 

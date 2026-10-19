@@ -45,6 +45,13 @@ let greeting_json =
 
 let name = Spindle.Path.string "name"
 
+(* An app made with App.make, started as a test starts one: reading no
+   resource, on a clock that never moves. *)
+let start_app app =
+  match Spindle.App.start app ~mono_clock:(Eio_mock.Clock.Mono.make ()) with
+  | Ok a -> a
+  | Error m -> Alcotest.failf "it did not start: %s" m
+
 let hello =
   Spindle.get
     Spindle.Path.(s "hello" / name)
@@ -1261,11 +1268,10 @@ let test_the_server_holds_the_keys () =
        Ok (Spindle.Key.sign keys "invite:7"))
   in
   let started ?keys routes =
-    match Spindle.App.make ?keys routes with
+    match Spindle.App.make routes with
     | Error m -> Error m
     | Ok app ->
-        Spindle.App.start app ~fs:(Eio.Stdenv.fs env)
-          ~mono_clock:(Eio.Stdenv.mono_clock env)
+        Spindle.App.start ?keys app ~mono_clock:(Eio.Stdenv.mono_clock env)
   in
   (match started [ reads ] with
   | Error m ->
@@ -1273,7 +1279,7 @@ let test_the_server_holds_the_keys () =
         "a route that reads one, refused at start, naming the route and ~keys"
         true
         (contains ~sub:"GET /who" m && contains ~sub:"~keys" m)
-  | Ok () -> Alcotest.fail "started with no keys");
+  | Ok _ -> Alcotest.fail "started with no keys");
   Alcotest.(check bool)
     "and so is one that reads Spindle.keys" true
     (Result.is_error (started [ token ]));
@@ -1871,7 +1877,9 @@ let test_a_form_is_read_once_and_only_as_a_form () =
           (Spindle.Form.required "b" Spindle.Codec.int |> Spindle.Dep.map ignore)))
 
 let test_a_form_is_described () =
-  match Spindle.Openapi.document (Spindle.Test.app [ profile ]) with
+  match
+    Spindle.Openapi.document (Spindle.App.app (Spindle.Test.app [ profile ]))
+  with
   | Error _ -> Alcotest.fail "no document"
   | Ok doc ->
       let open Yojson.Safe.Util in
@@ -2050,7 +2058,7 @@ let test_a_form's_files_are_inputs () =
               (let+ _ = name and+ _ = Spindle.multipart ~max:10 () in
                Ok "");
           ]));
-  match Spindle.Openapi.document a with
+  match Spindle.Openapi.document (Spindle.App.app a) with
   | Error _ -> Alcotest.fail "no document"
   | Ok doc ->
       let open Yojson.Safe.Util in
@@ -2504,7 +2512,7 @@ let test_a_limit_refuses_past_its_rate () =
   Eio_mock.Clock.Mono.set_time mono_clock (Mtime.of_uint64_ns 100_000_000L);
   check_status "a tenth of a second on, one more" 200 (call ()).status;
   check_status "and only one" 429 (call ()).status;
-  match Spindle.Openapi.document a with
+  match Spindle.Openapi.document (Spindle.App.app a) with
   | Error _ -> Alcotest.fail "no document"
   | Ok doc ->
       let open Yojson.Safe.Util in
@@ -2541,23 +2549,18 @@ let test_two_apps_count_apart () =
   check_status "the second app counts its own" 200 (call second);
   check_status "and limits its own" 429 (call second)
 
-(* A server's limit is timed on the clock its app was started with, and
-   one never started has none to read: our fault, as an unread directory
-   is. *)
+(* A server's limit is timed on the clock its app was started with. *)
 let test_a_server_times_its_limit_on_its_monotonic_clock () =
-  Eio_main.run @@ fun env ->
-  let app () =
-    match Spindle.App.make [ limited_once_a_minute ] with
-    | Ok a -> a
-    | Error m -> Alcotest.fail m
-  in
   let call a = (Spindle.Test.call a `POST "/call").status in
-  check_status "never started, our fault" 500 (call (app ()));
   let mono_clock = Eio_mock.Clock.Mono.make () in
-  let a = app () in
-  (match Spindle.App.start a ~fs:(Eio.Stdenv.fs env) ~mono_clock with
-  | Ok () -> ()
-  | Error m -> Alcotest.failf "it did not start: %s" m);
+  let a =
+    match Spindle.App.make [ limited_once_a_minute ] with
+    | Error m -> Alcotest.fail m
+    | Ok app -> (
+        match Spindle.App.start app ~mono_clock with
+        | Ok a -> a
+        | Error m -> Alcotest.failf "it did not start: %s" m)
+  in
   check_status "the first call" 200 (call a);
   check_status "the second at once" 429 (call a);
   Eio_mock.Clock.Mono.set_time mono_clock (Mtime.of_uint64_ns 60_000_000_000L);
@@ -6690,6 +6693,7 @@ let test_the_table_answers_as_the_rule =
       match Spindle.App.make built with
       | Error _ -> QCheck.assume_fail ()
       | Ok a -> (
+          let a = start_app a in
           let decimal p =
             String.length p > 0
             && String.for_all (fun c -> c >= '0' && c <= '9') p
@@ -6961,10 +6965,8 @@ let started ?resources routes =
   match Spindle.App.make routes with
   | Error m -> Alcotest.fail m
   | Ok app ->
-      Result.map
-        (fun () -> app)
-        (Spindle.App.start ?resources app ~fs:(Eio.Stdenv.fs env)
-           ~mono_clock:(Eio.Stdenv.mono_clock env))
+      Spindle.App.start ?resources app ~fs:(Eio.Stdenv.fs env)
+        ~mono_clock:(Eio.Stdenv.mono_clock env)
 
 let refused_at_start what ~sub ?resources routes =
   match started ?resources routes with
@@ -6985,6 +6987,31 @@ let test_a_route_reads_the_resource_supplied () =
   check_string "in a test" "notes from the shelf"
     (Spindle.Test.call (Spindle.Test.app ~resources [ notes ]) `GET "/notes")
       .body
+
+(* Each start is an instance of its own: one app started twice reads, in
+   each, what that start was given, so a server and a test of one app share
+   nothing. *)
+let test_each_start_reads_its_own_resources () =
+  let app =
+    match Spindle.App.make [ notes ] with
+    | Ok a -> a
+    | Error m -> Alcotest.fail m
+  in
+  let start shelf =
+    match
+      Spindle.App.start app
+        ~resources:[ Spindle.Dep.resource database shelf ]
+        ~mono_clock:(Eio_mock.Clock.Mono.make ())
+    with
+    | Ok a -> a
+    | Error m -> Alcotest.failf "it did not start: %s" m
+  in
+  let first = start "the shelf" in
+  let second = start "the attic" in
+  check_string "the first, its own" "notes from the shelf"
+    (Spindle.Test.call first `GET "/notes").body;
+  check_string "the second, its own" "notes from the attic"
+    (Spindle.Test.call second `GET "/notes").body
 
 (* What a route reads can be listed, so a server missing a resource is
    stopped before it listens, naming the route and the resource; and what
@@ -7054,30 +7081,37 @@ let test_a_test_calling_for_a_resource_it_lacks_raises () =
 
 (* A directory named by its path is read when the server starts --
    [App.start], which [Spindle.serve] calls -- so the route table stays a
-   constant. One that cannot be read names its route; one never started is
-   our fault rather than an empty site; and a test, with no filesystem to
-   start from, is told to load it. *)
+   constant. One that cannot be read names its route, as does one started
+   with no filesystem; and a test, with no filesystem to start from, is told
+   to load it. *)
 let test_a_directory_is_read_when_the_server_starts () =
   with_site site @@ fun root ->
   let fs = (fst root, "") and dir = snd root in
   let app routes =
     match Spindle.App.make routes with Ok a -> a | Error m -> Alcotest.fail m
   in
-  let a = app [ Spindle.Static.directory dir ] in
-  check_status "before it starts, our fault" 500
-    (Spindle.Test.call a `GET "/").status;
   let mono_clock = Eio_mock.Clock.Mono.make () in
-  (match Spindle.App.start a ~fs ~mono_clock with
-  | Ok () -> ()
+  (match
+     Spindle.App.start (app [ Spindle.Static.directory dir ]) ~fs ~mono_clock
+   with
+  | Ok a ->
+      check_string "started, its files" "FRONT DOOR"
+        (Spindle.Test.call a `GET "/").body
   | Error m -> Alcotest.failf "it did not start: %s" m);
-  check_string "started, its files" "FRONT DOOR"
-    (Spindle.Test.call a `GET "/").body;
+  (match
+     Spindle.App.start (app [ Spindle.Static.directory dir ]) ~mono_clock
+   with
+  | Ok _ -> Alcotest.fail "a directory started with no filesystem"
+  | Error m ->
+      Alcotest.(check bool)
+        "with no filesystem, naming the route and ~fs" true
+        (contains ~sub:"GET /{file*}" m && contains ~sub:"~fs" m));
   (match
      Spindle.App.start
        (app [ Spindle.Static.directory (Filename.concat dir "nowhere") ])
        ~fs ~mono_clock
    with
-  | Ok () -> Alcotest.fail "a missing directory started"
+  | Ok _ -> Alcotest.fail "a missing directory started"
   | Error m ->
       Alcotest.(check bool)
         "naming the route" true
@@ -7088,6 +7122,32 @@ let test_a_directory_is_read_when_the_server_starts () =
       Alcotest.(check bool)
         "a test is told to load it" true
         (contains ~sub:"Static.load" m)
+
+(* What a start reads is that instance's: one app started from two
+   directories serves each its own. *)
+let test_each_start_reads_its_own_directory () =
+  with_site [ ("a/index.html", "FIRST"); ("b/index.html", "SECOND") ]
+  @@ fun root ->
+  let app =
+    match Spindle.App.make [ Spindle.Static.directory "." ] with
+    | Ok a -> a
+    | Error m -> Alcotest.fail m
+  in
+  let start dir =
+    match
+      Spindle.App.start app
+        ~fs:Eio.Path.(root / dir)
+        ~mono_clock:(Eio_mock.Clock.Mono.make ())
+    with
+    | Ok a -> a
+    | Error m -> Alcotest.failf "it did not start: %s" m
+  in
+  let first = start "a" in
+  let second = start "b" in
+  check_string "the first, its own" "FIRST"
+    (Spindle.Test.call first `GET "/").body;
+  check_string "the second, its own" "SECOND"
+    (Spindle.Test.call second `GET "/").body
 
 let test_a_site_with_nothing_named_serves_its_files () =
   with_site site @@ fun root ->
@@ -7590,7 +7650,7 @@ let test_a_directory_not_there_is_refused_at_start () =
         Spindle.App.start app ~fs:(Eio.Stdenv.fs env)
           ~mono_clock:(Eio.Stdenv.mono_clock env)
       with
-      | Ok () -> Alcotest.fail "a directory not there was started"
+      | Ok _ -> Alcotest.fail "a directory not there was started"
       | Error m ->
           Alcotest.(check bool)
             "said, naming it" true
@@ -8596,7 +8656,7 @@ let test_a_bodys_own_refusal_is_declared () =
        Ok (Spindle.Response.json greeting_json g))
   in
   let a = Spindle.Test.app [ route ] in
-  (match Spindle.App.routes a with
+  (match Spindle.App.routes (Spindle.App.app a) with
   | [ info ] ->
       Alcotest.(check (list string))
         "listed, beside the type a JSON body refuses"
@@ -8805,7 +8865,9 @@ let test_an_app_lists_its_routes () =
       Spindle.Returns.response
       (Spindle.Dep.map (fun _ -> Ok (Spindle.Response.make "")) Spindle.request)
   in
-  match Spindle.App.routes (Spindle.Test.app [ item; opaque ]) with
+  match
+    Spindle.App.routes (Spindle.App.app (Spindle.Test.app [ item; opaque ]))
+  with
   | [ i; o ] ->
       check_string "the method and pattern" "POST /orders/{order_id}/items"
         (Spindle.Meth.to_string i.meth ^ " " ^ i.pattern);
@@ -9479,6 +9541,8 @@ let () =
             test_a_site_skips_its_dotfiles;
           Alcotest.test_case "a directory is read when the server starts" `Quick
             test_a_directory_is_read_when_the_server_starts;
+          Alcotest.test_case "each start reads its own directory" `Quick
+            test_each_start_reads_its_own_directory;
           Alcotest.test_case "a site under a prefix" `Quick
             test_a_site_under_a_prefix;
           Alcotest.test_case "a file is typed, and cached by its prefix" `Quick
@@ -9560,6 +9624,8 @@ let () =
             test_a_dependency_says_what_it_reads;
           Alcotest.test_case "a route reads the resource supplied" `Quick
             test_a_route_reads_the_resource_supplied;
+          Alcotest.test_case "each start reads its own resources" `Quick
+            test_each_start_reads_its_own_resources;
           Alcotest.test_case "start refuses what was not supplied" `Quick
             test_start_refuses_what_was_not_supplied;
           Alcotest.test_case "a resource behind a bind is found when it runs"

@@ -75,8 +75,9 @@ let () =
   `Spindle.serve` or `App.make`. A code nobody declared is logged as a bug,
   and raises in a test. These codes are not written into the OpenAPI document.
 - **A raise is a `500`**, as a handler's is.
-- `Middleware.headers` is the one built in. It never overrides a header the
-  route set itself.
+- Two are built in. `Middleware.headers` never overrides a header the route
+  set itself, and `Cache.forever` keeps the assets a build names by their
+  contents for a year ([static files](../tutorial/static-files.md)).
 
 What one route needs -- a session, a [rate limit](rate-limits.md) -- is not
 middleware but a dependency of that route, so it shows in the route and its

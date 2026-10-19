@@ -277,16 +277,8 @@ let files_route ?(at = Path.root) o root =
     Path.(at / file)
     Returns.response
     (Dep.map
-       (fun (segments, req) ->
-         match root () with
-         | Some root -> answer_file root o req segments
-         | None ->
-             Error
-               (Refusal.internal
-                  ~detail:
-                    "a directory served before it was started: App.start \
-                     checks it, and Spindle.serve calls that"))
-       (Dep.both (Input.param file) Conditional.inputs))
+       (fun ((segments, req), root) -> answer_file root o req segments)
+       (Dep.both (Dep.both (Input.param file) Conditional.inputs) root))
 
 let options ?index ?(dotfiles = false) ?(download = false)
     ?(inline_active = false) ?(types = []) () =
@@ -299,16 +291,17 @@ let options ?index ?(dotfiles = false) ?(download = false)
   }
 
 let route ?at ?index ?dotfiles ?download ?inline_active ?types root =
-  files_route ?at (options ?index ?dotfiles ?download ?inline_active ?types ())
-    (fun () -> Some root)
+  files_route ?at
+    (options ?index ?dotfiles ?download ?inline_active ?types ())
+    (Dep.return root)
 
-(* Written once, as the server starts, before it accepts anything. *)
+(* Checked by each start, into a resource of that instance alone. *)
 let directory ?at ?index ?dotfiles ?download ?inline_active ?types path =
-  let root = Atomic.make None in
+  let root = Dep.of_resource ("the directory " ^ path) in
   let r =
     files_route ?at
-      (options ?index ?dotfiles ?download ?inline_active ?types ()) (fun () ->
-        Atomic.get root)
+      (options ?index ?dotfiles ?download ?inline_active ?types ())
+      root
   in
   {
     r with
@@ -318,9 +311,7 @@ let directory ?at ?index ?dotfiles ?download ?inline_active ?types path =
           read =
             (fun fs ->
               let dir = Eio.Path.(fs / path) in
-              if Eio.Path.is_directory dir then (
-                Atomic.set root (Some dir);
-                Ok ())
+              if Eio.Path.is_directory dir then Ok (Dep.resource root dir)
               else
                 Error (Format.asprintf "%a is not a directory." Eio.Path.pp dir));
           in_a_test = "serves one it opened itself with Files.route";

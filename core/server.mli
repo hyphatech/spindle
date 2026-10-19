@@ -38,7 +38,7 @@ val run :
   ?ready:(string -> unit) ->
   ?trace:Spindle_http.Trace.exporter ->
   ?metrics:Metrics.t ->
-  App.t ->
+  App.instance ->
   unit
 (** Serves on [host] and [port], as a name or an address: [localhost] (the
     default), an address such as ["10.0.0.5"] or ["::1"], a wildcard, or a name
@@ -207,7 +207,7 @@ val serve_on :
   ?trace:Spindle_http.Trace.exporter ->
   ?metrics:Metrics.t ->
   [> `Generic ] Eio.Net.listening_socket_ty Eio.Resource.t list ->
-  App.t ->
+  App.instance ->
   unit
 (** {!run} on sockets the caller is already listening on -- a test's own, on a
     port the system chose -- with everything else exactly as {!run} does it. *)

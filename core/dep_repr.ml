@@ -100,12 +100,11 @@ type kept = { lock : Mutex.t; values : (int, kept_value) Hashtbl.t }
 type resources = {
   supplied : binding list;
   unsupplied : unsupplied;
-  mono_clock : Eio.Time.Mono.ty Eio.Resource.t option;
-      (** the app's, once it is started *)
+  mono_clock : Eio.Time.Mono.ty Eio.Resource.t;
   kept : kept;
 }
 
-exception Unsupplied of string
+exception Unsupplied of { owner : int; name : string }
 
 (* [params] are percent-decoded. [table] exists only for a route that reads
    something twice. *)
@@ -254,7 +253,7 @@ let of_resource name =
       (fun c ->
         match (find_resource id c.resources, c.resources.unsupplied) with
         | Some v, _ -> Now (Ok v)
-        | None, Raised -> raise (Unsupplied name)
+        | None, Raised -> raise (Unsupplied { owner = Type.Id.uid id; name })
         | None, Refused ->
             Now
               (Error
@@ -267,11 +266,15 @@ let of_resource name =
                          name))));
   }
 
-(* A misuse is refused where the resources are supplied, by [supply]. *)
 (* The keys an app seals its signed and encrypted cookies under, given where
    it starts: a resource of the framework's own, so a route that reads such a
    cookie is checked for them as for any other. *)
 let cookie_keys : Key_repr.ring t = of_resource "cookie keys"
+
+let is_cookie_keys owner =
+  match cookie_keys.key with
+  | Some { id; _ } -> Type.Id.uid id = owner
+  | None -> false
 
 let supplied (type a) (d : a t) resources : a option =
   match d.key with Some { id; _ } -> find_resource id resources | None -> None
@@ -283,14 +286,6 @@ let resource (type a) (d : a t) (value : a) =
 
 let kept_nothing () = { lock = Mutex.create (); values = Hashtbl.create 8 }
 
-let unstarted () =
-  {
-    supplied = [];
-    unsupplied = Refused;
-    mono_clock = None;
-    kept = kept_nothing ();
-  }
-
 let supply resources ~unsupplied ~mono_clock =
   let rec check supplied = function
     | [] ->
@@ -298,7 +293,7 @@ let supply resources ~unsupplied ~mono_clock =
           {
             supplied = List.rev supplied;
             unsupplied;
-            mono_clock = Some (mono_clock :> Eio.Time.Mono.ty Eio.Resource.t);
+            mono_clock :> Eio.Time.Mono.ty Eio.Resource.t;
             kept = kept_nothing ();
           }
     | Not_a_resource :: _ ->
@@ -337,17 +332,10 @@ let kept (type a) ~make:(fresh : unit -> a) =
             value)
   in
   make (fun c ->
-      match c.resources.mono_clock with
-      | Some clock ->
-          Now (Ok (find_or_make c.resources.kept, Eio.Time.Mono.now clock))
-      | None ->
-          Now
-            (Error
-               (Refusal.internal
-                  ~detail:
-                    "a limit was read before its app was started: App.start \
-                     gives the app its monotonic clock, and Spindle.serve \
-                     calls that")))
+      Now
+        (Ok
+           ( find_or_make c.resources.kept,
+             Eio.Time.Mono.now c.resources.mono_clock )))
 
 let is_supplied resources owner =
   List.exists (fun (Binding b) -> Type.Id.uid b.id = owner) resources.supplied

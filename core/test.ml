@@ -19,15 +19,28 @@ let app ?(resources = []) ?mono_clock ?middleware ?codes ?not_found ?cors
     | Some clock -> (clock :> Eio.Time.Mono.ty Eio.Resource.t)
     | None -> (Eio_mock.Clock.Mono.make () :> Eio.Time.Mono.ty Eio.Resource.t)
   in
-  let resources =
-    match keys with
-    | Some ring -> Dep_repr.resource Dep_repr.cookie_keys ring :: resources
-    | None -> resources
-  in
+  let refuse m = invalid_arg ("Spindle.Test.app: " ^ m) in
+  (match
+     List.find_map
+       (fun (r : Route_repr.t) -> Option.map (fun s -> (r, s)) r.start)
+       routes
+   with
+  | None -> ()
+  | Some (r, start) ->
+      refuse
+        (Printf.sprintf
+           "%s %s reads a directory when the server starts; a test %s"
+           (Spindle_http.Meth.to_string r.info.meth)
+           r.info.pattern start.in_a_test));
   let given =
+    let resources =
+      match keys with
+      | Some ring -> Dep_repr.resource Dep_repr.cookie_keys ring :: resources
+      | None -> resources
+    in
     match Dep_repr.supply resources ~unsupplied:Dep_repr.Raised ~mono_clock with
     | Ok given -> given
-    | Error m -> invalid_arg ("Spindle.Test.app: " ^ m)
+    | Error m -> refuse m
   in
   let routes =
     List.map
@@ -37,28 +50,19 @@ let app ?(resources = []) ?mono_clock ?middleware ?codes ?not_found ?cors
           run =
             (fun req ~resources:_ ~params ~body ->
               r.run req ~resources:given ~params ~body);
+          resources_read = [];
         })
       routes
   in
   match
     App.make ?middleware ?codes ?not_found ?cors ?compress ?check_origin
-      ?trusted_origins ?trailing_slash ?keys routes
+      ?trusted_origins ?trailing_slash routes
   with
+  | Error m -> refuse m
   | Ok app -> (
-      match
-        List.find_map
-          (fun (r : Route_repr.t) -> Option.map (fun s -> (r, s)) r.start)
-          routes
-      with
-      | None -> app
-      | Some (r, start) ->
-          invalid_arg
-            (Printf.sprintf
-               "Spindle.Test.app: %s %s reads a directory when the server \
-                starts; a test %s"
-               (Spindle_http.Meth.to_string r.info.meth)
-               r.info.pattern start.in_a_test))
-  | Error m -> invalid_arg ("Spindle.Test.app: " ^ m)
+      match App.start ?keys app ~mono_clock with
+      | Ok instance -> instance
+      | Error m -> refuse m)
 
 (* The route's answer, refusing what it does not declare. *)
 let answer_checked app req ~body =
@@ -72,13 +76,14 @@ let answer_checked app req ~body =
        (Request.target req)
    in
    (match Response.refused r with
-   | Some { Refusal.raised = Some (Dep_repr.Unsupplied "cookie keys", _); _ } ->
+   | Some { Refusal.raised = Some (Dep_repr.Unsupplied { owner; _ }, _); _ }
+     when Dep_repr.is_cookie_keys owner ->
        invalid_arg
          (Printf.sprintf
             "%s read the server's keys -- a signed or encrypted cookie, or \
              Spindle.keys -- and Test.app was given no ~keys"
             asked)
-   | Some { Refusal.raised = Some (Dep_repr.Unsupplied name, _); _ } ->
+   | Some { Refusal.raised = Some (Dep_repr.Unsupplied { name; _ }, _); _ } ->
        invalid_arg
          (Printf.sprintf "%s read the resource %s, which Test.app was not given"
             asked name)
@@ -174,7 +179,7 @@ module Browser = struct
     expires : Ptime.t option;  (** the call's [now] past which it is dropped *)
   }
 
-  type t = { app : App.t; mutable jar : cookie list }
+  type t = { app : App.instance; mutable jar : cookie list }
 
   let path_of target =
     match String.index_opt target '?' with

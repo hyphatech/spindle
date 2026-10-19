@@ -160,8 +160,10 @@ Fields against RFC 9651's published test suite, run whole.
 
 A program that builds its routes at run time, or wants no signal handler,
 does what `Spindle.serve` does in three steps: `App.make` the routes,
-`App.start` the app (which takes the `~resources` and the `~mono_clock` its
-rate limits are timed on, and reads any `Static.directory` or
-`Files.directory`), and `Server.run` it with every capability passed
-explicitly. `Server.serve_on` serves on sockets you already listen on -- a
+`App.start` the app, and `Server.run` the instance it answers, with every
+capability passed explicitly. `App.start` takes what exists only once the
+program runs -- the `~resources`, the `~keys`, the `~mono_clock` its rate
+limits are timed on, and the `~fs` any `Static.directory` or
+`Files.directory` is read from -- and each call is an instance of its own,
+so two never share what they hold. `Server.serve_on` serves on sockets you already listen on -- a
 test's, on a port the system chose.

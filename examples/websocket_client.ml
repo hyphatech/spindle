@@ -14,9 +14,8 @@
    what it heard -- or why the socket, or the handshake, ended first, which
    the log has already said. *)
 
+open Spindle.Syntax
 module Ws = Spindle.Websocket
-
-let ( let* ) = Result.bind
 
 type said = { text : string } [@@deriving wiretype]
 

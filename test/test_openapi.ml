@@ -17,6 +17,9 @@ let contains ~sub s =
   in
   go 0
 
+let made routes =
+  match Spindle.App.make routes with Ok a -> a | Error m -> Alcotest.fail m
+
 let json_of_doc a =
   match Spindle.Openapi.document ~title:"Orders" ~version:"1" a with
   | Ok text -> Yojson.Safe.from_string text
@@ -75,7 +78,7 @@ let add =
      and+ i = Spindle.json item_json in
      Ok i)
 
-let described = Spindle.Test.app [ add ]
+let described = made [ add ]
 
 let test_a_route_is_in_the_document () =
   let j = json_of_doc described in
@@ -169,7 +172,7 @@ let test_a_credential_is_said_once () =
        and+ _ = Spindle.Header.optional "key" Spindle.Codec.string in
        Ok (Spindle.Response.empty ()))
   in
-  let j = json_of_doc (Spindle.Test.app [ keyed ]) in
+  let j = json_of_doc (made [ keyed ]) in
   let op = member [ "paths"; "/keyed"; "get" ] j in
   Alcotest.(check (list string))
     "the header alone is a parameter" [ "key:header" ]
@@ -210,7 +213,7 @@ let test_a_credential_says_whether_it_is_needed () =
       (let+ _ = session in
        Ok (Spindle.Response.empty ()))
   in
-  let j = json_of_doc (Spindle.Test.app [ needs; welcomes ]) in
+  let j = json_of_doc (made [ needs; welcomes ]) in
   let schemes = member [ "components"; "securitySchemes" ] j in
   Alcotest.(check string)
     "bearer is HTTP" "http"
@@ -244,7 +247,7 @@ let test_what_is_loose_is_reported () =
     |> Wiretype.Object.finish
   in
   let a =
-    Spindle.Test.app
+    made
       [
         Spindle.get
           Spindle.Path.(s "loose")
@@ -288,7 +291,7 @@ let test_two_reads_of_one_input_are_one_parameter () =
     Yojson.Safe.Util.to_list
       (member
          [ "paths"; "/pages"; "get"; "parameters" ]
-         (json_of_doc (Spindle.Test.app [ pages ])))
+         (json_of_doc (made [ pages ])))
   in
   Alcotest.(check (list string))
     "each input once"
@@ -360,7 +363,7 @@ let test_a_body_is_required_where_an_empty_one_is_refused () =
         stream;
       ]
   in
-  let j = json_of_doc a in
+  let j = json_of_doc (Spindle.App.app a) in
   List.iter
     (fun (what, path, target) ->
       let refused =
@@ -394,8 +397,7 @@ let test_two_paths_that_make_one_operation_are_refused () =
       (Spindle.Dep.return (Ok (Spindle.Response.make "")))
   in
   let a =
-    Spindle.Test.app
-      [ answer Spindle.Path.(s "a-b"); answer Spindle.Path.(s "a_b") ]
+    made [ answer Spindle.Path.(s "a-b"); answer Spindle.Path.(s "a_b") ]
   in
   match Spindle.Openapi.document a with
   | Ok _ -> Alcotest.fail "two routes shared an operationId"
@@ -420,7 +422,7 @@ let test_routes_told_apart_by_a_type_are_one_operation () =
       (let+ _ = Spindle.Query.required "lang" Spindle.Codec.string in
        Error Spindle.Refusal.not_found)
   in
-  let a = Spindle.Test.app [ by_number; by_name ] in
+  let a = made [ by_number; by_name ] in
   let j = json_of_doc a in
   let keys path = Yojson.Safe.Util.keys (member path j) in
   Alcotest.(check (list string))
@@ -498,7 +500,7 @@ let test_one_path_with_two_names_is_refused () =
       (Spindle.Dep.return (Ok (Spindle.Response.make "")))
   in
   let a =
-    Spindle.Test.app
+    made
       [
         answer Spindle.get Spindle.Path.(s "items" / Spindle.Path.int "id");
         answer Spindle.delete Spindle.Path.(s "items" / Spindle.Path.int "item");
@@ -530,7 +532,7 @@ let test_one_operation_that_answers_two_ways_is_refused () =
       Spindle.Returns.html
       (Spindle.Dep.return (Ok "<p>an item</p>"))
   in
-  match Spindle.Openapi.document (Spindle.Test.app [ by_number; by_name ]) with
+  match Spindle.Openapi.document (made [ by_number; by_name ]) with
   | Ok _ -> Alcotest.fail "one operation answered two ways"
   | Error e ->
       Alcotest.(check bool)
@@ -552,7 +554,7 @@ let test_each_status_is_a_response () =
            [ (`Created, "The item was made."); (`OK, "The item was replaced.") ])
       (Spindle.Dep.return (Error Spindle.Refusal.not_found))
   in
-  let a = Spindle.Test.app [ upsert ] in
+  let a = made [ upsert ] in
   let responses =
     member [ "paths"; "/items/{name}"; "put"; "responses" ] (json_of_doc a)
   in
@@ -596,7 +598,7 @@ let test_the_zod_schemas_say_the_same () =
    one. How a shape is printed is wiretype's suite's, and calling the server
    is test/melange's. *)
 
-let client_of routes = Spindle.Melange.client (Spindle.Test.app routes)
+let client_of routes = Spindle.Melange.client (made routes)
 
 let refused_naming ~sub = function
   | Ok _ -> Alcotest.fail "printed where two names are one"
@@ -746,7 +748,7 @@ let test_a_body_refused_for_its_type_says_415 () =
     ]
   in
   let a = Spindle.Test.app (List.map (fun (_, _, r) -> r) routes) in
-  let doc = json_of_doc a in
+  let doc = json_of_doc (Spindle.App.app a) in
   List.iter
     (fun (path, refuses, _) ->
       Alcotest.(check bool)
@@ -787,7 +789,7 @@ let test_nothing_is_said_as_its_status () =
       (Spindle.Returns.empty ())
       (Spindle.Dep.return (Ok ()))
   in
-  let a = Spindle.Test.app [ quiet ] in
+  let a = made [ quiet ] in
   let op = member [ "paths"; "/quiet"; "post" ] (json_of_doc a) in
   Alcotest.(check string)
     "204, and what it means" "No content."
@@ -896,7 +898,7 @@ let test_a_stream_is_described_by_its_events () =
         "text/event-stream";
         "itemSchema";
       ]
-      (json_of_doc (Spindle.Test.app [ ticks ]))
+      (json_of_doc (made [ ticks ]))
   in
   let branches = Yojson.Safe.Util.to_list (member [ "oneOf" ] item) in
   Alcotest.(check (list string))
@@ -963,7 +965,7 @@ let test_a_member_s_access_holds_through_a_route () =
   Alcotest.(check string)
     "the answer holds the server's id and never the password"
     {|{"id":7,"name":"kim"}|} r.body;
-  let doc = json_of_doc a in
+  let doc = json_of_doc (Spindle.App.app a) in
   let properties path =
     match member (path @ [ "properties" ]) doc with
     | `Assoc members -> List.map fst members
@@ -1043,7 +1045,7 @@ let test_a_value_outside_its_bounds_is_the_route_s_bug () =
 let test_a_resource_is_no_input () =
   let database : string Spindle.Dep.t = Spindle.Dep.of_resource "database" in
   let app reads =
-    Spindle.Test.app
+    made
       [
         Spindle.get ~summary:"One order"
           Spindle.Path.(s "orders" / order_id)

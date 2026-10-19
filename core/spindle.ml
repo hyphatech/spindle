@@ -229,20 +229,22 @@ let serve ?(port = 8080) ?host ?domains ?resources ?middleware ?codes ?not_found
   let app =
     match
       App.make ?middleware ?codes ?not_found ?cors ?compress ?check_origin
-        ?trusted_origins ?trailing_slash ?keys routes
+        ?trusted_origins ?trailing_slash routes
     with
     | Ok app -> app
     | Error m -> invalid_arg ("Spindle.serve: " ^ m)
   in
   (* The exit status is what an orchestrator sees; the reason is logged. *)
-  (match
-     App.start ?resources app ~fs:(Eio.Stdenv.fs env)
-       ~mono_clock:(Eio.Stdenv.mono_clock env)
-   with
-  | Ok () -> ()
-  | Error m ->
-      L.err (fun f -> f "cannot start: %s" m);
-      exit 1);
+  let instance =
+    match
+      App.start ?resources ?keys app ~fs:(Eio.Stdenv.fs env)
+        ~mono_clock:(Eio.Stdenv.mono_clock env)
+    with
+    | Ok instance -> instance
+    | Error m ->
+        L.err (fun f -> f "cannot start: %s" m);
+        exit 1
+  in
   Eio.Switch.run @@ fun sw ->
   let read_clock =
     match read_clock with
@@ -268,4 +270,4 @@ let serve ?(port = 8080) ?host ?domains ?resources ?middleware ?codes ?not_found
     ?domains ~port ?host ?max_body ?max_header_bytes ?head_timeout ?idle_timeout
     ?body_timeout ?min_body_rate ?send_timeout ?discard_limit ?linger
     ?body_budget ?trusted_proxies ?proxy_header ?backlog ?max_connections ~stop
-    ?drain ?on_stop ~ready ?trace ?metrics app
+    ?drain ?on_stop ~ready ?trace ?metrics instance

@@ -81,15 +81,15 @@ type kept
 type resources = {
   supplied : binding list;
   unsupplied : unsupplied;
-  mono_clock : Eio.Time.Mono.ty Eio.Resource.t option;
-      (** the app's, once it is started *)
+  mono_clock : Eio.Time.Mono.ty Eio.Resource.t;
   kept : kept;
 }
-(** What an app holds for its requests: the resources supplied, its monotonic
-    clock, and what it keeps. *)
+(** What a started app holds for its requests: the resources supplied, its
+    monotonic clock, and what it keeps. *)
 
-exception Unsupplied of string
-(** A test read the resource of that name, which it was not given. *)
+exception Unsupplied of { owner : int; name : string }
+(** A test read the resource of that identity and name, which it was not given.
+*)
 
 type context = {
   request : Request.t;
@@ -164,11 +164,11 @@ val cookie_keys : Key_repr.ring t
 (** The keys signed and encrypted cookies are sealed under: [~keys] where an app
     starts, read as a resource. *)
 
+val is_cookie_keys : int -> bool
+(** Whether a resource read by that identity is {!cookie_keys}. *)
+
 val supplied : 'a t -> resources -> 'a option
 (** The value the resource read by this dependency was given, if any. *)
-
-val unstarted : unit -> resources
-(** An app's before it is started: no resource, no clock, nothing kept. *)
 
 val supply :
   resource list ->
@@ -182,9 +182,8 @@ val supply :
 val kept : make:(unit -> 'a) -> ('a * Mtime.t) t
 (** The value an app keeps for this dependency from one request to the next --
     made by [make] the first time one of its requests reads it, so every app has
-    its own -- and the app's monotonic clock as it is read. Refused with
-    {!Refusal.internal} in an app never started, which has no clock. [make] runs
-    under a lock, so it does no IO. *)
+    its own -- and the app's monotonic clock as it is read. [make] runs under a
+    lock, so it does no IO. *)
 
 val is_supplied : resources -> int -> bool
 (** Whether the resource read by that identity is among them. *)

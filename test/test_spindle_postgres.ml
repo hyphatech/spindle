@@ -789,10 +789,7 @@ let bump ?(keep_refused = false) ~refuse ~after pool =
      | Error (#Spindle_postgres.error as e) ->
          Error (Spindle_postgres.refusal e))
 
-let call route =
-  match Spindle.App.make [ route ] with
-  | Error m -> Alcotest.fail m
-  | Ok app -> Spindle.Test.call app `POST "/bump"
+let call route = Spindle.Test.call (Spindle.Test.app [ route ]) `POST "/bump"
 
 let test_a_read_and_a_write_are_one_transaction () =
   with_counter_pool (fun pool ->
@@ -865,21 +862,19 @@ let test_a_deferred_conflict_answers_as_a_statement's_does () =
               | Ok () -> ()
               | Error (`Pool _) -> Alcotest.fail "no connection"
               | Error (#S.error as e) -> Alcotest.fail (S.error_to_string e));
-              match Spindle.App.make [ claim_twice pool ] with
-              | Error m -> Alcotest.fail m
-              | Ok app -> (
-                  let r = Spindle.Test.call app `POST "/claim" in
-                  Alcotest.(check int)
-                    checked 409
-                    (Spindle_http.Status.to_int r.status);
-                  match
-                    Spindle_postgres.Pool.exec pool
-                      (S.find ~params:S.unit ~row:S.int
-                         "select count(*)::int from names")
-                      ()
-                  with
-                  | Ok n -> Alcotest.(check int) "rolled back" 0 n
-                  | Error _ -> Alcotest.fail "no count"))))
+              let app = Spindle.Test.app [ claim_twice pool ] in
+              let r = Spindle.Test.call app `POST "/claim" in
+              Alcotest.(check int)
+                checked 409
+                (Spindle_http.Status.to_int r.status);
+              match
+                Spindle_postgres.Pool.exec pool
+                  (S.find ~params:S.unit ~row:S.int
+                     "select count(*)::int from names")
+                  ()
+              with
+              | Ok n -> Alcotest.(check int) "rolled back" 0 n
+              | Error _ -> Alcotest.fail "no count")))
     [
       ("checked at the statement", "");
       ("checked at commit", "deferrable initially deferred");

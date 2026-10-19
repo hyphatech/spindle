@@ -27,7 +27,7 @@ type info = {
 }
 
 type start = {
-  read : Eio.Fs.dir_ty Eio.Path.t -> (unit, string) result;
+  read : Eio.Fs.dir_ty Eio.Path.t -> (Dep_repr.resource, string) result;
   in_a_test : string;
 }
 
