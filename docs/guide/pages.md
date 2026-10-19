@@ -58,11 +58,8 @@ Each program serves the same page at `/hello/{name}`:
     jingoo raises on a template it cannot read, so load it when the program
     starts, as above, not per request.
 
-```sh
-curl 'localhost:8080/hello/%3Cb%3Ekim%3C%2Fb%3E'
-```
-
-```text
+```console
+$ curl 'localhost:8080/hello/%3Cb%3Ekim%3C%2Fb%3E'
 <!DOCTYPE html>
 <html lang="en"><head>...<title>Hello</title></head><body><h1>Hello, &lt;b&gt;kim&lt;/b&gt;!</h1></body></html>
 ```

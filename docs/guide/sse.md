@@ -12,11 +12,8 @@ on where it left off:
 --8<-- "sse.ml"
 ```
 
-```sh
-curl -N localhost:8080/count
-```
-
-```text
+```console
+$ curl -N localhost:8080/count
 event: count
 id: 1
 data: 1
@@ -25,13 +22,8 @@ event: count
 id: 2
 data: 2
 ...
-```
 
-```sh
-curl -N -H 'Last-Event-ID: 41' localhost:8080/count
-```
-
-```text
+$ curl -N -H 'Last-Event-ID: 41' localhost:8080/count
 event: count
 id: 42
 data: 42

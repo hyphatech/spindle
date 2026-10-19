@@ -6,9 +6,11 @@ its route:
 
 ```ocaml
 let metrics = Spindle.Metrics.create () in
-Spindle_postgres.Pool.run env db @@ fun pool ->
+Spindle_postgres.Pool.run env database @@ fun pool ->
 Spindle_postgres.Pool.measure pool metrics;
-Spindle.serve env ~metrics (routes @ Spindle.Metrics.routes metrics)
+Spindle.serve env ~metrics
+  ~resources:[ Spindle.Dep.resource db pool ]
+  (routes @ Spindle.Metrics.routes metrics)
 ```
 
 ```sh
@@ -57,7 +59,7 @@ let orders =
 let () = Spindle.Metrics.inc orders [ "book" ]
 ```
 
-```console
+```text
 # HELP shop_orders_total Orders placed
 # TYPE shop_orders_total counter
 shop_orders_total{kind="book"} 1

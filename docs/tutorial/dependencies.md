@@ -43,27 +43,14 @@ handed a `float` and is arithmetic and nothing else:
 --8<-- "fahrenheit.ml:app"
 ```
 
-```sh
-curl 'localhost:8080/fahrenheit?celsius=21'
-```
-
-```text
+```console
+$ curl 'localhost:8080/fahrenheit?celsius=21'
 {"fahrenheit":69.8}
-```
 
-```sh
-curl 'localhost:8080/fahrenheit?celsius=warm'
-```
-
-```text
+$ curl 'localhost:8080/fahrenheit?celsius=warm'
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.celsius","code":"malformed","message":"This is not a number."}]}
-```
 
-```sh
-curl localhost:8080/fahrenheit
-```
-
-```text
+$ curl localhost:8080/fahrenheit
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.celsius","code":"required","message":"This is required."}]}
 ```
 
@@ -86,27 +73,14 @@ A route lists it like any built-in:
 --8<-- "dependencies.ml:route"
 ```
 
-```sh
-curl 'localhost:8080/books?page=2&per_page=2'
-```
-
-```text
+```console
+$ curl 'localhost:8080/books?page=2&per_page=2'
 ["Persuasion","Ulysses"]
-```
 
-```sh
-curl 'localhost:8080/books?page=0'
-```
-
-```text
+$ curl 'localhost:8080/books?page=0'
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.page","code":"too_small","message":"This is 1 or more."}]}
-```
 
-```sh
-curl 'localhost:8080/books?page=two&per_page=x'
-```
-
-```text
+$ curl 'localhost:8080/books?page=two&per_page=x'
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.page","code":"malformed","message":"This is not a whole number."},{"at":"query.per_page","code":"malformed","message":"This is not a whole number."}]}
 ```
 

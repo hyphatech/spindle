@@ -10,7 +10,9 @@ balancer probes:
   probes only one path here.
 
 ```ocaml
+Spindle_postgres.Pool.run env database @@ fun pool ->
 Spindle.serve env
+  ~resources:[ Spindle.Dep.resource db pool ]
   (routes @ Spindle.Health.routes [ Spindle_postgres.Pool.check pool ])
 ```
 
@@ -28,35 +30,20 @@ is answered `500`, not `503 not_ready`. This server is taken out of service whil
 --8<-- "health.ml"
 ```
 
-```sh
-curl localhost:8080/readyz
-```
-
-```text
+```console
+$ curl localhost:8080/readyz
 ok
-```
 
-```sh
-touch maintenance
-```
+$ touch maintenance
 
-```sh
-curl -i localhost:8080/readyz
-```
-
-```text
+$ curl -i localhost:8080/readyz
 HTTP/1.1 503 Service Unavailable
 content-type: application/json
 ...
 
 {"error":"not_ready","message":"Not ready: maintenance."}
-```
 
-```sh
-curl localhost:8080/livez
-```
-
-```text
+$ curl localhost:8080/livez
 ok
 ```
 

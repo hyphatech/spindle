@@ -10,19 +10,11 @@ maintenance page, timing.
 --8<-- "middleware.ml"
 ```
 
-```sh
-curl localhost:8080/
-```
-
-```text
+```console
+$ curl localhost:8080/
 Saw 1 request(s)!
-```
 
-```sh
-curl localhost:8080/
-```
-
-```text
+$ curl localhost:8080/
 Saw 2 request(s)!
 ```
 

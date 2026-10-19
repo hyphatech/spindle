@@ -66,12 +66,9 @@ line](client-schemas.md) describes the routes with no database at all.
 
 Run it from the repository's root, then ask for `/`:
 
-```sh
-dune exec examples/sql_query.exe
-curl localhost:8080/
-```
-
-```text
+```console
+$ dune exec examples/sql_query.exe
+$ curl localhost:8080/
 ["postgres","template0","template1"]
 ```
 
@@ -112,22 +109,14 @@ Spindle.Returns.json_response claim_json
     ]
 ```
 
-```sh
-curl -i -X PUT localhost:8080/names/ada
-```
-
-```text
+```console
+$ curl -i -X PUT localhost:8080/names/ada
 HTTP/1.1 201 Created
 ...
 
 {"name":"ada","claimed_at":"2026-10-08T09:24:46.621Z"}
-```
 
-```sh
-curl -i -X PUT localhost:8080/names/ada
-```
-
-```text
+$ curl -i -X PUT localhost:8080/names/ada
 HTTP/1.1 200 OK
 ...
 

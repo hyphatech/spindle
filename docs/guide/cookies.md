@@ -12,24 +12,16 @@ This page counts your visits:
 --8<-- "cookie.ml"
 ```
 
-```sh
-curl -i -c jar -b jar localhost:8080/
-```
-
-```text
+```console
+$ curl -i -c jar -b jar localhost:8080/
 HTTP/1.1 200 OK
 content-type: text/plain; charset=utf-8
 set-cookie: visits=1; Path=/; HttpOnly; SameSite=Lax
 ...
 
 Visit number 1.
-```
 
-```sh
-curl -c jar -b jar localhost:8080/
-```
-
-```text
+$ curl -c jar -b jar localhost:8080/
 Visit number 2.
 ```
 

@@ -18,11 +18,8 @@ let () = Eio_main.run @@ fun env -> Spindle.serve env [ sign_in ]
 
 Ten sign-ins a minute per client pass; the eleventh is refused:
 
-```sh
-curl -i -X POST localhost:8080/sign-in
-```
-
-```text
+```console
+$ curl -i -X POST localhost:8080/sign-in
 HTTP/1.1 429 Too Many Requests
 content-type: application/json
 retry-after: 6

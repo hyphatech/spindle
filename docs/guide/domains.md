@@ -30,23 +30,13 @@ dune exec examples/multidomain.exe
 
 or, on one domain with no lock:
 
-```sh
-dune exec examples/multidomain.exe -- --one-domain
-```
+```console
+$ dune exec examples/multidomain.exe -- --one-domain
 
-```sh
-curl localhost:8080/pages/home
-```
-
-```text
+$ curl localhost:8080/pages/home
 home: visit number 1
-```
 
-```sh
-curl localhost:8080/pages/home
-```
-
-```text
+$ curl localhost:8080/pages/home
 home: visit number 2
 ```
 

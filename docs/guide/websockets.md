@@ -25,11 +25,8 @@ upgrade from another site's page (`403 cross_origin`; see
 [`~trusted_origins`](cookies.md#csrf-and-cors)), since the browser would
 attach your site's cookies to it:
 
-```sh
-curl -i localhost:8080/echo
-```
-
-```text
+```console
+$ curl -i localhost:8080/echo
 HTTP/1.1 426 Upgrade Required
 upgrade: websocket
 ...
@@ -43,11 +40,8 @@ upgrade: websocket
 --8<-- "websocket_client.ml"
 ```
 
-```sh
-dune exec examples/websocket_client.exe
-```
-
-```text
+```console
+$ dune exec examples/websocket_client.exe
 heard: hello
 heard: is anybody there
 heard: goodbye

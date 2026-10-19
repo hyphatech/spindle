@@ -38,54 +38,26 @@ A small API over a list of todos:
 --8<-- "methods.ml:app"
 ```
 
-```sh
-curl localhost:8080/todos
-```
-
-```text
+```console
+$ curl localhost:8080/todos
 [{"id":1,"title":"Learn OCaml"},{"id":2,"title":"Try Spindle"}]
-```
 
-```sh
-curl localhost:8080/todos/1
-```
-
-```text
+$ curl localhost:8080/todos/1
 {"id":1,"title":"Learn OCaml"}
-```
 
-```sh
-curl -X POST localhost:8080/todos -H 'content-type: application/json' \
+$ curl -X POST localhost:8080/todos -H 'content-type: application/json' \
     -d '{"title": "Write a server"}'
-```
-
-```text
 {"id":3,"title":"Write a server"}
-```
 
-```sh
-curl -X PUT localhost:8080/todos/1 -H 'content-type: application/json' \
+$ curl -X PUT localhost:8080/todos/1 -H 'content-type: application/json' \
     -d '{"title": "Learn OCaml properly"}'
-```
-
-```text
 {"id":1,"title":"Learn OCaml properly"}
-```
 
-```sh
-curl -i -X DELETE localhost:8080/todos/1
-```
-
-```text
+$ curl -i -X DELETE localhost:8080/todos/1
 HTTP/1.1 204 No Content
 ...
-```
 
-```sh
-curl localhost:8080/todos/seven
-```
-
-```text
+$ curl localhost:8080/todos/seven
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"path.id","code":"malformed","message":"This is not a whole number."}]}
 ```
 
@@ -147,27 +119,14 @@ One parameter, read by two routes, one answering text and one JSON:
 --8<-- "path_params.ml:routes"
 ```
 
-```sh
-curl localhost:8080/users/7
-```
-
-```text
+```console
+$ curl localhost:8080/users/7
 User 7
-```
 
-```sh
-curl localhost:8080/api/users/7/Kim%20Li
-```
-
-```text
+$ curl localhost:8080/api/users/7/Kim%20Li
 {"user_id":"7","name":"Kim Li"}
-```
 
-```sh
-curl localhost:8080/users/abc
-```
-
-```text
+$ curl localhost:8080/users/abc
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"path.user_id","code":"malformed","message":"This is not a whole number."}]}
 ```
 

@@ -14,12 +14,9 @@ application declares:
 --8<-- "json_body.ml:app"
 ```
 
-```sh
-curl -i localhost:8080/orders -H 'content-type: application/json' \
+```console
+$ curl -i localhost:8080/orders -H 'content-type: application/json' \
     -d '{"item": "tea", "quantity": 2}'
-```
-
-```text
 HTTP/1.1 201 Created
 content-type: application/json
 ...
@@ -30,32 +27,21 @@ content-type: application/json
 A body of the wrong shape is answered before your handler runs, with every
 problem at once:
 
-```sh
-curl localhost:8080/orders -H 'content-type: application/json' \
+```console
+$ curl localhost:8080/orders -H 'content-type: application/json' \
     -d '{"quantity": "two"}'
-```
-
-```text
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"body.quantity","code":"unexpected_type","message":"This must be a whole number, not text."},{"at":"body.item","code":"required","message":"This is required."}]}
-```
 
-```sh
-curl localhost:8080/orders -H 'content-type: application/json' \
+$ curl localhost:8080/orders -H 'content-type: application/json' \
     -d '{"item": "tea", "quantity": 0}'
-```
-
-```text
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"body.quantity","code":"too_small","message":"This must be at least 1."}]}
 ```
 
 A rule only your data can check is the handler's own refusal:
 
-```sh
-curl -i localhost:8080/orders -H 'content-type: application/json' \
+```console
+$ curl -i localhost:8080/orders -H 'content-type: application/json' \
     -d '{"item": "cake", "quantity": 1}'
-```
-
-```text
 HTTP/1.1 409 Conflict
 content-type: application/json
 ...
@@ -124,7 +110,9 @@ one you reached beside the value:
 Spindle.put Path.(s "users" / user_id)
   (Returns.json_response user_json
      ~statuses:[ (`Created, "The user was made."); (`OK, "The user was replaced.") ])
-  (let+ id = Spindle.param user_id and+ body = Spindle.json user_json in
+  (let+ pool = db
+   and+ id = Spindle.param user_id
+   and+ body = Spindle.json user_json in
    match upsert pool id body with
    | Ok (`Made u) -> Ok (`Created, u)
    | Ok (`Replaced u) -> Ok (`OK, u)

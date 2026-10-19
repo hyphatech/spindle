@@ -79,29 +79,19 @@ their tutorials install them when you get there:
 
 ## Check it worked
 
-```sh
-ocaml -version
-```
-
-```text
+```console
+$ ocaml -version
 The OCaml toplevel, version 5.5.1
-```
 
-```sh
-dune --version
-```
-
-```text
+$ dune --version
 3.24.2
-```
 
-```sh
-opam list spindle
+$ opam list spindle
 ```
 
 It lists `spindle` with a version, not `--`, under *Installed*.
 
-OCaml 5.5 or later, dune 3.19 or later and an installed `spindle` mean you
+OCaml 5.5 or later, dune 3.18 or later and an installed `spindle` mean you
 are ready.
 
 ## Your editor

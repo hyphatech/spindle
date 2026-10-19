@@ -48,11 +48,8 @@ ones Datadog and an OpenTelemetry Collector read without a mapping:
 `Log.configure` returns an `Error` naming what it could not read, and this
 program prints it and exits:
 
-```sh
-APP_LOG='info,shop=loud' dune exec ./bin/main.exe
-```
-
-```text
+```console
+$ APP_LOG='info,shop=loud' dune exec ./bin/main.exe
 "loud" is not a log level
 ```
 

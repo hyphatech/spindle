@@ -10,11 +10,8 @@ Spindle.serve env ~compress:Spindle.Compress.default routes
 A client that sends `Accept-Encoding: gzip` now gets text, JSON and the like
 compressed -- here, a route answering 5,000 bytes of text:
 
-```sh
-curl -i -H 'accept-encoding: gzip' localhost:8080/big
-```
-
-```text
+```console
+$ curl -i -H 'accept-encoding: gzip' localhost:8080/big
 HTTP/1.1 200 OK
 content-type: text/plain; charset=utf-8
 vary: Accept-Encoding

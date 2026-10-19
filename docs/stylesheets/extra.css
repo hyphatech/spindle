@@ -125,3 +125,22 @@
     overflow-x: auto;
   }
 }
+
+/* A console block is commands and what they print, so its copy button
+   copies the commands alone: the theme copies the block's innerText while
+   it carries data-md-copying, and innerText skips what is not displayed.
+   The prompt is not selectable either, so a command copied by hand comes
+   without it. */
+.md-typeset [data-md-copying] .gp,
+.md-typeset [data-md-copying] .go {
+  display: none;
+}
+
+.md-typeset .language-console .gp {
+  user-select: none;
+}
+
+/* Output alone is read, never run, so it has no copy button. */
+.md-typeset .language-text .md-code__button[data-md-type="copy"] {
+  display: none;
+}

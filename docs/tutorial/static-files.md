@@ -12,12 +12,9 @@ stylesheets, a favicon.
 `"public"` is a folder next to where you start the program. The example's is
 `examples/public`, so start it from `examples/` and ask for a file:
 
-```sh
-cd examples && dune exec ./static.exe
-curl -I localhost:8080/style.css
-```
-
-```text
+```console
+$ cd examples && dune exec ./static.exe
+$ curl -I localhost:8080/style.css
 HTTP/1.1 200 OK
 content-type: text/css; charset=utf-8
 accept-ranges: bytes

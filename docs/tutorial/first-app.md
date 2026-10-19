@@ -49,22 +49,16 @@ page on:
 
 From the `hello` folder:
 
-```sh
-dune exec ./bin/main.exe
-```
-
-```text
+```console
+$ dune exec ./bin/main.exe
 Listening on http://localhost:8080 (127.0.0.1 and [::1])
 ```
 
 `dune exec` compiles, reports any mistake with its file and line, and runs.
 Open <http://localhost:8080>, or from another terminal:
 
-```sh
-curl localhost:8080
-```
-
-```text
+```console
+$ curl localhost:8080
 Good morning, world!
 ```
 
@@ -114,11 +108,8 @@ reports can be found in the log. More in [logging](logging.md).
 
 Ask for something the server does not do:
 
-```sh
-curl -i -X DELETE localhost:8080
-```
-
-```text
+```console
+$ curl -i -X DELETE localhost:8080
 HTTP/1.1 405 Method Not Allowed
 content-type: application/json
 allow: GET, HEAD, OPTIONS
