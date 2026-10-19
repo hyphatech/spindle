@@ -118,7 +118,7 @@ val serve :
   ?resources:Dep.resource list ->
   ?middleware:Middleware.t list ->
   ?codes:Refusal.Code.t list ->
-  ?not_found:(Request.t -> Response.t) ->
+  ?not_found:(Response.t, Refusal.t) result Dep.t ->
   ?cors:Cors.t ->
   ?compress:Compress.t ->
   ?check_origin:bool ->

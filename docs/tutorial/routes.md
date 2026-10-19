@@ -147,8 +147,12 @@ reported.
   operation, so they must also answer the same way and read the same body;
   otherwise `Spindle.Openapi.docs` refuses them.
 - **A path no route names** is `404`, or your own answer with
-  `Spindle.serve env ~not_found:page routes`. A path another method's route
-  names is `405`, with `Allow` listing the methods it has.
+  `Spindle.serve env ~not_found:page routes`. `page` is written as a
+  route's handler is, with no method or path, and answers a response:
+  `Spindle.Dep.return (Ok missing)` for a page that reads nothing, or
+  `let+ session = session in ...` for one that greets whoever is signed in.
+  A path another method's route names is `405`, with `Allow` listing the
+  methods it has.
 - **A method no route declares and Spindle does not know** -- `PROPFIND`,
   say -- is `501 Not Implemented`.
 - **`OPTIONS`** of a path a route names is answered for you, `204` with that

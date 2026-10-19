@@ -106,7 +106,9 @@ let test_unknown_path_is_404_or_the_not_found_answer () =
   check_status "404" 404 r.status;
   check_string "a code and a sentence"
     {|{"error":"not_found","message":"There is nothing here."}|} r.body;
-  let not_found _ = Spindle.Response.html ~status:`Not_found "a page" in
+  let not_found =
+    Spindle.Dep.return (Ok (Spindle.Response.html ~status:`Not_found "a page"))
+  in
   let r =
     Spindle.Test.call (Spindle.Test.app ~not_found [ hello ]) `GET "/nowhere"
   in
@@ -123,6 +125,50 @@ let test_unknown_path_is_404_or_the_not_found_answer () =
     (Spindle.Test.call behind_a_site `GET "/a/b").body;
   check_status "and every other method there is 405" 405
     (Spindle.Test.call behind_a_site `POST "/a/b").status
+
+(* The not-found answer reads what it needs as a route does: an input of the
+   request, and a resource the server was given -- which start checks for
+   it as for a route, naming it. *)
+let test_the_not_found_answer_reads_dependencies () =
+  let database : string Spindle.Dep.t = Spindle.Dep.of_resource "database" in
+  let page =
+    let+ who = Spindle.Header.default "x-who" Spindle.Codec.string "nobody"
+    and+ shelf = database in
+    Ok
+      (Spindle.Response.html ~status:`Not_found
+         (Printf.sprintf "nothing here for %s, from %s" who shelf))
+  in
+  let app =
+    match Spindle.App.make ~not_found:page [ hello ] with
+    | Ok a -> a
+    | Error m -> Alcotest.fail m
+  in
+  let start resources =
+    Spindle.App.start ~resources app ~mono_clock:(Eio_mock.Clock.Mono.make ())
+  in
+  (match start [] with
+  | Ok _ -> Alcotest.fail "started without what the not-found answer reads"
+  | Error m ->
+      Alcotest.(check bool)
+        "start names the not-found answer and the resource" true
+        (contains ~sub:"the not-found answer" m && contains ~sub:"database" m));
+  match start [ Spindle.Dep.resource database "the shelf" ] with
+  | Error m -> Alcotest.failf "it did not start: %s" m
+  | Ok a ->
+      let r =
+        Spindle.Test.call a `GET "/nowhere" ~headers:[ ("x-who", "kim") ]
+      in
+      check_status "at the status it gives" 404 r.status;
+      check_string "its inputs read" "nothing here for kim, from the shelf"
+        r.body;
+      check_string "in a test given the resource"
+        "nothing here for nobody, from the shelf"
+        (Spindle.Test.call
+           (Spindle.Test.app ~not_found:page
+              ~resources:[ Spindle.Dep.resource database "the shelf" ]
+              [ hello ])
+           `GET "/nowhere")
+          .body
 
 let test_head_is_get_without_the_body () =
   let r = Spindle.Test.call (Spindle.Test.app [ hello ]) `HEAD "/hello/kim" in
@@ -421,7 +467,7 @@ let test_middleware_can_ask_the_route () =
   in
   let a =
     Spindle.Test.app ~middleware:[ tell ] ~trailing_slash:Spindle.App.Redirect
-      ~not_found:(fun _ -> Spindle.Response.make "a page")
+      ~not_found:(Spindle.Dep.return (Ok (Spindle.Response.make "a page")))
       [ hello; limit ]
   in
   let told_for meth path =
@@ -445,7 +491,10 @@ let test_headers_reach_every_answer () =
       (Spindle.Dep.return
          (Ok (Spindle.Response.make ~headers:[ ("x-frame", "route") ] "mine")))
   in
-  let page _ = Spindle.Response.make ~content_type:"text/html" "<p>page</p>" in
+  let page =
+    Spindle.Dep.return
+      (Ok (Spindle.Response.make ~content_type:"text/html" "<p>page</p>"))
+  in
   let a =
     Spindle.Test.app
       ~middleware:
@@ -9469,6 +9518,8 @@ let () =
             test_wrong_method_is_405_with_allow;
           Alcotest.test_case "unknown path is 404, or the not-found answer"
             `Quick test_unknown_path_is_404_or_the_not_found_answer;
+          Alcotest.test_case "the not-found answer reads dependencies" `Quick
+            test_the_not_found_answer_reads_dependencies;
           Alcotest.test_case "HEAD is GET without the body" `Quick
             test_head_is_get_without_the_body;
           Alcotest.test_case "nothing is an answer" `Quick

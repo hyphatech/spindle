@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Breaking: the not-found answer is written as a route's handler is, with
+  no method or path, as Axum's fallback is a handler like any other.
+  `~not_found` -- on `Spindle.serve`, `App.make` and `Test.app` -- is a
+  `(Response.t, Refusal.t) result Dep.t`, where it was a function of the
+  request, so a page for a path nobody serves reads a session, a cookie or a
+  resource as every other page does; one that reads nothing is
+  `Spindle.Dep.return (Ok page)`. A resource it reads is checked where the
+  app starts, naming it, and the codes its inputs declare are ones it may
+  refuse with.
+
 - Breaking: an app is made, then started, and each start is an instance
   of its own. `App.start` answers an `App.instance` -- what
   `App.handle`, `Server.run`, `Server.serve_on` and `Test.call` take --

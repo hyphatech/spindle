@@ -14,7 +14,7 @@ val app :
   ?mono_clock:_ Eio.Time.Mono.t ->
   ?middleware:Middleware.t list ->
   ?codes:Refusal.Code.t list ->
-  ?not_found:(Request.t -> Response.t) ->
+  ?not_found:(Response.t, Refusal.t) result Dep.t ->
   ?cors:Cors.t ->
   ?compress:Compress.t ->
   ?check_origin:bool ->
@@ -26,10 +26,11 @@ val app :
 (** [app routes]: {!App.make} and {!App.start}, for a test -- every argument
     theirs, of the same name and default -- an instance of its own, given
     [resources] as {!App.start} is ({!Dep.val-resource}), but only those the
-    routes it calls read: {!call} raises on a route that reads one it was not
-    given. Its limits ({!Rate}) count from none, apart from any other app's, on
-    [mono_clock]: one that never moves unless given, so a test that waits out a
-    limit gives [Eio_mock.Clock.Mono.make ()] and moves it with
+    routes it calls read, and those the not-found answer reads: {!call} raises
+    on a route that reads one it was not given. Its limits ({!Rate}) count from
+    none, apart from any other app's, on [mono_clock]: one that never moves
+    unless given, so a test that waits out a limit gives
+    [Eio_mock.Clock.Mono.make ()] and moves it with
     [Eio_mock.Clock.Mono.set_time]. Raises [Invalid_argument] with {!App.make}'s
     reason for a table it refuses, as [Spindle.serve] does: a route table is a
     constant written in source, and a test that made a bad one has nothing to do

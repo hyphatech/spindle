@@ -35,10 +35,10 @@ type t = {
   routes : Route_repr.t list;  (** in the order they were listed *)
   table : node;
   methods : Meth.t list;  (** every method some route answers, in order *)
-  not_found : handler option;
+  not_found : Route_repr.t option;
+      (** a route of no method or path, answering what no route claims *)
   middleware : Middleware.t list;
-  codes : Refusal.Code.t list;
-      (** what the middleware and [not_found] answer *)
+  codes : Refusal.Code.t list;  (** what the middleware answer *)
   check_origin : bool;
   trusted_origins : string list;
   cors : Cors_repr.t option;
@@ -57,6 +57,7 @@ let meth_of (r : Route_repr.t) = r.info.meth
 let pattern_of (r : Route_repr.t) = r.info.pattern
 let segments_of (r : Route_repr.t) = r.segments
 let route_name r = Meth.to_string (meth_of r) ^ " " ^ pattern_of r
+let not_found_name = "the not-found answer"
 
 let param_names r =
   List.filter_map
@@ -295,7 +296,7 @@ let check r =
 
 (* A client branches on a code's name, so a name has one status and one doc
    wherever it is declared. *)
-let check_codes ~codes routes =
+let check_codes ~codes ~not_found routes =
   let declared =
     List.map (fun c -> ("the framework", c)) Refusal.Code.framework
     @ List.map (fun c -> ("the application", c)) codes
@@ -303,6 +304,11 @@ let check_codes ~codes routes =
         (fun (r : Route_repr.t) ->
           List.map (fun c -> (route_name r, c)) r.info.codes)
         routes
+    @
+    match not_found with
+    | Some (r : Route_repr.t) ->
+        List.map (fun c -> (not_found_name, c)) r.info.codes
+    | None -> []
   in
   let conflict a b =
     Refusal.Code.equal a b
@@ -475,8 +481,17 @@ let find_with_params ~rest t meth segs =
 let make ?(middleware = []) ?(codes = []) ?not_found ?cors ?compress
     ?(check_origin = true) ?(trusted_origins = []) ?(trailing_slash = Strict)
     routes =
+  let not_found =
+    Option.map (Route_repr.get Path.root Returns.response) not_found
+  in
   let rec check_all = function
-    | [] -> check_codes ~codes routes
+    | [] -> (
+        match not_found with
+        | Some r -> (
+            match check r with
+            | Ok () -> check_codes ~codes ~not_found routes
+            | Error m -> Error (Printf.sprintf "%s: %s" not_found_name m))
+        | None -> check_codes ~codes ~not_found routes)
     | r :: rest -> (
         match (check r, List.find_opt (could_match_alike r) rest) with
         | Error m, _ -> Error m
@@ -841,7 +856,10 @@ let answer_resolution t ~resources ~body ~answered_route resolution req =
     | Unimplemented -> Response.refusal Refusal.not_implemented
     | Nothing -> (
         match t.not_found with
-        | Some f -> with_raise_as_500 f req
+        | Some r ->
+            with_raise_as_500
+              (fun req -> Route_repr.handle r req ~resources ~params:[] ~body)
+              req
         | None -> Response.refusal Refusal.not_found)
 
 (* Whether the client takes gzip: several lines are one list (RFC 9110
@@ -1080,7 +1098,12 @@ let handle (i : instance) req ~body =
           match matched with
           | Some (info : Route.info) ->
               info.codes @ Route_repr.framework_codes info
-          | None -> Refusal.Code.framework
+          | None -> (
+              match t.not_found with
+              | Some r ->
+                  Refusal.Code.framework @ r.info.codes
+                  @ Route_repr.framework_codes r.info
+              | None -> Refusal.Code.framework)
         in
         if List.exists (Refusal.Code.equal r.code) (declared @ t.codes) then
           None
@@ -1143,26 +1166,32 @@ let start ?(resources = []) ?keys ?fs t ~mono_clock =
       ~unsupplied:Dep_repr.Refused ~mono_clock
   in
   let* () =
+    let named =
+      List.map (fun r -> (route_name r, r)) t.routes
+      @ Option.fold ~none:[]
+          ~some:(fun r -> [ (not_found_name, r) ])
+          t.not_found
+    in
     match
       List.find_map
-        (fun (r : Route_repr.t) ->
+        (fun (name_of_route, (r : Route_repr.t)) ->
           List.find_map
             (fun (owner, name) ->
               if Dep_repr.is_supplied supplied owner then None
-              else Some (r, owner, name))
+              else Some (name_of_route, owner, name))
             r.resources_read)
-        t.routes
+        named
     with
-    | Some (r, owner, _) when Dep_repr.is_cookie_keys owner ->
+    | Some (route, owner, _) when Dep_repr.is_cookie_keys owner ->
         Error
           (Printf.sprintf
              "%s reads the server's keys -- a signed or encrypted cookie, or \
               Spindle.keys -- and the app was started with no ~keys"
-             (route_name r))
-    | Some (r, _, name) ->
+             route)
+    | Some (route, _, name) ->
         Error
           (Printf.sprintf "%s reads the resource %s, which was not supplied"
-             (route_name r) name)
+             route name)
     | None -> Ok ()
   in
   Ok { app = t; resources = supplied; keys }

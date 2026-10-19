@@ -32,7 +32,7 @@ type trailing_slash =
 val make :
   ?middleware:Middleware.t list ->
   ?codes:Refusal.Code.t list ->
-  ?not_found:(Request.t -> Response.t) ->
+  ?not_found:(Response.t, Refusal.t) result Dep.t ->
   ?cors:Cors.t ->
   ?compress:Compress.t ->
   ?check_origin:bool ->
@@ -58,7 +58,11 @@ val make :
     between two that both may, the one listed first answers. [not_found] answers
     every request no route claims, once the framework has answered its own -- a
     [405], a [501], a trailing-slash redirect -- with whatever status it gives;
-    without it the answer is {!Refusal.not_found}. A rest route at the root
+    without it the answer is {!Refusal.not_found}. It is a route's inputs with
+    no method or path: what it reads it reads as a route does ({!Dep}),
+    [Spindle.param] aside, since no path matched -- a session, a cookie, a
+    resource, which {!start} checks as it checks a route's -- and the codes its
+    dependencies declare are ones it may refuse with. A rest route at the root
     ({!Path.rest}) takes every path no other route names, so behind one it is
     never reached. [middleware] wraps the routes and the not-found answer alike,
     the first listed outermost (see {!Middleware.t}). [codes] are what they may

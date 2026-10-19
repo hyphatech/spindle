@@ -2541,7 +2541,8 @@ let test_a_401_without_a_challenge_is_refused () =
 let test_501_comes_before_the_not_found_answer () =
   let app =
     Spindle.Test.app
-      ~not_found:(fun _ -> Spindle.Response.make "the not-found answer")
+      ~not_found:
+        (Spindle.Dep.return (Ok (Spindle.Response.make "the not-found answer")))
       routes
   in
   Alcotest.(check int)

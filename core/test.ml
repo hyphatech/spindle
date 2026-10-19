@@ -60,7 +60,7 @@ let app ?(resources = []) ?mono_clock ?middleware ?codes ?not_found ?cors
   with
   | Error m -> refuse m
   | Ok app -> (
-      match App.start ?keys app ~mono_clock with
+      match App.start ~resources ?keys app ~mono_clock with
       | Ok instance -> instance
       | Error m -> refuse m)
 
