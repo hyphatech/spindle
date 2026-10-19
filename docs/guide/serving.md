@@ -21,9 +21,10 @@ Three mistakes stop the server before it listens:
 - A route table that cannot be right -- two routes answering one URL, say
   -- raises `Invalid_argument`, naming the route. So does a limit out of
   its range.
-- A `Static.directory` or a `Files.directory` that cannot be read, or a
-  resource a route reads that `~resources` does not hold, logs an error
-  saying why, and the program exits with status 1.
+- A `Static.directory` or a `Files.directory` that cannot be read, a
+  resource a route reads that `~resources` does not hold, or a signed or
+  encrypted cookie a route reads with no `~keys`, logs an error saying why,
+  and the program exits with status 1.
 - A port already in use, or a `~host` name the resolver does not know,
   raises Eio's I/O error.
 
@@ -139,6 +140,7 @@ Fields against RFC 9651's published test suite, run whole.
 | Argument | What it does |
 |---|---|
 | `~resources` | what the routes read that the program holds -- a pool, a client -- made where it starts ([Resources](../tutorial/dependencies.md#resources)) |
+| `~keys` | what signed and encrypted cookies are sealed under, from a secret the program reads ([Signed and encrypted cookies](cookies.md#signed-and-encrypted-cookies)) |
 | `~middleware` | wraps every route ([Middleware](middleware.md)) |
 | `~codes` | the refusal codes your middleware may answer ([Middleware](middleware.md#writing-middleware)) |
 | `~not_found` | answers a request no route claims ([Routes](../tutorial/routes.md#how-routes-are-matched)) |

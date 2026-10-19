@@ -1,10 +1,17 @@
 (** The keys a signed or an encrypted cookie is made with ({!Spindle.Cookie}).
 
     {[
-    match Spindle.Key.of_secret (Sys.getenv "COOKIE_SECRET") with
-    | Ok key -> routes (Spindle.Key.ring key [])
-    | Error sentence -> ...
+    let () =
+      match Spindle.Key.of_secret (Sys.getenv "COOKIE_SECRET") with
+      | Ok key ->
+          Eio_main.run @@ fun env ->
+          Spindle.serve env ~keys:(Spindle.Key.ring key []) routes
+      | Error sentence -> prerr_endline sentence
     ]}
+
+    The ring is the server's: its signed and encrypted cookies are sealed under
+    it, and a handler that signs or seals something of its own reads it as
+    {!Spindle.keys}.
 
     {b A secret is the application's to read}, when it starts: the framework
     reads no environment. One secret serves every use -- four keys are derived

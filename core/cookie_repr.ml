@@ -10,8 +10,9 @@ type t = {
   max_age : int option;
   http_only : bool;
   same_site : same_site;
-  seal : (now:Ptime.t -> string -> string) option;
-      (** a signed or encrypted cookie's value as written at that instant *)
+  seal : (Key_repr.ring -> now:Ptime.t -> string -> string) option;
+      (** a signed or encrypted cookie's value as written at that instant, under
+          the server's keys *)
 }
 
 (* RFC 6265's token is RFC 9110's tchar. *)
@@ -51,8 +52,8 @@ let is_valid_path p =
 
 (* Stamped with the instant it was made; reading holds it to its age. *)
 type sealer = {
-  seal : now:Ptime.t -> string -> string;
-  unseal : now:Ptime.t -> string -> string option;
+  seal : Key_repr.ring -> now:Ptime.t -> string -> string;
+  unseal : Key_repr.ring -> now:Ptime.t -> string -> string option;
 }
 
 (* Declared once and used both ways, so the name has one spelling and the
@@ -77,8 +78,8 @@ module Named = struct
   let codec n = n.codec
   let sealed n = Option.is_some n.sealer
 
-  let unseal n ~now raw =
-    match n.sealer with None -> Some raw | Some s -> s.unseal ~now raw
+  let unseal n ~keys ~now raw =
+    match n.sealer with None -> Some raw | Some s -> s.unseal keys ~now raw
 end
 
 (* The message names the cookie and never its value, which may be a
@@ -146,11 +147,11 @@ let whole_seconds span =
        (Int64.add (Mtime.Span.to_uint64_ns span) 999_999_999L)
        1_000_000_000L)
 
-let signed ring ~max_age name codec =
+let signed ~max_age name codec =
   let max_age_s = whole_seconds max_age in
   let cookie = checked_name name in
   let signed_payload stamp v = String.concat "\000" [ cookie; stamp; v ] in
-  let seal ~now v =
+  let seal ring ~now v =
     let stamp = stamp_of now in
     String.concat "."
       [
@@ -159,7 +160,7 @@ let signed ring ~max_age name codec =
         encode (Key_repr.sign_cookie ring (signed_payload stamp v));
       ]
   in
-  let unseal ~now raw =
+  let unseal ring ~now raw =
     match String.split_on_char '.' raw with
     | [ stamp; v; mac ] -> (
         match (int_of_string_opt stamp, decode v, decode mac) with
@@ -172,13 +173,13 @@ let signed ring ~max_age name codec =
   in
   { cookie; codec; sealer = Some { seal; unseal }; age = Some max_age_s }
 
-let encrypted ring ~max_age name codec =
+let encrypted ~max_age name codec =
   let max_age_s = whole_seconds max_age in
   let cookie = checked_name name in
-  let seal ~now v =
+  let seal ring ~now v =
     encode (Key_repr.seal_cookie ring ~adata:cookie (stamp_of now ^ "." ^ v))
   in
-  let unseal ~now raw =
+  let unseal ring ~now raw =
     match
       Option.bind (decode raw) (Key_repr.unseal_cookie ring ~adata:cookie)
     with
@@ -199,10 +200,7 @@ let clear ?path n = make_cookie ?path ~max_age:0 n.cookie ""
 (* SameSite is always written. [Lax] by default: a link from a chat window
    is a cross-site navigation, which [Strict] sends without the cookie,
    and [Lax] still withholds it from a cross-site POST. *)
-let to_header ~secure ~now (t : t) =
-  let value =
-    match t.seal with None -> t.value | Some seal -> seal ~now t.value
-  in
+let header ~secure (t : t) value =
   String.concat "; "
     (List.concat
        [
@@ -218,6 +216,17 @@ let to_header ~secure ~now (t : t) =
          | None -> []
          | Some n -> [ "Max-Age=" ^ string_of_int n ]);
        ])
+
+let to_header ~secure ~now ~keys (t : t) =
+  match (t.seal, keys) with
+  | None, _ -> Ok (header ~secure t t.value)
+  | Some seal, Some ring -> Ok (header ~secure t (seal ring ~now t.value))
+  | Some _, None ->
+      Error
+        (Printf.sprintf
+           "the cookie %s is signed or encrypted, and the server was given no \
+            ~keys to seal it with"
+           t.name)
 
 let parse header =
   List.filter_map

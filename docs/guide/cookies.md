@@ -45,21 +45,29 @@ Visit number 2.
 ## Signed and encrypted cookies
 
 Declare a cookie `signed` (readable, but tamper-proof) or `encrypted`
-(sealed) over a key ring, then read and set it as any other:
+(sealed), then read and set it as any other. The keys they are sealed under
+are the server's, given where it starts, so the cookies and the routes that
+read them are values like any other:
 
 ```ocaml
-match Spindle.Key.of_secret secret with
-| Ok key ->
-    let keys = Spindle.Key.ring key [] in
-    let prefs =
-      Spindle.Cookie.encrypted keys ~max_age:Mtime.Span.(30 * day) "prefs" prefs_codec
-    and who =
-      Spindle.Cookie.signed keys ~max_age:Mtime.Span.(8 * hour) "who" Spindle.Codec.string
-    in
-    ...
-| Error sentence -> ...
+let prefs =
+  Spindle.Cookie.encrypted ~max_age:Mtime.Span.(30 * day) "prefs" prefs_codec
+
+let who =
+  Spindle.Cookie.signed ~max_age:Mtime.Span.(8 * hour) "who" Spindle.Codec.string
+
+let () =
+  match Spindle.Key.of_secret (Sys.getenv "COOKIE_SECRET") with
+  | Ok key ->
+      Eio_main.run @@ fun env ->
+      Spindle.serve env ~keys:(Spindle.Key.ring key []) routes
+  | Error sentence -> prerr_endline sentence
 ```
 
+- **No keys, no start.** A route that reads a signed or encrypted cookie in
+  a server given no `~keys` stops it before it listens, naming the route;
+  one that only sets such a cookie is answered `500`, logged. A test gives
+  its own: `Spindle.Test.app ~keys routes`.
 - `Key.of_secret` answers `Error` for a secret under 32 bytes. Read the
   secret yourself, at startup.
 - **Rotating a key:** `Key.ring newest retired` signs with `newest` and reads
@@ -75,9 +83,10 @@ match Spindle.Key.of_secret secret with
   what is sent is encoded as base64url. You need the `encoded` codec only
   for a plain cookie.
 - `Key.sign`/`Key.verify` and `Key.seal`/`Key.unseal` do the same for
-  anything else, such as a token in a link. They use keys derived apart
-  from the cookies' keys, so nothing you sign or seal with them can ever be
-  passed off as a cookie.
+  anything else, such as a token in a link; a handler reads the server's
+  ring as `Spindle.keys`. They use keys derived apart from the cookies'
+  keys, so nothing you sign or seal with them can ever be passed off as a
+  cookie.
 
 ## Sessions
 

@@ -10,37 +10,43 @@ module Cookie = struct
      string the browser holds. *)
   let sealed_input ~required c =
     let name = Cookie.Named.name c and codec = Cookie.Named.codec c in
-    Dep.of_request
-      ~needs:
-        [
-          Dep.Cookie
-            {
-              name;
-              required;
-              many = false;
-              shape = Codec.String;
-              kind = None;
-              default = None;
-            };
-        ]
-      (fun r ->
-        let absent () =
-          if required then Error (Input.missing ~at:("cookie." ^ name))
-          else Ok None
-        in
-        match Request.cookie r name with
-        | None -> absent ()
-        | Some raw -> (
-            match
-              Option.bind
-                (Cookie.Named.unseal c ~now:(Request.now r) raw)
-                (fun v -> Result.to_option (Codec.parse codec v))
-            with
-            | Some v -> Ok (Some v)
-            | None ->
-                Logs.debug ~src:Log.http (fun m ->
-                    m "the cookie %s did not open, and is read as absent" name);
-                absent ()))
+    let carried =
+      Dep.of_request
+        ~needs:
+          [
+            Dep.Cookie
+              {
+                name;
+                required;
+                many = false;
+                shape = Codec.String;
+                kind = None;
+                default = None;
+              };
+          ]
+        (fun r -> Ok (Request.cookie r name, Request.now r))
+    in
+    Dep.join
+      (Dep.map
+         (fun ((raw, now), keys) ->
+           let absent () =
+             if required then Error (Input.missing ~at:("cookie." ^ name))
+             else Ok None
+           in
+           match raw with
+           | None -> absent ()
+           | Some raw -> (
+               match
+                 Option.bind (Cookie.Named.unseal c ~keys ~now raw) (fun v ->
+                     Result.to_option (Codec.parse codec v))
+               with
+               | Some v -> Ok (Some v)
+               | None ->
+                   Logs.debug ~src:Log.http (fun m ->
+                       m "the cookie %s did not open, and is read as absent"
+                         name);
+                   absent ()))
+         (Dep.both carried Dep_repr.cookie_keys))
 
   let optional c =
     if Cookie.Named.sealed c then sealed_input ~required:false c
@@ -123,6 +129,7 @@ let param = Input.param
 (* Reads anything, so it declares no needs. *)
 let request = Dep.of_request (fun r -> Ok r)
 let now = Dep.of_request ~needs:[] (fun r -> Ok (Request.now r))
+let keys = Dep_repr.cookie_keys
 let peer = Dep.of_request ~needs:[] (fun r -> Ok (Request.peer r))
 let client = Dep.of_request ~needs:[] (fun r -> Ok (Request.client r))
 let request_id = Dep.of_request ~needs:[] (fun r -> Ok (Request.id r))
@@ -216,11 +223,11 @@ let serve ?(port = 8080) ?host ?domains ?resources ?middleware ?codes ?not_found
     ?max_body ?max_header_bytes ?head_timeout ?idle_timeout ?body_timeout
     ?min_body_rate ?send_timeout ?discard_limit ?linger ?body_budget
     ?trusted_proxies ?proxy_header ?backlog ?max_connections ?stop ?drain
-    ?on_stop ?ready ?trace ?metrics env routes =
+    ?on_stop ?ready ?trace ?metrics ?keys env routes =
   let app =
     match
       App.make ?middleware ?codes ?not_found ?cors ?compress ?check_origin
-        ?trusted_origins ?trailing_slash routes
+        ?trusted_origins ?trailing_slash ?keys routes
     with
     | Ok app -> app
     | Error m -> invalid_arg ("Spindle.serve: " ^ m)

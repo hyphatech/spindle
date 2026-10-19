@@ -160,6 +160,13 @@ val of_resource : string -> 'a t
 val resource : 'a t -> 'a -> resource
 (** As {!Dep.val-resource}. *)
 
+val cookie_keys : Key_repr.ring t
+(** The keys signed and encrypted cookies are sealed under: [~keys] where an app
+    starts, read as a resource. *)
+
+val supplied : 'a t -> resources -> 'a option
+(** The value the resource read by this dependency was given, if any. *)
+
 val unstarted : unit -> resources
 (** An app's before it is started: no resource, no clock, nothing kept. *)
 

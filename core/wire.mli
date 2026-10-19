@@ -30,14 +30,16 @@ type t = {
       (** a stream the writer encodes with gzip, at this level, as it sends *)
 }
 
-val render : ?gzip:int -> Request.t -> Response.t -> t
-(** Every 2xx, 3xx and 4xx is dated from the request's clock. Four responses are
-    never written as they stand, and become {!Refusal.internal} with the reason
-    in the log: one with a header name that is not a token, or a value holding
-    CR, LF or NUL, which would let whoever chose it write headers -- or a whole
+val render : ?gzip:int -> ?keys:Key_repr.ring -> Request.t -> Response.t -> t
+(** Every 2xx, 3xx and 4xx is dated from the request's clock, and a signed or
+    encrypted cookie sealed under [keys], the app's. Five responses are never
+    written as they stand, and become {!Refusal.internal} with the reason in the
+    log: one with a header name that is not a token, or a value holding CR, LF
+    or NUL, which would let whoever chose it write headers -- or a whole
     response -- of their own; one that sets a field only the server writes,
     which frames the answer or governs its connection; one whose status is not a
-    final one, 200 to 599; and a takeover to a protocol the request did not
+    final one, 200 to 599; one that sets a signed or encrypted cookie with no
+    [keys] to seal it under; and a takeover to a protocol the request did not
     offer in [Upgrade] with [Connection: upgrade], or to an HTTP/1.0 client.
 
     With [gzip], an answer the app chose to compress ({!App.answered}) is

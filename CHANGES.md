@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Breaking: the keys signed and encrypted cookies are sealed under are the
+  server's, given where it starts -- `Spindle.serve ~keys`, `App.make ~keys`,
+  `Test.app ~keys` -- as Rails and Phoenix take their secret, so a cookie,
+  and the routes that read it, are values made before the secret is read.
+  `Cookie.signed` and `Cookie.encrypted` take no ring:
+  `Cookie.signed ~max_age "who" codec`. A route that reads such a cookie in
+  an app given no keys stops the server before it listens, naming the
+  route; one that only sets one is answered `500`, logged.
+  `Cookie.Named.unseal` takes `~keys`, and `Spindle.keys` is the ring as a
+  dependency, for a handler that signs or seals with `Key.sign` or
+  `Key.seal`.
+
 - Breaking: a health check reads what it asks about as a route does, so
   the probes are routes made with the rest, before the pool or anything
   else the application holds exists, and a command line describes them

@@ -136,6 +136,7 @@ val serve :
   ?ready:(string -> unit) ->
   ?trace:Trace.exporter ->
   ?metrics:Metrics.t ->
+  ?keys:Key.ring ->
   Eio_unix.Stdenv.base ->
   Route.t list ->
   unit
@@ -155,8 +156,10 @@ val serve :
     of its own; and [ready] prints the address it listens on to stdout. It opens
     a switch of its own for its own fibres, and leaves [Eio_main.run] to the
     program, which is where anything the routes need -- a pool, a client -- is
-    made first, and handed over as [resources] ({!Dep.of_resource}). Logging is
-    the program's to set up ({!Log.setup}).
+    made first, and handed over as [resources] ({!Dep.of_resource}), and where
+    the secret its signed and encrypted cookies are sealed under is read, and
+    handed over as [keys] ({!Key.of_secret}). Logging is the program's to set up
+    ({!Log.setup}).
 
     Raises [Invalid_argument] for routes {!App.make} refuses -- two that could
     answer one URL, a parameter named twice -- and for a limit or a proxy
@@ -231,6 +234,12 @@ val request : Request.t Dep.t
 
 val now : Ptime.t Dep.t
 (** The application's clock: the instant the request is answered at. *)
+
+val keys : Key.ring Dep.t
+(** The keys the server was given ([serve ~keys]), for a handler that signs or
+    seals something of its own with {!Key.sign} or {!Key.seal} -- a link's
+    token, an OAuth state. A route that reads it is refused where the server
+    starts when none were given, as one that reads a signed cookie is. *)
 
 val set_cookie : (Cookie.t -> unit) Dep.t
 (** A function that sets a cookie on this request's answer: a handler that sets

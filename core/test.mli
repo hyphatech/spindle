@@ -20,6 +20,7 @@ val app :
   ?check_origin:bool ->
   ?trusted_origins:string list ->
   ?trailing_slash:App.trailing_slash ->
+  ?keys:Key.ring ->
   Route.t list ->
   App.t
 (** [app routes]: {!App.make}, for a test -- every argument its, of the same

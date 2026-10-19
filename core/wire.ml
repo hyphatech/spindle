@@ -3,6 +3,8 @@ module Meth = Spindle_http.Meth
 module Field = Spindle_http.Field
 module L = (val Logs.src_log Log.http : Logs.LOG)
 
+let ( let* ) = Result.bind
+
 type body =
   | Nothing
   | Bytes of string
@@ -83,103 +85,119 @@ let gzip_tag headers =
     headers
 
 (* A response that cannot be written as it stands becomes a 500, logged. *)
-let rec render ?gzip req r =
+let rec render ?gzip ?keys req r =
   let refuse_with_500 detail =
     L.err (fun m ->
         m "%s %s: %s"
           (Meth.to_string (Request.meth req))
           (Request.path req) detail);
-    render ?gzip req (Response.refusal (Refusal.internal ~detail))
+    render ?gzip ?keys req (Response.refusal (Refusal.internal ~detail))
   in
   let secure = Request.secure req in
-  let status = Response.status r in
-  let headers =
-    Option.to_list
-      (Option.map (fun ct -> ("content-type", ct)) (Response.content_type r))
-    @ Response.headers r
-    @ ("x-request-id", Request.id req)
-      :: List.map
-           (fun c ->
-             ( "set-cookie",
-               Cookie_repr.to_header ~secure ~now:(Request.now req) c ))
-           (Response.cookies r)
+  let set_cookies =
+    List.fold_right
+      (fun c written ->
+        let* written = written in
+        let* header =
+          Cookie_repr.to_header ~secure ~now:(Request.now req) ~keys c
+        in
+        Ok (("set-cookie", header) :: written))
+      (Response.cookies r) (Ok [])
   in
-  let headers = with_date req status headers in
-  let is_head = match Request.meth req with `HEAD -> true | _ -> false in
-  let is_http_1_0 =
-    match Request.version req with
-    | Spindle_http.Head.Http_1_0 -> true
-    | Spindle_http.Head.Http_1_1 -> false
-  in
-  let closing = Response.closes_connection r and refused = Response.refused r in
-  let wire ?gzip headers body =
-    { status; headers; body; closing; refused; gzip }
-  in
-  let with_gzip headers = gzip_tag headers @ [ ("content-encoding", "gzip") ] in
-  (* RFC 9110 §15.5.22: a 426 names the protocol in Upgrade. *)
-  let asks_upgrade (name, _) =
-    Status.equal status `Upgrade_required
-    && String.equal (String.lowercase_ascii name) "upgrade"
-  in
-  match
-    ( List.find_opt (fun f -> not (Field.is_writable f)) headers,
-      List.find_opt
-        (fun f -> is_reserved_field f && not (asks_upgrade f))
-        (Response.headers r) )
-  with
-  | Some (k, _), _ ->
-      refuse_with_500 (Printf.sprintf "a header that cannot be written: %S" k)
-  | None, Some (k, _) ->
-      refuse_with_500
-        (Printf.sprintf "a header only the framework writes: %S" k)
-  | None, None -> (
-      match Response.content r with
-      | Response.Takeover { protocol; _ }
-        when not (upgrade_offered req protocol) ->
+  match set_cookies with
+  | Error detail -> refuse_with_500 detail
+  | Ok set_cookies -> (
+      let status = Response.status r in
+      let headers =
+        Option.to_list
+          (Option.map
+             (fun ct -> ("content-type", ct))
+             (Response.content_type r))
+        @ Response.headers r
+        @ (("x-request-id", Request.id req) :: set_cookies)
+      in
+      let headers = with_date req status headers in
+      let is_head = match Request.meth req with `HEAD -> true | _ -> false in
+      let is_http_1_0 =
+        match Request.version req with
+        | Spindle_http.Head.Http_1_0 -> true
+        | Spindle_http.Head.Http_1_1 -> false
+      in
+      let closing = Response.closes_connection r
+      and refused = Response.refused r in
+      let wire ?gzip headers body =
+        { status; headers; body; closing; refused; gzip }
+      in
+      let with_gzip headers =
+        gzip_tag headers @ [ ("content-encoding", "gzip") ]
+      in
+      (* RFC 9110 §15.5.22: a 426 names the protocol in Upgrade. *)
+      let asks_upgrade (name, _) =
+        Status.equal status `Upgrade_required
+        && String.equal (String.lowercase_ascii name) "upgrade"
+      in
+      match
+        ( List.find_opt (fun f -> not (Field.is_writable f)) headers,
+          List.find_opt
+            (fun f -> is_reserved_field f && not (asks_upgrade f))
+            (Response.headers r) )
+      with
+      | Some (k, _), _ ->
           refuse_with_500
-            (Printf.sprintf "a takeover to %S, which the client did not offer"
-               protocol)
-      (* After the 101 the connection is the protocol's, even for HEAD. *)
-      | Response.Takeover { protocol; handle } ->
-          wire
-            (headers @ [ ("upgrade", protocol); ("connection", "upgrade") ])
-            (Connection (if is_head then fun _ -> () else handle))
-      | (Response.Buffered _ | Response.Stream _) when not (is_final status) ->
+            (Printf.sprintf "a header that cannot be written: %S" k)
+      | None, Some (k, _) ->
           refuse_with_500
-            (Printf.sprintf "%d, which is not a final status"
-               (Status.to_int status))
-      | Response.Stream { length = Some n; _ } when n < 0 ->
-          refuse_with_500 (Printf.sprintf "a stream of length %d" n)
-      | (Response.Buffered _ | Response.Stream _) when is_bodiless status ->
-          wire headers Nothing
-      | Response.Buffered s -> (
-          match gzip with
-          | Some level ->
-              let z = Gzip.string ~level s in
+            (Printf.sprintf "a header only the framework writes: %S" k)
+      | None, None -> (
+          match Response.content r with
+          | Response.Takeover { protocol; _ }
+            when not (upgrade_offered req protocol) ->
+              refuse_with_500
+                (Printf.sprintf
+                   "a takeover to %S, which the client did not offer" protocol)
+          (* After the 101 the connection is the protocol's, even for HEAD. *)
+          | Response.Takeover { protocol; handle } ->
               wire
-                (with_gzip headers
-                @ [ ("content-length", string_of_int (String.length z)) ])
-                (if is_head then Nothing else Bytes z)
-          | None ->
+                (headers @ [ ("upgrade", protocol); ("connection", "upgrade") ])
+                (Connection (if is_head then fun _ -> () else handle))
+          | (Response.Buffered _ | Response.Stream _) when not (is_final status)
+            ->
+              refuse_with_500
+                (Printf.sprintf "%d, which is not a final status"
+                   (Status.to_int status))
+          | Response.Stream { length = Some n; _ } when n < 0 ->
+              refuse_with_500 (Printf.sprintf "a stream of length %d" n)
+          | (Response.Buffered _ | Response.Stream _) when is_bodiless status ->
+              wire headers Nothing
+          | Response.Buffered s -> (
+              match gzip with
+              | Some level ->
+                  let z = Gzip.string ~level s in
+                  wire
+                    (with_gzip headers
+                    @ [ ("content-length", string_of_int (String.length z)) ])
+                    (if is_head then Nothing else Bytes z)
+              | None ->
+                  wire
+                    (headers
+                    @ [ ("content-length", string_of_int (String.length s)) ])
+                    (if is_head then Nothing else Bytes s))
+          | Response.Stream ({ length = Some n; _ } as stream) ->
               wire
-                (headers
-                @ [ ("content-length", string_of_int (String.length s)) ])
-                (if is_head then Nothing else Bytes s))
-      | Response.Stream ({ length = Some n; _ } as stream) ->
-          wire
-            (headers @ [ ("content-length", string_of_int n) ])
-            (if is_head then Nothing else Counted (n, stream))
-      (* HTTP/1.0 has no chunked coding (RFC 9112 §6.1), so a body of no
+                (headers @ [ ("content-length", string_of_int n) ])
+                (if is_head then Nothing else Counted (n, stream))
+          (* HTTP/1.0 has no chunked coding (RFC 9112 §6.1), so a body of no
          known length ends where the connection does. *)
-      | Response.Stream stream when is_http_1_0 ->
-          let headers =
-            match gzip with Some _ -> with_gzip headers | None -> headers
-          in
-          wire ?gzip headers (if is_head then Nothing else Until_close stream)
-      | Response.Stream stream ->
-          let headers =
-            match gzip with Some _ -> with_gzip headers | None -> headers
-          in
-          wire ?gzip
-            (headers @ [ ("transfer-encoding", "chunked") ])
-            (if is_head then Nothing else Chunks stream))
+          | Response.Stream stream when is_http_1_0 ->
+              let headers =
+                match gzip with Some _ -> with_gzip headers | None -> headers
+              in
+              wire ?gzip headers
+                (if is_head then Nothing else Until_close stream)
+          | Response.Stream stream ->
+              let headers =
+                match gzip with Some _ -> with_gzip headers | None -> headers
+              in
+              wire ?gzip
+                (headers @ [ ("transfer-encoding", "chunked") ])
+                (if is_head then Nothing else Chunks stream)))

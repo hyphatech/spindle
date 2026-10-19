@@ -13,11 +13,16 @@ type response = {
    routes it calls read, so each route reads the test's own, where a server's
    are App.start's. *)
 let app ?(resources = []) ?mono_clock ?middleware ?codes ?not_found ?cors
-    ?compress ?check_origin ?trusted_origins ?trailing_slash routes =
+    ?compress ?check_origin ?trusted_origins ?trailing_slash ?keys routes =
   let mono_clock =
     match mono_clock with
     | Some clock -> (clock :> Eio.Time.Mono.ty Eio.Resource.t)
     | None -> (Eio_mock.Clock.Mono.make () :> Eio.Time.Mono.ty Eio.Resource.t)
+  in
+  let resources =
+    match keys with
+    | Some ring -> Dep_repr.resource Dep_repr.cookie_keys ring :: resources
+    | None -> resources
   in
   let given =
     match Dep_repr.supply resources ~unsupplied:Dep_repr.Raised ~mono_clock with
@@ -37,7 +42,7 @@ let app ?(resources = []) ?mono_clock ?middleware ?codes ?not_found ?cors
   in
   match
     App.make ?middleware ?codes ?not_found ?cors ?compress ?check_origin
-      ?trusted_origins ?trailing_slash routes
+      ?trusted_origins ?trailing_slash ?keys routes
   with
   | Ok app -> (
       match
@@ -67,6 +72,12 @@ let answer_checked app req ~body =
        (Request.target req)
    in
    (match Response.refused r with
+   | Some { Refusal.raised = Some (Dep_repr.Unsupplied "cookie keys", _); _ } ->
+       invalid_arg
+         (Printf.sprintf
+            "%s read the server's keys -- a signed or encrypted cookie, or \
+             Spindle.keys -- and Test.app was given no ~keys"
+            asked)
    | Some { Refusal.raised = Some (Dep_repr.Unsupplied name, _); _ } ->
        invalid_arg
          (Printf.sprintf "%s read the resource %s, which Test.app was not given"
@@ -82,7 +93,7 @@ let answer_checked app req ~body =
          (Printf.sprintf "%s answered %d, which its route does not list" asked
             (Spindle_http.Status.to_int status))
    | None -> ());
-  Wire.render ?gzip:answered.gzip req r
+  Wire.render ?gzip:answered.gzip ?keys:(App.keys app) req r
 
 (* What the server reads at once. *)
 let part_bytes = 65_536

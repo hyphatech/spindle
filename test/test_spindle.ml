@@ -964,9 +964,9 @@ let test_a_cookie_refuses_what_it_cannot_hold () =
       : Spindle.Cookie.t)
 
 (* The Set-Cookie line a route writes for [cookie]. *)
-let written cookie =
+let written ?keys cookie =
   let app =
-    Spindle.Test.app
+    Spindle.Test.app ?keys
       [
         Spindle.post Spindle.Path.root Spindle.Returns.text
           (let+ set_cookie = Spindle.set_cookie in
@@ -1040,9 +1040,9 @@ let old_key = key (String.make 32 'o')
 and new_key = key (String.make 32 'n')
 
 (* A route that sets the cookie, and one that reads it, both through the
-   same declaration. *)
-let sealed_app c =
-  Spindle.Test.app
+   same declaration, sealed under the keys the app is given. *)
+let sealed_app ?(keys = Spindle.Key.ring new_key []) c =
+  Spindle.Test.app ~keys
     [
       Spindle.post
         Spindle.Path.(s "set" / Spindle.Path.str "v")
@@ -1112,9 +1112,8 @@ let test_what_key_signs_is_never_a_cookie () =
     Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet s
   in
   let signed =
-    sealed_app
-      (Spindle.Cookie.signed ring ~max_age:Mtime.Span.hour "who"
-         Spindle.Codec.string)
+    sealed_app ~keys:ring
+      (Spindle.Cookie.signed ~max_age:Mtime.Span.hour "who" Spindle.Codec.string)
   in
   let mac =
     Spindle.Key.sign ring (String.concat "\000" [ "who"; "0"; "admin" ])
@@ -1123,8 +1122,8 @@ let test_what_key_signs_is_never_a_cookie () =
     (read_with signed
        ("who=" ^ String.concat "." [ "0"; b64 "admin"; b64 mac ]));
   let encrypted =
-    sealed_app
-      (Spindle.Cookie.encrypted ring ~max_age:Mtime.Span.hour "prefs"
+    sealed_app ~keys:ring
+      (Spindle.Cookie.encrypted ~max_age:Mtime.Span.hour "prefs"
          Spindle.Codec.string)
   in
   check_string "a seal of an encrypted cookie's" "absent"
@@ -1132,9 +1131,7 @@ let test_what_key_signs_is_never_a_cookie () =
        ("prefs=" ^ b64 (Spindle.Key.seal ring ~adata:"prefs" "0.dark")))
 
 let test_a_sealed_cookie_reads_only_as_it_was_made make =
-  let ring = Spindle.Key.ring new_key [] in
-  let c = make ring "prefs" in
-  let app = sealed_app c in
+  let app = sealed_app (make "prefs") in
   let cookie = issued app "dark" in
   check_string "it reads back" "dark" (read_with app cookie);
   let v = value_of cookie in
@@ -1147,32 +1144,31 @@ let test_a_sealed_cookie_reads_only_as_it_was_made make =
   in
   check_string "a value a browser edited is absent" "absent"
     (read_with app ("prefs=" ^ edited));
-  let elsewhere = sealed_app (make ring "other") in
+  let elsewhere = sealed_app (make "other") in
   check_string "one moved from another cookie is absent" "absent"
     (read_with app ("prefs=" ^ value_of (issued elsewhere "dark")));
-  let later = sealed_app (make (Spindle.Key.ring old_key []) "prefs") in
+  let later = sealed_app ~keys:(Spindle.Key.ring old_key []) (make "prefs") in
   check_string "one sealed under a key the ring does not hold is absent"
     "absent" (read_with later cookie);
   let rotated =
-    sealed_app (make (Spindle.Key.ring old_key [ new_key ]) "prefs")
+    sealed_app ~keys:(Spindle.Key.ring old_key [ new_key ]) (make "prefs")
   in
   check_string "one sealed under a retired key still reads" "dark"
     (read_with rotated cookie)
 
 let test_a_signed_cookie_reads_only_as_it_was_made () =
-  test_a_sealed_cookie_reads_only_as_it_was_made (fun ring name ->
-      Spindle.Cookie.signed ring
+  test_a_sealed_cookie_reads_only_as_it_was_made (fun name ->
+      Spindle.Cookie.signed
         ~max_age:Mtime.Span.(60 * s)
         name Spindle.Codec.string)
 
 let test_an_encrypted_cookie_reads_only_as_it_was_made () =
-  test_a_sealed_cookie_reads_only_as_it_was_made (fun ring name ->
-      Spindle.Cookie.encrypted ring
+  test_a_sealed_cookie_reads_only_as_it_was_made (fun name ->
+      Spindle.Cookie.encrypted
         ~max_age:Mtime.Span.(60 * s)
         name Spindle.Codec.string);
   let c =
     Spindle.Cookie.encrypted
-      (Spindle.Key.ring new_key [])
       ~max_age:Mtime.Span.(60 * s)
       "prefs" Spindle.Codec.string
   in
@@ -1184,7 +1180,7 @@ let test_an_encrypted_cookie_reads_only_as_it_was_made () =
    holds it to as well as the browser: one without would replay for ever. *)
 let test_a_sealed_cookie_ages make =
   let ring = Spindle.Key.ring new_key [] in
-  let c = make ring ~max_age:Mtime.Span.(60 * s) "who" Spindle.Codec.string in
+  let c = make ~max_age:Mtime.Span.(60 * s) "who" Spindle.Codec.string in
   let app = sealed_app c in
   let made = 1_000_000 in
   let cookie = issued ~now:(Instants.of_ms made) app "kim" in
@@ -1199,8 +1195,8 @@ let test_a_sealed_cookie_ages make =
   Alcotest.(check bool)
     "its age is its Max-Age" true
     (contains ~sub:"Max-Age=60" header);
-  let shorter = written (Spindle.Cookie.make ~max_age_s:30 c "x")
-  and longer = written (Spindle.Cookie.make ~max_age_s:600 c "x") in
+  let shorter = written ~keys:ring (Spindle.Cookie.make ~max_age_s:30 c "x")
+  and longer = written ~keys:ring (Spindle.Cookie.make ~max_age_s:600 c "x") in
   Alcotest.(check bool)
     "a make may shorten it" true
     (contains ~sub:"Max-Age=30" shorter);
@@ -1208,7 +1204,7 @@ let test_a_sealed_cookie_ages make =
     "and never lengthen it" true
     (contains ~sub:"Max-Age=60" longer);
   let required =
-    Spindle.Test.app
+    Spindle.Test.app ~keys:ring
       [
         Spindle.get
           Spindle.Path.(s "who")
@@ -1223,8 +1219,7 @@ let test_a_sealed_cookie_ages make =
       .status;
   (* Whole seconds, rounded up: the cookie never ends before its span. *)
   let brief =
-    sealed_app
-      (make ring ~max_age:Mtime.Span.(1500 * ms) "who" Spindle.Codec.string)
+    sealed_app (make ~max_age:Mtime.Span.(1500 * ms) "who" Spindle.Codec.string)
   in
   Alcotest.(check bool)
     "a span between seconds is the next" true
@@ -1236,6 +1231,84 @@ let test_a_sealed_cookie_ages make =
   let cookie = issued ~now:(Instants.of_ms made) brief "kim" in
   check_string "and is read as long" "kim"
     (read_with ~now:(Instants.of_ms (made + 1_900)) brief cookie)
+
+(* The keys are the server's, given where it starts, so a cookie and the
+   routes that read it are values made before the secret is read; an app
+   given none is told so where it starts, never at a request. *)
+let test_the_server_holds_the_keys () =
+  Eio_main.run @@ fun env ->
+  let who =
+    Spindle.Cookie.signed ~max_age:Mtime.Span.hour "who" Spindle.Codec.string
+  in
+  let reads =
+    Spindle.get
+      Spindle.Path.(s "who")
+      Spindle.Returns.text
+      (let+ v = Spindle.Cookie.optional who in
+       Ok (Option.value v ~default:"nobody"))
+  and sets =
+    Spindle.post
+      Spindle.Path.(s "who")
+      Spindle.Returns.text
+      (let+ set_cookie = Spindle.set_cookie in
+       set_cookie (Spindle.Cookie.make who "kim");
+       Ok "set")
+  and token =
+    Spindle.get
+      Spindle.Path.(s "token")
+      Spindle.Returns.text
+      (let+ keys = Spindle.keys in
+       Ok (Spindle.Key.sign keys "invite:7"))
+  in
+  let started ?keys routes =
+    match Spindle.App.make ?keys routes with
+    | Error m -> Error m
+    | Ok app ->
+        Spindle.App.start app ~fs:(Eio.Stdenv.fs env)
+          ~mono_clock:(Eio.Stdenv.mono_clock env)
+  in
+  (match started [ reads ] with
+  | Error m ->
+      Alcotest.(check bool)
+        "a route that reads one, refused at start, naming the route and ~keys"
+        true
+        (contains ~sub:"GET /who" m && contains ~sub:"~keys" m)
+  | Ok () -> Alcotest.fail "started with no keys");
+  Alcotest.(check bool)
+    "and so is one that reads Spindle.keys" true
+    (Result.is_error (started [ token ]));
+  Alcotest.(check bool)
+    "an app given keys starts" true
+    (Result.is_ok
+       (started ~keys:(Spindle.Key.ring new_key []) [ reads; token ]));
+  Alcotest.(check bool)
+    "a test that calls one is told" true
+    (match Spindle.Test.call (Spindle.Test.app [ reads ]) `GET "/who" with
+    | _ -> false
+    | exception Invalid_argument m -> contains ~sub:"~keys" m);
+  let unsealed = Spindle.Test.call (Spindle.Test.app [ sets ]) `POST "/who" in
+  check_status "one that only sets it is answered 500" 500 unsealed.status;
+  Alcotest.(check (option string))
+    "and writes no cookie" None
+    (Spindle.Test.header unsealed "set-cookie");
+  let ring = Spindle.Key.ring new_key [] in
+  let app = Spindle.Test.app ~keys:ring [ reads; sets; token ] in
+  let cookie =
+    match
+      Spindle.Test.header (Spindle.Test.call app `POST "/who") "set-cookie"
+    with
+    | Some h -> (
+        match String.index_opt h ';' with
+        | Some i -> String.sub h 0 i
+        | None -> h)
+    | None -> Alcotest.fail "no cookie"
+  in
+  check_string "given keys, it is set and read" "kim"
+    (Spindle.Test.call app `GET "/who" ~headers:[ ("cookie", cookie) ]).body;
+  Alcotest.(check bool)
+    "and a handler signs with the same keys" true
+    (Spindle.Key.verify ring ~mac:(Spindle.Test.call app `GET "/token").body
+       "invite:7")
 
 let test_a_signed_cookie_ages () =
   test_a_sealed_cookie_ages Spindle.Cookie.signed
@@ -9461,6 +9534,8 @@ let () =
             `Quick test_an_encrypted_cookie_reads_only_as_it_was_made;
           Alcotest.test_case "a signed cookie ages" `Quick
             test_a_signed_cookie_ages;
+          Alcotest.test_case "the server holds the keys" `Quick
+            test_the_server_holds_the_keys;
           Alcotest.test_case "an encrypted cookie ages" `Quick
             test_an_encrypted_cookie_ages;
           Alcotest.test_case "a session is kept on the server" `Quick

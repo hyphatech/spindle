@@ -877,7 +877,9 @@ let exchange ~clock ~read_clock ~limits ~trace ~instruments ~state ~deadline app
             (* The body is the route's once it returns, so its budget is
                given back before the answer is written. *)
             release_budget ~state progress progress.reserved;
-            let wire = Wire.render ?gzip:answered.gzip req response in
+            let wire =
+              Wire.render ?gzip:answered.gzip ?keys:(App.keys app) req response
+            in
             log_access ~instruments req ~duration:(elapsed clock started)
               answered wire;
             (* What is left of the body is read before the answer is written,

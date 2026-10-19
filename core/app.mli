@@ -29,6 +29,7 @@ val make :
   ?check_origin:bool ->
   ?trusted_origins:string list ->
   ?trailing_slash:trailing_slash ->
+  ?keys:Key.ring ->
   Route.t list ->
   (t, string) result
 (** Refuses, naming the route: two routes of one method that could both answer
@@ -57,13 +58,16 @@ val make :
     challenge on a [401] -- and not written into the API's document, since a
     middleware that is a policy for some routes would have them claimed by every
     operation. [trailing_slash] is [Strict] unless the application asks, because
-    two spellings of one resource split its links and its caches. A raise -- a
-    handler's, a middleware's, [not_found]'s -- is {!Refusal.internal}'s [500]
-    and an [error] line with its backtrace. [cors] lets other sites' pages call
-    the routes it covers ({!Cors}): absent unless given, since the origin check
-    and the browser's own refusal are what keep a site's answers its own.
-    [compress] writes answers with gzip where a client takes it ({!Compress}):
-    off unless given.
+    two spellings of one resource split its links and its caches. [keys] are
+    what its signed and encrypted cookies are sealed under ({!Cookie.signed}),
+    read from a secret where the program starts ({!Key.of_secret}); without them
+    a route that reads such a cookie is refused by {!start}, and one that sets
+    one is answered [500]. A raise -- a handler's, a middleware's, [not_found]'s
+    -- is {!Refusal.internal}'s [500] and an [error] line with its backtrace.
+    [cors] lets other sites' pages call the routes it covers ({!Cors}): absent
+    unless given, since the origin check and the browser's own refusal are what
+    keep a site's answers its own. [compress] writes answers with gzip where a
+    client takes it ({!Compress}): off unless given.
 
     {b Forgery.} Every request by a method that changes something -- anything
     but [GET], [HEAD] and [OPTIONS] -- that a browser sent from another site is
@@ -85,6 +89,10 @@ val routes : t -> Route.info list
 (** Every route, in the order listed: what each reads, answers and may refuse
     with, and what it says of itself -- enough to document the application
     without running it. *)
+
+val keys : t -> Key.ring option
+(** The keys it was made with ({!make}), which its answers' signed and encrypted
+    cookies are sealed under: for whatever writes those answers. *)
 
 (** What an answer held that nobody declared. *)
 type undeclared =
@@ -127,13 +135,14 @@ val start :
   fs:_ Eio.Path.t ->
   mono_clock:_ Eio.Time.Mono.t ->
   (unit, string) result
-(** Hands the routes their [resources] ({!Dep.val-resource}) and the
-    [mono_clock] their limits are timed on ({!Rate}), counting from none, and
-    reads what they read when the server starts -- the directory of a
-    {!Static.directory} or a {!Files.directory} -- from [fs], in the order they
-    were listed, and says in a sentence why it could not, naming the route: a
-    route that reads a resource ({!Dep.of_resource}) [resources] does not hold,
-    outside a {!Dep.bind}; a directory that cannot be read; a
+(** Hands the routes their [resources] ({!Dep.val-resource}), the app's [keys]
+    ({!make}), and the [mono_clock] their limits are timed on ({!Rate}),
+    counting from none, and reads what they read when the server starts -- the
+    directory of a {!Static.directory} or a {!Files.directory} -- from [fs], in
+    the order they were listed, and says in a sentence why it could not, naming
+    the route: a route that reads a resource ({!Dep.of_resource}) [resources]
+    does not hold, outside a {!Dep.bind}, or a signed or encrypted cookie in an
+    app made with no [keys]; a directory that cannot be read; a
     {!Dep.val-resource} given a dependency {!Dep.of_resource} did not make; one
     resource given twice. {!Spindle.serve} calls it before it serves; a program
     that runs {!Server.run} itself calls it first, since a route that was never

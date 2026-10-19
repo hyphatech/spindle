@@ -44,6 +44,8 @@ type t = {
   cors : Cors_repr.t option;
   compress : Compress_repr.t option;
   trailing_slash : trailing_slash;
+  keys : Key_repr.ring option;
+      (** what its signed and encrypted cookies are sealed under *)
   resources : Dep_repr.resources Atomic.t;
       (** written once, by [start], before the server accepts anything *)
 }
@@ -469,7 +471,7 @@ let find_with_params ~rest t meth segs =
 
 let make ?(middleware = []) ?(codes = []) ?not_found ?cors ?compress
     ?(check_origin = true) ?(trusted_origins = []) ?(trailing_slash = Strict)
-    routes =
+    ?keys routes =
   let rec check_all = function
     | [] -> check_codes ~codes routes
     | r :: rest -> (
@@ -500,6 +502,7 @@ let make ?(middleware = []) ?(codes = []) ?not_found ?cors ?compress
         cors;
         compress;
         trailing_slash;
+        keys;
         resources = Atomic.make (Dep_repr.unstarted ());
       })
     (check_all routes)
@@ -514,6 +517,7 @@ let path_segments path =
   | _ -> None
 
 let routes t = List.map Route.info t.routes
+let keys t = t.keys
 
 (* A trailing slash makes another path: two spellings split caches and
    links, so it is strict unless the application asks to redirect. *)
@@ -1108,6 +1112,11 @@ let handle t req ~body =
 let start ?(resources = []) t ~fs ~mono_clock =
   let ( let* ) = Result.bind in
   let fs = (fs :> Eio.Fs.dir_ty Eio.Path.t) in
+  let resources =
+    match t.keys with
+    | Some ring -> Dep_repr.resource Dep_repr.cookie_keys ring :: resources
+    | None -> resources
+  in
   let* supplied =
     Dep_repr.supply resources ~unsupplied:Dep_repr.Refused ~mono_clock
   in
@@ -1122,6 +1131,12 @@ let start ?(resources = []) t ~fs ~mono_clock =
             r.resources_read)
         t.routes
     with
+    | Some (r, name) when String.equal name "cookie keys" ->
+        Error
+          (Printf.sprintf
+             "%s reads the server's keys -- a signed or encrypted cookie, or \
+              Spindle.keys -- and the app was given no ~keys"
+             (route_name r))
     | Some (r, name) ->
         Error
           (Printf.sprintf "%s reads the resource %s, which was not supplied"

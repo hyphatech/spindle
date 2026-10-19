@@ -18,12 +18,10 @@ val whole_seconds : Mtime.Span.t -> int
 (** The span in whole seconds, rounded up: a cookie's [Max-Age] is never shorter
     than what it was declared with. *)
 
-val signed :
-  Key_repr.ring -> max_age:Mtime.Span.t -> string -> 'a Codec.t -> 'a named
+val signed : max_age:Mtime.Span.t -> string -> 'a Codec.t -> 'a named
 (** As {!Cookie.signed}. *)
 
-val encrypted :
-  Key_repr.ring -> max_age:Mtime.Span.t -> string -> 'a Codec.t -> 'a named
+val encrypted : max_age:Mtime.Span.t -> string -> 'a Codec.t -> 'a named
 (** As {!Cookie.encrypted}. *)
 
 module Named : sig
@@ -31,9 +29,10 @@ module Named : sig
   val codec : 'a named -> 'a Codec.t
   val sealed : 'a named -> bool
 
-  val unseal : 'a named -> now:Ptime.t -> string -> string option
-  (** The value a request carried, if its signature, seal and age hold at [now];
-      the value itself for a plain cookie. *)
+  val unseal :
+    'a named -> keys:Key_repr.ring -> now:Ptime.t -> string -> string option
+  (** The value a request carried, if its signature, seal and age hold at [now]
+      under [keys]; the value itself for a plain cookie. *)
 end
 
 val make :
@@ -56,9 +55,15 @@ val encode : string -> string
 val decode : string -> string option
 (** What {!encode} wrote, and only that spelling of it. *)
 
-val to_header : secure:bool -> now:Ptime.t -> t -> string
-(** The [Set-Cookie] value, a sealed one sealed at [now]; [SameSite] always
-    written, [Secure] where [secure]. *)
+val to_header :
+  secure:bool ->
+  now:Ptime.t ->
+  keys:Key_repr.ring option ->
+  t ->
+  (string, string) result
+(** The [Set-Cookie] value, a sealed one sealed at [now] under [keys];
+    [SameSite] always written, [Secure] where [secure]. [Error], saying why, for
+    a sealed one and no [keys]. *)
 
 val parse : string -> (string * string) list
 (** A [Cookie] value's pairs, in order, each trimmed; one with no name or no [=]

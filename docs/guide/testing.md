@@ -32,6 +32,9 @@ let test_echo () =
   `Spindle.Test.app ~resources:[ Spindle.Dep.resource db test_pool ] routes`.
   It needs only those the routes it calls read; calling one that reads a
   resource it was not given raises `Invalid_argument`, naming it.
+- `Test.app ~keys` gives the app the keys its
+  [signed and encrypted cookies](cookies.md#signed-and-encrypted-cookies)
+  are sealed under, as the server's `~keys` does.
 - `Test.app ~mono_clock` is the clock its
   [rate limits](rate-limits.md) are timed on: by default one that never
   moves. Give it `Eio_mock.Clock.Mono.make ()` and move it with

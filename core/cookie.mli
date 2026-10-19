@@ -29,18 +29,23 @@ val named : string -> 'a Codec.t -> 'a named
 
     {[
     let prefs =
-      Spindle.Cookie.encrypted keys
+      Spindle.Cookie.encrypted
         ~max_age:Mtime.Span.(30 * day)
         "prefs" prefs_codec
 
     let who =
-      Spindle.Cookie.signed keys
+      Spindle.Cookie.signed
         ~max_age:Mtime.Span.(8 * hour)
         "who" Spindle.Codec.string
     ]}
 
-    Both are {!type-named}, read and set as any declared cookie is. Each value
-    is stamped with the second it was made, from the application's [now] as the
+    Both are {!type-named}, read and set as any declared cookie is, and both are
+    sealed under the keys the server is given where it starts --
+    [Spindle.serve ~keys], [App.start ~keys], [Test.app ~keys] -- so a cookie,
+    and the routes that read it, are values made before the secret is read. A
+    route that reads one stops the server before it listens when no keys were
+    given; one that sets one with none is answered [500], logged. Each value is
+    stamped with the second it was made, from the application's [now] as the
     answer is written, and bound to the cookie's name, so it cannot be moved to
     another cookie.
     {b One that fails its signature, its seal or its age is absent} --
@@ -52,14 +57,12 @@ val named : string -> 'a Codec.t -> 'a named
     the most {!make} writes as its [Max-Age], in whole seconds rounded up, as
     the stamp is read. *)
 
-val signed :
-  Key.ring -> max_age:Mtime.Span.t -> string -> 'a Codec.t -> 'a named
+val signed : max_age:Mtime.Span.t -> string -> 'a Codec.t -> 'a named
 (** The value readable by the browser, and an HMAC-SHA256 over the name, the
     stamp and the value beside it, as {!Key.sign} makes one but under a key kept
     for cookies, compared in constant time. Raises as {!val-named} does. *)
 
-val encrypted :
-  Key.ring -> max_age:Mtime.Span.t -> string -> 'a Codec.t -> 'a named
+val encrypted : max_age:Mtime.Span.t -> string -> 'a Codec.t -> 'a named
 (** The value and its stamp sealed with AES-256-GCM, as {!Key.seal} seals but
     under a key kept for cookies, the name bound to them: a browser can read
     nothing of it. Raises as {!val-named} does. *)
@@ -72,10 +75,12 @@ module Named : sig
   val sealed : 'a named -> bool
   (** Whether it is {!signed} or {!encrypted}. *)
 
-  val unseal : 'a named -> now:Ptime.t -> string -> string option
+  val unseal :
+    'a named -> keys:Key.ring -> now:Ptime.t -> string -> string option
   (** The value a request carried for it, as its codec reads it: the value
       itself for a plain cookie, and for a sealed one what it sealed, if its
-      signature, its seal and its age hold at [now]. *)
+      signature, its seal and its age hold at [now] under [keys] -- the
+      server's, {!Spindle.keys}. *)
 end
 
 type t = Cookie_repr.t

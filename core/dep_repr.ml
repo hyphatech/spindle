@@ -268,6 +268,14 @@ let of_resource name =
   }
 
 (* A misuse is refused where the resources are supplied, by [supply]. *)
+(* The keys an app seals its signed and encrypted cookies under, given where
+   it starts: a resource of the framework's own, so a route that reads such a
+   cookie is checked for them as for any other. *)
+let cookie_keys : Key_repr.ring t = of_resource "cookie keys"
+
+let supplied (type a) (d : a t) resources : a option =
+  match d.key with Some { id; _ } -> find_resource id resources | None -> None
+
 let resource (type a) (d : a t) (value : a) =
   match (d.key, d.resource) with
   | Some { id; _ }, Some name -> Supplied (Binding { id; name; value })
