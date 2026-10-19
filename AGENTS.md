@@ -1,9 +1,10 @@
 # AGENTS.md
 
-Spindle is a web framework for OCaml 5 and Eio: typed routes, dependencies
-and answers, and HTTP/1.1 read and written by itself. This file is for
-anyone changing it, human or agent. Users start at [README.md](README.md)
-and the documentation site, [docs/](docs/index.md).
+Spindle is an OCaml library of Hypha Stack, a web framework for OCaml 5 and
+Eio: typed routes, dependencies and answers, and HTTP/1.1 read and written
+by itself. This file is for anyone changing it, human or agent. Users start
+at [README.md](README.md) and the documentation site,
+[docs/](docs/index.md).
 
 ## Commands
 
@@ -248,33 +249,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   stretches. Symptom: a test green on a laptop and red on a loaded CI
   runner.
 
-## House style
-
-The house style, the OCaml checklist and the OCaml tools are
-[OCAML.md](OCAML.md), the same in every Hypha OCaml repository and changed
-in all of them together, never in one. It is imported here, so it is read
-with this file:
-
-@OCAML.md
-
-## Git
-
-How work becomes a commit -- its format, where it happens, what is pushed
--- is [GIT.md](GIT.md), the same in every Hypha repository and changed in
-all of them together, never in one. It is imported here, so it is read
-with this file:
-
-@GIT.md
-
 ## Changes and releases
-
-How a change reaches the library's users -- its line in `CHANGES.md`, what
-is breaking, how a release is tagged and published -- is
-[LIBRARY.md](LIBRARY.md), the same in every Hypha library and changed in
-all of them together, never in one. It is imported here, so it is read
-with this file:
-
-@LIBRARY.md
 
 Its three packages are released together. A user-visible change updates
 the page of the documentation site that describes it, not the README.
