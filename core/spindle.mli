@@ -277,8 +277,8 @@ val add_header : (string * string -> unit) Dep.t
 
 val peer : string Dep.t
 
-val client : string Dep.t
-(** See {!Request.client}. *)
+val client_ip : string Dep.t
+(** See {!Request.client_ip}. *)
 
 val request_id : string Dep.t
 

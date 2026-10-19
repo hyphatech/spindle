@@ -133,7 +133,7 @@ val cache_control : Spindle_http.Cache_control.t t
 
 val forwarded : Spindle_http.Forwarded.element list t
 (** The proxies in [Forwarded], the nearest last. Believed only from a proxy the
-    application trusts, which {!Request.client} already is. *)
+    application trusts, which {!Request.client_ip} already is. *)
 
 val structured_item : Spindle_http.Structured.item t
 (** A field defined as an RFC 9651 item, read as one; the field's definition

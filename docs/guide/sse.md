@@ -64,7 +64,7 @@ let count : (int, room) Spindle.Event.kind =
 let hub : (unit, room Spindle.Event.t) Spindle.Broadcast.t =
   Spindle.Broadcast.create ~depth:16 ()
 
-let room = Spindle.Path.str "room"
+let room = Spindle.Path.string "room"
 
 let events =
   Spindle.get

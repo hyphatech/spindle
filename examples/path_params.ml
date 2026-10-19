@@ -8,7 +8,7 @@ open Spindle.Syntax
 
 (* --8<-- [start:routes] *)
 let user_id = Spindle.Path.int64 "user_id"
-let name = Spindle.Path.str "name"
+let name = Spindle.Path.string "name"
 
 (* The answer's description is derived from its record, so a name holding a
    quote is still one JSON string. *)

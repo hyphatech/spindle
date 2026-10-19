@@ -59,7 +59,7 @@ let said =
   |> Wiretype.Object.finish
 
 let chat = Ws.(protocol ~client:(json said) ~server:(json said) ())
-let room = Spindle.Path.str "room"
+let room = Spindle.Path.string "room"
 let id = Spindle.Path.int "id"
 let pen = { id = 1; name = "pen"; size = Small }
 

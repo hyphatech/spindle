@@ -13,7 +13,7 @@ open Spindle.Syntax
 module Jg_template = Jingoo.Jg_template
 module Jg_types = Jingoo.Jg_types
 
-let name = Spindle.Path.str "name"
+let name = Spindle.Path.string "name"
 
 let greeting =
   Jg_template.Loaded.from_file "examples/pages/templates/greeting.jingoo"

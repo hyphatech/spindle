@@ -192,7 +192,7 @@ encrypted cookies and sessions are on [their own page](../guide/cookies.md).
 - `Spindle.request_id`: the id on every log line of this request.
 - `Spindle.peer`: the address that opened the connection, which is the
   proxy when there is one.
-- `Spindle.client`: who is asking. It is the peer, or, when the peer is a
+- `Spindle.client_ip`: who is asking. It is the peer, or, when the peer is a
   proxy you told the server to trust, the address that proxy forwarded for
   ([the client's IP address](../guide/cookies.md#the-clients-ip-address)).
 - `Spindle.set_cookie` and `Spindle.add_header`: functions that add a

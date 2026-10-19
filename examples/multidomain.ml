@@ -30,7 +30,7 @@ let visit page =
   Hashtbl.replace visits page n;
   n
 
-let page_name = Spindle.Path.str "page"
+let page_name = Spindle.Path.string "page"
 let path = Spindle.Path.(s "pages" / page_name)
 
 let locked =

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Breaking: `Spindle.client` is `Spindle.client_ip`, and `Request.client`
+  and `Request.make ?client` are `client_ip`: the caller's address, as
+  `req.ip` and `remote_ip` name it, where "client" also named the HTTP
+  client, a WebSocket's client messages and the connection
+  `client_gone` waits on. `Path.str` is `Path.string`, beside `Path.int`
+  and `Codec.string`.
+
 - Breaking: what serves a folder no longer says how long a browser keeps
   it. `Static.load` and `Static.directory` take no `~immutable`, and serve
   every file `no-cache` with its entity tag, as `Files` does, so

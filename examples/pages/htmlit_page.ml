@@ -8,7 +8,7 @@
 open Spindle.Syntax
 module El = Htmlit.El
 
-let name = Spindle.Path.str "name"
+let name = Spindle.Path.string "name"
 
 let greeting name =
   El.page ~lang:"en" ~title:"Hello"

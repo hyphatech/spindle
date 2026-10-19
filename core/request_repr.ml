@@ -24,7 +24,7 @@ type t = {
   host : string option;  (** as the head named it *)
   headers : (string * string) list;  (** names lower-cased *)
   peer : string;
-  client : string;
+  client_ip : string;
   proxied : bool;
   proxy_header : proxy_header;
   read_clock : unit -> Ptime.t;
@@ -57,7 +57,7 @@ let query_of target =
       in
       Spindle_http.Urlencoded.parse query
 
-let make ?id ?(peer = "") ?client ?(proxied = false)
+let make ?id ?(peer = "") ?client_ip ?(proxied = false)
     ?(proxy_header = X_forwarded_for) ?(version = Spindle_http.Head.Http_1_1)
     ?host ?(headers = []) ~read_clock meth target =
   let host =
@@ -78,7 +78,7 @@ let make ?id ?(peer = "") ?client ?(proxied = false)
     host;
     headers = List.map (fun (k, v) -> (String.lowercase_ascii k, v)) headers;
     peer;
-    client = Option.value client ~default:peer;
+    client_ip = Option.value client_ip ~default:peer;
     proxied;
     proxy_header;
     read_clock;
@@ -129,7 +129,7 @@ let id t = t.id
 let peer t = t.peer
 let proxied t = t.proxied
 let proxy_header t = t.proxy_header
-let client t = t.client
+let client_ip t = t.client_ip
 let now t = t.read_clock ()
 let loopback_hosts = [ "localhost"; "127.0.0.1"; "[::1]" ]
 

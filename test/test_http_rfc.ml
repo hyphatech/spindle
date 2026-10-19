@@ -218,7 +218,7 @@ let show_response = function
 (* ------------------------------------------------------------------ *)
 (* The server the whole-server rows are sent to *)
 
-let id = Spindle.Path.str "id"
+let id = Spindle.Path.string "id"
 let code = Spindle.Path.int "code"
 
 (* What a handler that frames its own answer would write in each field: the

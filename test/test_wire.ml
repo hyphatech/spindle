@@ -15,7 +15,7 @@ let code name status =
   in
   Spindle.Refusal.Code.make ?challenge name ~status ~doc:"A test's."
 
-let name = Spindle.Path.str "name"
+let name = Spindle.Path.string "name"
 
 let hello =
   Spindle.get
@@ -215,7 +215,7 @@ let test_a_length_past_the_discard_limit_is_never_read () =
 (* A stream that says its length is framed by it, and a connection is
    carried past it only when the body said the truth. *)
 let counted =
-  let sent = Spindle.Path.str "sent" in
+  let sent = Spindle.Path.string "sent" in
   Spindle.get
     Spindle.Path.(s "counted" / sent)
     Spindle.Returns.response

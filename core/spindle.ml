@@ -133,7 +133,7 @@ let request = Dep.of_request (fun r -> Ok r)
 let now = Dep.of_request ~needs:[] (fun r -> Ok (Request.now r))
 let keys = Dep_repr.cookie_keys
 let peer = Dep.of_request ~needs:[] (fun r -> Ok (Request.peer r))
-let client = Dep.of_request ~needs:[] (fun r -> Ok (Request.client r))
+let client_ip = Dep.of_request ~needs:[] (fun r -> Ok (Request.client_ip r))
 let request_id = Dep.of_request ~needs:[] (fun r -> Ok (Request.id r))
 let client_gone = Dep.of_request ~needs:[] (fun r -> Ok (Request.client_gone r))
 let body = Dep.of_body ~need:(Dep.Raw { content_types = [] }) (fun s -> Ok s)

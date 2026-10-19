@@ -38,7 +38,7 @@ type unparsed = Path_repr.unparsed =
 
           {[
           let by_id = Path.(s "posts" / int ~unparsed:Next_route "key")
-          let by_slug = Path.(s "posts" / str "key")
+          let by_slug = Path.(s "posts" / string "key")
           ]}
 
           Such routes give the parameter one name, since the API's document
@@ -50,7 +50,7 @@ val param : ?unparsed:unparsed -> string -> 'a Codec.t -> 'a param
     [unparsed] what one it cannot read makes of the request. An empty segment is
     never a parameter. *)
 
-val str : ?unparsed:unparsed -> string -> string param
+val string : ?unparsed:unparsed -> string -> string param
 (** [param name Codec.string]: any segment -- [/users/Kim%20Li] is ["Kim Li"].
 *)
 

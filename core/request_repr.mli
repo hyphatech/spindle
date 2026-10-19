@@ -17,7 +17,7 @@ type t
 val make :
   ?id:string ->
   ?peer:string ->
-  ?client:string ->
+  ?client_ip:string ->
   ?proxied:bool ->
   ?proxy_header:proxy_header ->
   ?version:Spindle_http.Head.version ->
@@ -54,7 +54,7 @@ val id : t -> string
 val peer : t -> string
 val proxied : t -> bool
 val proxy_header : t -> proxy_header
-val client : t -> string
+val client_ip : t -> string
 val now : t -> Ptime.t
 val host : t -> string option
 val secure : t -> bool

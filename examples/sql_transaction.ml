@@ -42,7 +42,7 @@ let claim pool name ~now =
   |> Result.map_error Spindle_postgres.refusal
 (* --8<-- [end:claim] *)
 
-let name = Spindle.Path.str "name"
+let name = Spindle.Path.string "name"
 
 let db : Spindle_postgres.Pool.t Spindle.Dep.t =
   Spindle.Dep.of_resource "database"

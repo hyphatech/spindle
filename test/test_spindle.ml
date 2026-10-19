@@ -43,7 +43,7 @@ let greeting_json =
   |> Wiretype.Object.mem "times" Wiretype.int ~absent:1 ~enc:(fun g -> g.times)
   |> Wiretype.Object.finish
 
-let name = Spindle.Path.str "name"
+let name = Spindle.Path.string "name"
 
 let hello =
   Spindle.get
@@ -756,9 +756,9 @@ let test_query_header_cookie_and_clock () =
 let test_an_input_that_is_not_utf_8_is_refused () =
   let route =
     Spindle.get
-      Spindle.Path.(s "echo" / str "name")
+      Spindle.Path.(s "echo" / string "name")
       (Spindle.Returns.json Wiretype.(list string))
-      (let+ name = Spindle.param (Spindle.Path.str "name")
+      (let+ name = Spindle.param (Spindle.Path.string "name")
        and+ q = Spindle.Query.optional "q" Spindle.Codec.string
        and+ h = Spindle.Header.optional "x-name" Spindle.Codec.string in
        Ok [ name; Option.value q ~default:"-"; Option.value h ~default:"-" ])
@@ -1045,9 +1045,9 @@ let sealed_app ?(keys = Spindle.Key.ring new_key []) c =
   Spindle.Test.app ~keys
     [
       Spindle.post
-        Spindle.Path.(s "set" / Spindle.Path.str "v")
+        Spindle.Path.(s "set" / Spindle.Path.string "v")
         Spindle.Returns.text
-        (let+ v = Spindle.param (Spindle.Path.str "v")
+        (let+ v = Spindle.param (Spindle.Path.string "v")
          and+ set_cookie = Spindle.set_cookie in
          set_cookie (Spindle.Cookie.make c v);
          Ok "set");
@@ -1360,7 +1360,7 @@ let string_session ?(idle = Mtime.Span.hour) ?(absolute = Mtime.Span.day)
     ~idle ~absolute Wiretype.string
 
 let session_routes ?mono_clock session =
-  let v = Spindle.Path.str "v" in
+  let v = Spindle.Path.string "v" in
   let finished = function Ok () -> Ok "done" | Error e -> Error e in
   let read session =
     match Spindle.Session.get session with
@@ -2432,7 +2432,7 @@ let test_a_burst_is_its_own_figure () =
         Spindle.post
           Spindle.Path.(s "call")
           Spindle.Returns.text
-          (let+ () = Spindle.Rate.limit calls ~key:Spindle.client in
+          (let+ () = Spindle.Rate.limit calls ~key:Spindle.client_ip in
            Ok "in");
       ]
   in
@@ -2457,7 +2457,7 @@ let test_an_ipv6_client_is_counted_by_its_network () =
         Spindle.post
           Spindle.Path.(s "call")
           Spindle.Returns.text
-          (let+ () = Spindle.Rate.limit calls ~key:Spindle.client in
+          (let+ () = Spindle.Rate.limit calls ~key:Spindle.client_ip in
            Ok "in");
       ]
   in
@@ -2479,7 +2479,7 @@ let test_a_limit_refuses_past_its_rate () =
     Spindle.post
       Spindle.Path.(s "sign-in")
       Spindle.Returns.text
-      (let+ () = Spindle.Rate.limit sign_ins ~key:Spindle.client in
+      (let+ () = Spindle.Rate.limit sign_ins ~key:Spindle.client_ip in
        Ok "in")
   and open_ =
     Spindle.get
@@ -2529,7 +2529,7 @@ let limited_once_a_minute =
   Spindle.post
     Spindle.Path.(s "call")
     Spindle.Returns.text
-    (let+ () = Spindle.Rate.limit once_a_minute ~key:Spindle.client in
+    (let+ () = Spindle.Rate.limit once_a_minute ~key:Spindle.client_ip in
      Ok "in")
 
 let test_two_apps_count_apart () =
@@ -2601,9 +2601,9 @@ let test_a_test_browser_keeps_what_the_app_set () =
          | Ok () -> Ok "out"
          | Error e -> Error e);
       Spindle.post
-        Spindle.Path.(s "games" / Spindle.Path.str "g")
+        Spindle.Path.(s "games" / Spindle.Path.string "g")
         Spindle.Returns.text
-        (let+ g = Spindle.param (Spindle.Path.str "g")
+        (let+ g = Spindle.param (Spindle.Path.string "g")
          and+ set_cookie = Spindle.set_cookie in
          set_cookie
            (Spindle.Cookie.make ~path:("/games/" ^ g) ~max_age_s:60
@@ -2611,7 +2611,7 @@ let test_a_test_browser_keeps_what_the_app_set () =
               g);
          Ok "seated");
       Spindle.get
-        Spindle.Path.(s "games" / Spindle.Path.str "g" / s "seat")
+        Spindle.Path.(s "games" / Spindle.Path.string "g" / s "seat")
         Spindle.Returns.text
         (let+ seat =
            Spindle.Cookie.optional
@@ -4692,7 +4692,7 @@ let who =
   Spindle.get
     Spindle.Path.(s "who")
     Spindle.Returns.response
-    (let+ client = Spindle.client and+ id = Spindle.request_id in
+    (let+ client = Spindle.client_ip and+ id = Spindle.request_id in
      Ok (Spindle.Response.json Wiretype.(list string) [ client; id ]))
 
 let who_of (r : Spindle_client.response) =
@@ -6402,7 +6402,7 @@ let test_a_line_stands_alone_whatever_it_holds () =
 
 (* What a route answers with, for the tests that only ask which answered. *)
 let says word = Spindle.Dep.return (Ok (Spindle.Response.make word))
-let user_id = Spindle.Path.str "user_id"
+let user_id = Spindle.Path.string "user_id"
 
 (* A literal beats a parameter wherever the routes are listed, so /users/me
    is never read as somebody called "me". *)
@@ -6439,7 +6439,7 @@ let test_a_parameter_that_declines_is_asked_first () =
   in
   let by_name =
     Spindle.get
-      Spindle.Path.(s "items" / Spindle.Path.str "name")
+      Spindle.Path.(s "items" / Spindle.Path.string "name")
       Spindle.Returns.response (says "name")
   in
   List.iter
@@ -6463,7 +6463,7 @@ let test_routes_that_could_both_answer_are_refused () =
           Spindle.Path.(s "users" / user_id)
           Spindle.Returns.response (says "id");
         Spindle.get
-          Spindle.Path.(s "users" / Spindle.Path.str "name")
+          Spindle.Path.(s "users" / Spindle.Path.string "name")
           Spindle.Returns.response (says "name");
       ]
   in
@@ -6674,7 +6674,7 @@ let test_the_table_answers_as_the_rule =
                   let one =
                     match seg with
                     | Lit l -> Spindle.Path.s l
-                    | Plain -> Spindle.Path.(root / str name)
+                    | Plain -> Spindle.Path.(root / string name)
                     | Declining ->
                         Spindle.Path.(root / int ~unparsed:Next_route name)
                   in
@@ -6792,7 +6792,7 @@ let test_a_path_prints_only_from_its_own_parameters () =
       ("not the path's", "count", Spindle.Path.[ arg order_id 1; arg count 2 ]);
       ( "printed as nothing",
         "nothing",
-        [ Spindle.Path.arg (Spindle.Path.str "order_id") "" ] );
+        [ Spindle.Path.arg (Spindle.Path.string "order_id") "" ] );
     ]
 
 let file = Spindle.Path.rest "file"
@@ -7869,9 +7869,9 @@ let test_the_rest_prints_and_parses_back () =
    the URL (RFC 3986 section 5.2.4), so [/users/..] is fetched as [/]: its
    dots are encoded, and it is still the segment it was. *)
 let test_a_dot_segment_is_printed_encoded () =
-  let users = Spindle.Path.(s "users" / str "name") in
+  let users = Spindle.Path.(s "users" / string "name") in
   let name v =
-    Spindle.Path.url users [ Spindle.Path.arg (Spindle.Path.str "name") v ]
+    Spindle.Path.url users [ Spindle.Path.arg (Spindle.Path.string "name") v ]
   in
   Alcotest.(check (result string string))
     "two dots" (Ok "/users/%2E%2E") (name "..");
@@ -8177,7 +8177,7 @@ let test_a_code_nobody_declared_is_the_routes_bug () =
    endpoint chose, the value's or none; a status it did not list is still
    sent and is the route's bug, which a test is told. *)
 let test_a_route_answers_the_status_it_chose () =
-  let name = Spindle.Path.str "name" in
+  let name = Spindle.Path.string "name" in
   let upsert =
     Spindle.put
       Spindle.Path.(s "users" / name)

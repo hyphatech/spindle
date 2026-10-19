@@ -10,7 +10,7 @@
 open Spindle.Syntax
 module Html = Tyxml.Html
 
-let name = Spindle.Path.str "name"
+let name = Spindle.Path.string "name"
 
 let greeting name =
   let hello = "Hello, " ^ name ^ "!" in

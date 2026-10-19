@@ -8,7 +8,7 @@ type unparsed = Path_repr.unparsed = Invalid | Next_route
 let param ?(unparsed = Invalid) name codec =
   R.Param { name; codec; unparsed; rest = false }
 
-let str ?unparsed name = param ?unparsed name Codec.string
+let string ?unparsed name = param ?unparsed name Codec.string
 let int ?unparsed name = param ?unparsed name Codec.int
 let int64 ?unparsed name = param ?unparsed name Codec.int64
 

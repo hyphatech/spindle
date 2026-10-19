@@ -4,7 +4,7 @@
     {[
     let sign_ins = Spindle.Rate.create ~limit:10 ~per:Mtime.Span.s ()
 
-    (let+ () = Spindle.Rate.limit sign_ins ~key:Spindle.client and+ ... in ...)
+    (let+ () = Spindle.Rate.limit sign_ins ~key:Spindle.client_ip and+ ... in ...)
     ]}
 
     {b A limit is a dependency}, so it is listed where the route is, and the
@@ -24,7 +24,7 @@
     {!App.start} is given, which {!Spindle.serve} gives the environment's, or
     {!Test.app}'s. Counts are one process's. Behind a proxy, a key that is the
     client's address is the one [trusted_proxies] vouches for
-    ({!Spindle.client}). *)
+    ({!Spindle.client_ip}). *)
 
 type t
 

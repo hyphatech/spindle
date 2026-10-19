@@ -159,7 +159,7 @@ Each answers a `result` whose `Error` is a refusal: a store that fails is a
 
 ## The client's IP address
 
-`Spindle.client` is the address of whoever connected. Behind a reverse
+`Spindle.client_ip` is the address of whoever connected. Behind a reverse
 proxy, list the proxy in `Spindle.serve ~trusted_proxies` (addresses or
 CIDR ranges, such as `10.0.0.0/8`; none by default), and the client is the
 address the proxy forwarded for. `~proxy_header` names the header it writes:

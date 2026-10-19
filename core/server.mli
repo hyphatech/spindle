@@ -166,7 +166,7 @@ val run :
     which is the span's own, and failed by a [5xx]. With [metrics], it is
     counted, and so are the connections and the body budget ({!Metrics}).
     [trusted_proxies] are the peers whose [X-Request-Id] and forwarding header
-    are believed ({!Request.client}); there are none unless named.
+    are believed ({!Request.client_ip}); there are none unless named.
     [proxy_header] is the forwarding header they write, [X_forwarded_for] unless
     given, and the only one read: a proxy that writes one and passes the other
     through from the client would otherwise let the client choose its own

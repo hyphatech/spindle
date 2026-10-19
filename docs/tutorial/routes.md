@@ -83,7 +83,7 @@ the [database](database.md) page.
 Below, `Path` is `Spindle.Path` and `Codec` is `Spindle.Codec`.
 
 ```ocaml
-let order_id = Path.str "order_id"               (* any segment *)
+let order_id = Path.string "order_id"               (* any segment *)
 let page = Path.int "page"                       (* an int *)
 let user_id = Path.int64 "user_id"               (* an int64 *)
 let file = Path.rest "file"                      (* every segment left *)

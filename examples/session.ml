@@ -22,7 +22,7 @@ let session =
     ~absolute:Mtime.Span.(90 * day)
     visit_json
 
-let user = Spindle.Path.str "user"
+let user = Spindle.Path.string "user"
 
 let routes =
   [

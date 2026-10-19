@@ -218,9 +218,9 @@ let make_request ~read_clock ~limits ~peer (head : Head.Request.t) =
           ~default:peer
     | (Request.X_forwarded_for | Request.Forwarded), _ -> peer
   in
-  Request.make ~id ~peer ~client ~proxied ~proxy_header:limits.proxy_header
-    ~version:head.version ?host:head.host ~headers:head.headers ~read_clock
-    head.meth head.target
+  Request.make ~id ~peer ~client_ip:client ~proxied
+    ~proxy_header:limits.proxy_header ~version:head.version ?host:head.host
+    ~headers:head.headers ~read_clock head.meth head.target
 
 let elapsed clock since = Mtime.span since (Eio.Time.Mono.now clock)
 

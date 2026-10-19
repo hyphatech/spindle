@@ -415,7 +415,7 @@ let test_routes_told_apart_by_a_type_are_one_operation () =
       (Spindle.Dep.return (Error Spindle.Refusal.not_found))
   and by_name =
     Spindle.get ~summary:"Items by their name" ~refuses:[ gone ]
-      Spindle.Path.(s "items" / Spindle.Path.str "key")
+      Spindle.Path.(s "items" / Spindle.Path.string "key")
       (Spindle.Returns.json (Wiretype.list item_json))
       (let+ _ = Spindle.Query.required "lang" Spindle.Codec.string in
        Error Spindle.Refusal.not_found)
@@ -526,7 +526,7 @@ let test_one_operation_that_answers_two_ways_is_refused () =
       (Spindle.Dep.return (Error Spindle.Refusal.not_found))
   and by_name =
     Spindle.get
-      Spindle.Path.(s "items" / Spindle.Path.str "key")
+      Spindle.Path.(s "items" / Spindle.Path.string "key")
       Spindle.Returns.html
       (Spindle.Dep.return (Ok "<p>an item</p>"))
   in
@@ -546,7 +546,7 @@ let test_one_operation_that_answers_two_ways_is_refused () =
 let test_each_status_is_a_response () =
   let upsert =
     Spindle.put
-      Spindle.Path.(s "items" / Spindle.Path.str "name")
+      Spindle.Path.(s "items" / Spindle.Path.string "name")
       (Spindle.Returns.json_response item_json
          ~statuses:
            [ (`Created, "The item was made."); (`OK, "The item was replaced.") ])
@@ -860,7 +860,7 @@ let test_docs_can_be_moved () =
 (* A page at a parameter is no one place, and it is written in source. *)
 let test_a_mistake_in_the_docs_raises () =
   match
-    Spindle.Openapi.docs ~at:Spindle.Path.(s "docs" / str "version") [ add ]
+    Spindle.Openapi.docs ~at:Spindle.Path.(s "docs" / string "version") [ add ]
   with
   | _ -> Alcotest.fail "docs at a parameter were served"
   | exception Invalid_argument m ->

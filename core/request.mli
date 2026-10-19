@@ -23,7 +23,7 @@ type proxy_header = Request_repr.proxy_header =
 val make :
   ?id:string ->
   ?peer:string ->
-  ?client:string ->
+  ?client_ip:string ->
   ?proxied:bool ->
   ?proxy_header:proxy_header ->
   ?version:Spindle_http.Head.version ->
@@ -36,7 +36,7 @@ val make :
 (** [make meth target] for a server adapter or a test. [target] is the path and
     query string as they arrived. Header names are matched without regard to
     case. [read_clock] reads the application's clock, which {!now} answers.
-    [client] defaults to [peer], and [id] to a fresh one. [proxied] says the
+    [client_ip] defaults to [peer], and [id] to a fresh one. [proxied] says the
     peer is a proxy the server was told to trust (false), and [proxy_header]
     which header it writes ([X_forwarded_for]). [version] is the one the request
     was sent in ([Http_1_1]), and [host] the host its head names (see
@@ -92,7 +92,7 @@ val host : t -> string option
     line rather than joining the client's; or else the one its head names: an
     absolute-form target's authority, or [Host]. *)
 
-val client : t -> string
+val client_ip : t -> string
 (** Who is asking: the peer, or -- only when the peer is a proxy the server was
     told to trust -- the address that proxy says it forwarded for, in its
     {!val-proxy_header}. A header a client can write is a limit a client can

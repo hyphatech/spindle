@@ -8,7 +8,7 @@ open Spindle.Syntax
 type greeting = { text : string } [@@deriving wiretype]
 
 let hello name = Ok { text = "Hello, " ^ name ^ "!" }
-let name = Spindle.Path.str "name"
+let name = Spindle.Path.string "name"
 
 let routes =
   [
