@@ -15,7 +15,9 @@
     {v
     myapp api openapi [-o FILE]                  the OpenAPI 3.2 document
     myapp api zod [-o FILE]                      the TypeScript module of Zod schemas
-    myapp api check --openapi FILE --zod FILE    fail when either is not what the routes make
+    myapp api melange [-o FILE]                  the OCaml client for Melange
+    myapp api check --openapi FILE --zod FILE [--melange FILE]
+                                                 fail when any is not what the routes make
     v}
 
     Every command has [--help]. Nothing here is a database's: migrating one is a
@@ -35,7 +37,9 @@ val run :
     these four, and no other. [name] is the command's own; [title] is what the
     API's document is called ([name]).
 
-    [api openapi] and [api zod] write what {!Spindle.Openapi} makes of the
-    routes, and [api check --openapi FILE --zod FILE] fails when either
-    committed file is not that, naming each that is not, reporting every place
-    described loosely -- and failing on those too with [--strict]. *)
+    [api openapi], [api zod] and [api melange] write what {!Spindle.Openapi},
+    {!Spindle.Zod} and {!Spindle.Melange} make of the routes, and
+    [api check --openapi FILE --zod FILE] fails when either committed file is
+    not that -- and the Melange client too, given [--melange FILE] -- naming
+    each that is not, reporting every place described loosely, and failing on
+    those too with [--strict]. *)

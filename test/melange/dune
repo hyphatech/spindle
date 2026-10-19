@@ -1,0 +1,46 @@
+; The printed Melange client, called against a real server: the module
+; printed for app.ml, compared with the copy committed here, compiled by
+; Melange beside run.ml and run by Bun against the application served on a
+; port of its own.
+
+(library
+ (name app)
+ (modules app)
+ (libraries spindle wiretype))
+
+(executable
+ (name print_client)
+ (modules print_client)
+ (libraries spindle app))
+
+; What the printer writes today, against the copy committed here: `dune
+; promote` takes the new one.
+
+(rule
+ (with-stdout-to
+  client.gen.ml
+  (run ./print_client.exe)))
+
+(rule
+ (alias runtest)
+ (package spindle)
+ (action
+  (diff client.ml client.gen.ml)))
+
+(melange.emit
+ (target out)
+ (package spindle)
+ (modules client run)
+ (libraries melange.js)
+ (preprocess
+  (pps melange.ppx))
+ (module_systems es6))
+
+(test
+ (name test_client)
+ (package spindle)
+ (modules test_client)
+ (libraries spindle app eio eio_main eio.unix alcotest ptime mtime)
+ (deps
+  (alias melange)
+  out/test/melange/run.js))

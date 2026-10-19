@@ -591,6 +591,127 @@ let test_the_zod_schemas_say_the_same () =
           "answer: { status: 201, schema: ItemSchema },";
         ]
 
+(* The Melange client: a function per route a function can call, named by
+   its operation, and an error wherever two names in the module would be
+   one. How a shape is printed is wiretype's suite's, and calling the server
+   is test/melange's. *)
+
+let client_of routes = Spindle.Melange.client (Spindle.Test.app routes)
+
+let refused_naming ~sub = function
+  | Ok _ -> Alcotest.fail "printed where two names are one"
+  | Error e ->
+      Alcotest.(check bool) ("says " ^ sub) true (List.exists (contains ~sub) e)
+
+let test_the_melange_client_says_the_same () =
+  match Spindle.Melange.client described with
+  | Error e -> Alcotest.failf "no module: %s" (String.concat "; " e)
+  | Ok ml ->
+      List.iter
+        (fun sub -> Alcotest.(check bool) sub true (contains ~sub ml))
+        [
+          "and item = {";
+          "module Route = struct";
+          "(** Add an item *)";
+          "let post_orders_order_id_items ?origin ~order_id ?page ?weight \
+           ?limit ?since ?after ?x_request ~body () =";
+          "(Route.value [ 201 ] decode_item)";
+        ]
+
+type beats
+
+let test_a_stream_s_events_are_a_variant () =
+  let tick : (int, beats) Spindle.Event.kind =
+    Spindle.Event.json "tick" Wiretype.int
+  and line : (string, beats) Spindle.Event.kind = Spindle.Event.text "line" in
+  match
+    client_of
+      [
+        Spindle.get
+          Spindle.Path.(s "ticks")
+          (Spindle.Returns.events Spindle.Event.[ declare tick; declare line ])
+          (Spindle.Dep.return (Ok (fun _ -> Ok ())));
+      ]
+  with
+  | Error e -> Alcotest.failf "no module: %s" (String.concat "; " e)
+  | Ok ml ->
+      List.iter
+        (fun sub -> Alcotest.(check bool) sub true (contains ~sub ml))
+        [
+          "type get_ticks_event = Tick of get_ticks_tick_data | Line of string";
+          "let get_ticks ?origin ~on_event () =";
+          "Route.Stream.call";
+        ]
+
+(* A browser's WebSocket sends no header of the page's choosing. *)
+let test_a_socket_reading_a_header_has_no_function () =
+  let chat = Spindle.Websocket.(protocol ~client:text ~server:text ()) in
+  match
+    client_of
+      [
+        Spindle.get
+          Spindle.Path.(s "chat")
+          (Spindle.Returns.websocket chat)
+          (let+ _ = Spindle.Header.required "x-room" Spindle.Codec.string in
+           Ok (fun _ -> Ok ()));
+        Spindle.get
+          Spindle.Path.(s "open")
+          (Spindle.Returns.websocket chat)
+          (Spindle.Dep.return (Ok (fun _ -> Ok ())));
+      ]
+  with
+  | Error e -> Alcotest.failf "no module: %s" (String.concat "; " e)
+  | Ok ml ->
+      Alcotest.(check (pair bool bool))
+        "none for the one with a header, one for the other" (false, true)
+        (contains ~sub:"let get_chat " ml, contains ~sub:"let get_open " ml)
+
+let test_two_labels_of_one_name_are_refused () =
+  refused_naming ~sub:"GET /things takes two inputs labelled body"
+    (client_of
+       [
+         Spindle.get
+           Spindle.Path.(s "things")
+           (Spindle.Returns.json item_json)
+           (let+ _ = Spindle.Query.optional "body" Spindle.Codec.string
+            and+ i = Spindle.json item_json in
+            Ok i);
+       ])
+
+let test_an_operation_named_as_a_function_is_refused () =
+  let get_a =
+    Wiretype.Object.map ~kind:"get a" Fun.id
+    |> Wiretype.Object.mem "x" Wiretype.int ~enc:Fun.id
+    |> Wiretype.Object.finish
+  in
+  refused_naming ~sub:"the operation get_a_of_json, a name the module has"
+    (client_of
+       [
+         Spindle.get
+           Spindle.Path.(s "a" / s "of" / s "json")
+           (Spindle.Returns.json get_a)
+           (Spindle.Dep.return (Ok 1));
+       ])
+
+let test_a_component_named_as_a_route_s_is_refused () =
+  let answer =
+    Wiretype.Object.map ~kind:"get items answer" Fun.id
+    |> Wiretype.Object.mem "x" Wiretype.int ~enc:Fun.id
+    |> Wiretype.Object.finish
+  in
+  refused_naming ~sub:"two components are both get_items_answer"
+    (client_of
+       [
+         Spindle.get
+           Spindle.Path.(s "items")
+           (Spindle.Returns.json (Wiretype.list item_json))
+           (Spindle.Dep.return (Ok []));
+         Spindle.get
+           Spindle.Path.(s "other")
+           (Spindle.Returns.json answer)
+           (Spindle.Dep.return (Ok 1));
+       ])
+
 (* Every body that is refused for its type says 415 in the document: what
    the route answers and what it says it answers are one list. *)
 let test_a_body_refused_for_its_type_says_415 () =
@@ -995,6 +1116,21 @@ let () =
         [
           Alcotest.test_case "the zod schemas say the same" `Quick
             test_the_zod_schemas_say_the_same;
+        ] );
+      ( "the melange client",
+        [
+          Alcotest.test_case "it says the same" `Quick
+            test_the_melange_client_says_the_same;
+          Alcotest.test_case "a stream's events are a variant" `Quick
+            test_a_stream_s_events_are_a_variant;
+          Alcotest.test_case "a socket reading a header has no function" `Quick
+            test_a_socket_reading_a_header_has_no_function;
+          Alcotest.test_case "two labels of one name are refused" `Quick
+            test_two_labels_of_one_name_are_refused;
+          Alcotest.test_case "an operation named as a function is refused"
+            `Quick test_an_operation_named_as_a_function_is_refused;
+          Alcotest.test_case "a component named as a route's is refused" `Quick
+            test_a_component_named_as_a_route_s_is_refused;
         ] );
       ( "docs",
         [

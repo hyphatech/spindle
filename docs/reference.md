@@ -13,7 +13,7 @@ it as a module (`Spindle_http`).
 |---|---|---|
 | `spindle` | `spindle`, `spindle.http`, `spindle.client` | The framework; HTTP as both ends speak it; calling another server, which links no framework |
 | `spindle-postgres` | `spindle-postgres` | A server's Postgres: bounded connections, a pool, a transaction per borrow |
-| `spindle-cli` | `spindle-cli` | An application's command line: its API's document and Zod schemas |
+| `spindle-cli` | `spindle-cli` | An application's command line: its API's document, Zod schemas and Melange client |
 | [`wiretype`, `ppx_wiretype`](https://github.com/hyphatech/wiretype) | `wiretype`, `ppx_wiretype` | JSON as descriptions, and the deriver that writes one, released on their own; installed with `spindle` |
 | [`rowtype`, `rowtype-postgres`, `rowtype-migrate`](https://github.com/hyphatech/rowtype) | the same | A statement described once, its Postgres backend, and migrations, released on their own; `spindle-postgres` installs the first two, and `rowtype-migrate` is installed by itself (`opam install rowtype-migrate`) |
 | [`postgres-eio`](https://github.com/hyphatech/postgres-eio) | `postgres-eio` | The Postgres driver, released on its own |

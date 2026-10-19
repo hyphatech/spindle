@@ -109,6 +109,7 @@ module Files = Files
 module Openapi = Openapi
 module Health = Health
 module Zod = Zod
+module Melange = Melange
 
 let blocking f = Eio_unix.run_in_systhread (Log.carry f)
 let route = Route_repr.make

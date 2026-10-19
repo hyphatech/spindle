@@ -282,5 +282,5 @@ Two variants are closed, from 1.0: `Spindle_http.Status.t` and
 and one registered later stays `` `Code n `` or `` `Other s `` for every
 1.x release, so a match on either keeps its meaning across them. A
 refusal's sentence is wording; a refusal's code, a route's place in the
-document and what the OpenAPI and Zod printers write for a route are
-behaviour: changing any is breaking.
+document and what the OpenAPI, Zod and Melange printers write for a route
+are behaviour: changing any is breaking.

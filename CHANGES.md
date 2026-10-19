@@ -1,5 +1,23 @@
 # Changes
 
+## Unreleased
+
+- `Spindle.Melange.client` prints the routes as one OCaml module for
+  Melange, from the same walk as the OpenAPI document and the Zod schemas:
+  wiretype's types for every shape, and a function per route that calls it,
+  its inputs labelled and typed and its answer a promise of a `result` --
+  the route's answer, or `` `Invalid `` an input that breaks its
+  description with nothing sent, `` `Lost ``, `` `Refused `` with the
+  server's refusal, or `` `Unexpected ``. A stream of events is a function
+  handed each event as a variant, read over `fetch` and stopped with
+  `Route.Stream.close`; a WebSocket's is handed each message typed, and its
+  `Route.Socket.send` is typed, checked and held until the socket opens. A
+  socket reading a header, and a response of any kind, have no function.
+  `api melange` writes
+  it, and `api check --melange FILE` holds a committed copy to the routes.
+  Melange is a test dependency alone: a native user installs nothing new.
+- Breaking: wiretype 0.6 is required.
+
 ## 0.7.0 (2026-10-16)
 
 - Breaking: `Spindle.Zod.module_` is `Spindle.Zod.schemas`, a noun like

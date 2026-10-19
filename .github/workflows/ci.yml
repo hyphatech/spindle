@@ -21,6 +21,8 @@ jobs:
           opam-repositories: |
             hypha: https://github.com/hyphatech/opam-repository.git
             default: https://opam.ocaml.org
+      # The printed Melange client's suite runs on Bun.
+      - uses: oven-sh/setup-bun@v2
       - run: opam install . --deps-only --with-test --with-dev-setup -y
       # Use setup-ocaml's switch instead of the Makefile's.
       - run: make lint OPAM="opam exec --"
@@ -42,6 +44,8 @@ jobs:
           opam-repositories: |
             hypha: https://github.com/hyphatech/opam-repository.git
             default: https://opam.ocaml.org
+      # The printed Melange client's suite runs on Bun.
+      - uses: oven-sh/setup-bun@v2
       - run: opam install . --deps-only --with-test -y
       - run: opam list --installed --columns=name,version
       - run: opam exec -- dune build -p spindle,spindle-postgres,spindle-cli @install

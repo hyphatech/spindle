@@ -2,7 +2,8 @@
 
 Your front end's types come from the same routes as the server: a
 TypeScript module of [Zod](https://zod.dev) schemas for every body, answer
-and error. Change a type in OCaml, generate again, and the front end's
+and error, or, for a front end written in OCaml, a
+[Melange](https://melange.re) module with a function per route. Change a type in OCaml, generate again, and the front end's
 compiler shows you every place that must change with it.
 
 ## Setting up the command line
@@ -49,7 +50,8 @@ command line never asks for.
 |---|---|
 | `notes api openapi [-o FILE]` | Writes the OpenAPI 3.2 document, to stdout without `-o` |
 | `notes api zod [-o FILE]` | Writes the Zod schemas, to stdout without `-o` |
-| `notes api check --openapi FILE --zod FILE [--strict]` | Exits 1 when either file is not what the routes make now |
+| `notes api melange [-o FILE]` | Writes the OCaml client for Melange, to stdout without `-o` |
+| `notes api check --openapi FILE --zod FILE [--melange FILE] [--strict]` | Exits 1 when any file is not what the routes make now |
 
 Every command has `--help`.
 
@@ -140,10 +142,77 @@ if (res.ok) {
 `routes["GET /notes/{note_id}"].answer.schema` is the same `NoteSchema`, for
 code that works from the table rather than by name.
 
+## An OCaml front end
+
+A front end compiled by Melange calls the routes through a module printed
+from them, as the Zod one is:
+
+```sh
+./_build/default/bin/notes.exe api melange -o web/src/api.ml
+```
+
+Each shape is an OCaml type with the functions that read and write it,
+and each route a function named by its operation, its inputs labelled and
+typed, answering a promise of a `result`:
+
+```ocaml title="web/src/api.ml"
+let get_notes_note_id ?origin ~note_id () = ...
+(* (note, Route.error) result Js.Promise.t *)
+```
+
+```ocaml
+Api.get_notes_note_id ~note_id:1. ()
+|> Js.Promise.then_ (fun result ->
+       (match result with
+       | Ok (note : Api.note) -> Js.log note.text
+       | Error (`Refused (r : Api.refusal)) -> Js.log r.message
+       | Error e -> Js.log (Api.Route.error_to_string e));
+       Js.Promise.resolve ())
+```
+
+A path parameter is labelled, a query parameter or a header optional where
+the route does not need it, and a body is `~body`; a form's file is a
+`Js.File.t`. What a call can come to is `Route.error`: `` `Invalid `` an
+input that breaks its description, every problem listed and nothing sent;
+`` `Lost `` no answer; `` `Refused `` the server's refusal; and
+`` `Unexpected `` an answer the route does not say it gives. An integer with
+no bounds within 32 bits is a `float`, which holds every whole number a
+browser can. `origin` goes before every path, none unless given, so a page
+calls its own origin.
+
+A stream of events and a WebSocket each have a function too, handed what
+arrives and answering at once a value to stop it with:
+
+```ocaml
+let stream =
+  Api.get_ticks ~count:3.
+    ~on_event:(function
+      | Api.Tick n -> Js.log n
+      | Api.Line text -> Js.log text)
+    ()
+
+(* Api.Route.Stream.close stream, when the page no longer needs it; and
+   Api.Route.Stream.ended stream, a (unit, Route.error) result promise *)
+
+let socket =
+  Api.get_chat_room ~room:"r" ~on_message:(fun (m : Api.said) -> Js.log m.text) ()
+
+let sent = Api.Route.Socket.send socket { text = "hi" }
+```
+
+A stream is read over `fetch`, so it sends headers and reads a refusal as
+any route does, and nothing reconnects it: one that ends is called again by
+whoever wants more. A socket's `send` is typed by what the route reads,
+checked before it goes and held until the socket opens. A socket that reads
+a header has no function, since a browser's WebSocket sends none of the
+page's choosing, nor has a route that answers a response of any kind or
+reads a body a part at a time; a cookie is the browser's to send. The module needs no library: it is Melange over the
+browser's `fetch`.
+
 ## Checking them in CI
 
 Commit the schemas and the OpenAPI document, and run `api check` in CI: it
-exits 1 when either is not what the routes make now, so a front end is never
+exits 1 when any is not what the routes make now, so a front end is never
 typed against an API that changed under it. A Makefile keeps the paths in one place:
 
 ```make title="Makefile"
@@ -175,16 +244,20 @@ check-wire: ## fail when either is not what the routes make
 The command line calls one function you can call yourself:
 
 ```ocaml
-Spindle.Zod.schemas app   (* TypeScript: zod/mini *)
+Spindle.Zod.schemas app      (* TypeScript: zod/mini *)
+Spindle.Melange.client app   (* OCaml for Melange *)
 ```
 
-It answers a `result`; its `Error` names two different types described
+Each answers a `result`; its `Error` names two different types described
 under one name, two routes whose paths make one `operationId`
 (`/a-b` and `/a_b`), two whose paths differ only in a parameter's
 name (`/items/{id}` and `/items/{item}`), and routes told apart by a
 parameter's type that answer in different ways or read different bodies.
-Routes told apart by a parameter's type are one entry, whose body and
-answer are either route's.
+The Melange client's also names where two names in the module would be
+one: two components one name in OCaml, an operation named as a
+component's function, or a route with two inputs under one label. Routes
+told apart by a parameter's type are one entry, whose body and answer are
+either route's.
 
 That is the tutorial. The [guides](../guide/pages.md) take each of the
 rest a page at a time.

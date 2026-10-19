@@ -57,12 +57,12 @@ type t = {
 }
 
 let of_shape = function
-  | Codec.String -> S.String S.text
-  | Codec.Format f -> S.String { S.text with format = Some f }
-  | Codec.Integer -> S.Integer S.no_bounds
-  | Codec.Number -> S.Number S.no_bounds
+  | Codec.String -> S.String S.Text.any
+  | Codec.Format f -> S.String { S.Text.any with format = Some f }
+  | Codec.Integer -> S.Integer S.Number.any
+  | Codec.Number -> S.Number S.Number.any
   | Codec.Boolean -> S.Boolean
-  | Codec.Enum words -> S.String { S.text with words = Some words }
+  | Codec.Enum words -> S.String { S.Text.any with words = Some words }
 
 let operation_id (i : Route.info) =
   let word =
@@ -152,6 +152,7 @@ let form_schema (i : Route.info) =
                 Some
                   {
                     S.name = f.name;
+                    field = None;
                     schema =
                       (if f.many then
                          S.Array

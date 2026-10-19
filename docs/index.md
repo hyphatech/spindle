@@ -69,8 +69,8 @@ opam install spindle
 
     ---
 
-    Your OCaml types become your front end's schemas, Zod included, in
-    one command. Change a type and both ends change with it.
+    Your OCaml types become your front end's schemas, Zod or an OCaml
+    client for Melange, in one command. Change a type and both ends change with it.
 
     [:octicons-arrow-right-24: Client schemas](tutorial/client-schemas.md)
 

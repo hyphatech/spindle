@@ -89,6 +89,40 @@ let test_check_fails_on_a_stale_file () =
         "naming the file" true
         (contains ~sub:(zod ^ " is not what the routes make") r.err))
 
+let test_the_melange_client_is_printed_and_checked () =
+  let printed = run [ "api"; "melange" ] in
+  check_status "printed" 0 printed.status;
+  Alcotest.(check bool)
+    "a function per route" true
+    (contains ~sub:"let get_hello ?origin ()" printed.out);
+  let melange = Filename.temp_file "client" ".ml" in
+  Fun.protect
+    ~finally:(fun () -> Sys.remove melange)
+    (fun () ->
+      check_status "written" 0 (run [ "api"; "melange"; "-o"; melange ]).status;
+      with_files (fun ~openapi ~zod ->
+          let check () =
+            run
+              [
+                "api";
+                "check";
+                "--openapi";
+                openapi;
+                "--zod";
+                zod;
+                "--melange";
+                melange;
+              ]
+          in
+          check_status "checked" 0 (check ()).status;
+          Out_channel.with_open_bin melange (fun oc ->
+              Out_channel.output_string oc "stale");
+          let r = check () in
+          check_status "and refused when stale" 1 r.status;
+          Alcotest.(check bool)
+            "naming it" true
+            (contains ~sub:(melange ^ " is not what the routes make") r.err)))
+
 let test_check_fails_on_a_stale_document () =
   with_files (fun ~openapi ~zod ->
       Out_channel.with_open_bin openapi (fun oc ->
@@ -177,6 +211,8 @@ let () =
             test_check_fails_on_a_stale_file;
           Alcotest.test_case "check fails on a stale document" `Quick
             test_check_fails_on_a_stale_document;
+          Alcotest.test_case "the melange client is printed and checked" `Quick
+            test_the_melange_client_is_printed_and_checked;
           Alcotest.test_case "check reports both stale files" `Quick
             test_check_reports_both_stale_files;
           Alcotest.test_case "check fails on a missing file" `Quick

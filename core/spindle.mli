@@ -91,6 +91,7 @@ module Files = Files
 module Openapi = Openapi
 module Health = Health
 module Zod = Zod
+module Melange = Melange
 
 (** {1 Serving} *)
 

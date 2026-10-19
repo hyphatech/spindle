@@ -285,9 +285,12 @@ let request_body (r : D.route) =
                   o.props
                   @ List.map
                       (fun (f : Dep.file) ->
-                        let one = Wiretype.Schema.String Wiretype.Schema.text in
+                        let one =
+                          Wiretype.Schema.String Wiretype.Schema.Text.any
+                        in
                         {
                           Wiretype.Schema.name = f.name;
+                          field = None;
                           schema =
                             (if f.many then
                                Wiretype.Schema.Array

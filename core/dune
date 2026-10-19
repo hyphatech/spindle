@@ -32,7 +32,8 @@
   cors_repr
   gzip
   compress_repr
-  file_types)
+  file_types
+  melange_route)
  (libraries
   spindle_http
   eio
@@ -76,3 +77,17 @@
     (echo "let js = {scalar|")
     (cat %{deps})
     (echo "|scalar}\n")))))
+
+; What every printed Melange client calls through, kept as the OCaml it is in
+; melange/ and carried here as text, after the module wiretype prints.
+
+(rule
+ (target melange_route.ml)
+ (deps melange/route.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "let text = {route|")
+    (cat melange/route.ml)
+    (echo "|route}\n")))))

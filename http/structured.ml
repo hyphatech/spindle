@@ -176,7 +176,7 @@ let parameters =
          (k, v))
     >>| last_value_wins)
 
-let item_ = A.both bare parameters
+let item_parser = A.both bare parameters
 
 (* §4.2.1.2: items apart by spaces, and nothing else between them. *)
 let inner =
@@ -185,7 +185,7 @@ let inner =
     *> fix (fun items ->
         sp
         *> (char ')' *> return []
-           <|> let* i = item_ in
+           <|> let* i = item_parser in
                peek_char_fail >>= function
                | ' ' | ')' -> items >>| fun rest -> i :: rest
                | _ -> fail "an inner list"))
@@ -194,7 +194,9 @@ let inner =
 
 let member =
   A.(
-    peek_char_fail >>= function '(' -> inner | _ -> item_ >>| fun i -> Item i)
+    peek_char_fail >>= function
+    | '(' -> inner
+    | _ -> item_parser >>| fun i -> Item i)
 
 (* §4.2.1 and §4.2.2: members apart by a comma, whitespace around it, and no
    comma after the last. *)
@@ -220,7 +222,7 @@ let parse ~what p s =
   | Ok v -> Ok v
   | Error _ -> Error ("not " ^ what)
 
-let item = parse ~what:"a structured item" item_
+let item = parse ~what:"a structured item" item_parser
 let list = parse ~what:"a structured list" (members member)
 
 let dictionary =

@@ -23,7 +23,7 @@ let list_todos () =
 let get_todo id = Ok { id; title = "Learn OCaml" }
 let add_todo (draft : draft) = Ok { id = 3; title = draft.title }
 let replace_todo id (draft : draft) = Ok { id; title = draft.title }
-let delete_todo _id = Ok ()
+let delete_todo _ = Ok ()
 
 (* A parameter is made once, so every route whose path has it reads it the
    same way. *)

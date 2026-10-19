@@ -353,7 +353,7 @@ let test_middleware_runs_in_the_order_listed () =
 let test_middleware_may_answer_alone () =
   let ran = ref false in
   let shut = code "closed" `Service_unavailable in
-  let closed _handler _req =
+  let closed _ _ =
     Spindle.Response.refusal
       (Spindle.Refusal.make shut "We are closed for a moment.")
   in
@@ -375,7 +375,7 @@ let test_middleware_may_answer_alone () =
 
 (* A middleware's bug is one request's 500, as a handler's is. *)
 let test_a_middleware_that_raises_is_500 () =
-  let broken _handler _req = raise (Boom "the key is hunter2") in
+  let broken _ _ = raise (Boom "the key is hunter2") in
   let r =
     Spindle.Test.call
       (Spindle.Test.app ~middleware:[ broken ] [ hello ])
@@ -2798,7 +2798,7 @@ let test_the_wire_is_not_raised_by_the_everything_level () =
 (* A blocking call runs on a systhread, where a fiber's binding cannot be
    read. [carry] is what takes the request's id there. *)
 let test_the_request_id_crosses_to_a_thread () =
-  Eio_main.run @@ fun _env ->
+  Eio_main.run @@ fun _ ->
   let seen_bare = ref (Some "unset") and seen_carried = ref None in
   let trace = ref None and carried_trace = ref None in
   Spindle.Log.with_request_id "r-1" (fun () ->
@@ -2828,7 +2828,7 @@ let sent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 let sent_trace = "4bf92f3577b34da6a3ce929d0e0e4736"
 
 let test_a_request_joins_the_trace_it_was_sent () =
-  Eio_main.run @@ fun _env ->
+  Eio_main.run @@ fun _ ->
   let hex n s =
     String.length s = n
     && String.for_all
@@ -2924,7 +2924,7 @@ let test_a_line_carries_the_trace () =
   Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
     ~out:(fun l -> lines := l :: !lines)
     ();
-  Eio_main.run @@ fun _env ->
+  Eio_main.run @@ fun _ ->
   Spindle.Log.with_request_id ~traceparent:sent "r-1" (fun () ->
       Logs.info (fun m -> m "for the request"));
   match !lines with
@@ -4855,7 +4855,7 @@ let test_a_middleware_answer_is_in_the_access_log domains () =
   Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
     ~out:(fun l -> lines := l :: !lines)
     ();
-  let closed _handler _req =
+  let closed _ _ =
     Spindle.Response.refusal
       (Spindle.Refusal.make
          (code "closed" `Service_unavailable)
@@ -4980,7 +4980,7 @@ let test_a_background_raise_is_logged_not_raised () =
   Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
     ~out:(fun l -> lines := l :: !lines)
     ();
-  Eio_main.run @@ fun _env ->
+  Eio_main.run @@ fun _ ->
   Eio.Switch.run (fun sw ->
       let background = Spindle.Background.create ~sw in
       Spindle.Background.fork background ~what:"a job that fails" (fun () ->
@@ -5004,7 +5004,7 @@ let test_a_background_raise_is_logged_not_raised () =
 
 (* The first SIGTERM resolves the promise a server stops on. *)
 let test_a_signal_stops_the_server () =
-  Eio_main.run @@ fun _env ->
+  Eio_main.run @@ fun _ ->
   Eio.Switch.run @@ fun sw ->
   let stop = Spindle.Server.stop_on_signals ~sw () in
   Unix.kill (Unix.getpid ()) Sys.sigterm;
@@ -5456,7 +5456,7 @@ let test_localhost_held_on_one_loopback_is_refused () =
   | exception (Eio.Io _ | Unix.Unix_error _) ->
       (* No IPv6 here, so nobody can hold [::1]. *)
       Alcotest.skip ()
-  | _held -> (
+  | _ -> (
       match
         Spindle.Server.run ~sw ~net
           ~domain_mgr:(Eio.Stdenv.domain_mgr env)
@@ -5482,7 +5482,7 @@ let test_run_checks_its_limits_before_it_binds () =
   Eio.Switch.run @@ fun sw ->
   let net = Eio.Stdenv.net env in
   let port = free_port ~net in
-  let _held =
+  let _ =
     Eio.Net.listen net ~sw ~backlog:1 ~reuse_addr:true
       (`Tcp (Eio.Net.Ipaddr.V4.loopback, port))
   in
@@ -6160,7 +6160,7 @@ let test_work_runs_where_it_was_caused () =
    an Eio effect there -- a mistake the type cannot catch -- is a raise and
    never a hang. *)
 let test_blocking_carries_the_request_and_refuses_an_effect () =
-  Eio_main.run @@ fun _env ->
+  Eio_main.run @@ fun _ ->
   Alcotest.(check (option string))
     "the request's id, on the thread" (Some "r1")
     (Spindle.Log.with_request_id "r1" (fun () ->
@@ -8110,7 +8110,7 @@ let test_a_codes_status_is_a_failure () =
    ran: this one answers before any does. *)
 let test_a_middlewares_codes_are_declared () =
   let closed = code "closed" `Service_unavailable in
-  let shut _handler _req =
+  let shut _ _ =
     Spindle.Response.refusal (Spindle.Refusal.make closed "Back in a minute.")
   in
   let hello =
@@ -8637,7 +8637,7 @@ let probes checks = Spindle.Test.app (Spindle.Health.routes checks)
 (* Liveness asks nothing of what the server depends on: a failed probe is a
    restart, and a restart mends no database. *)
 let test_liveness_runs_no_check () =
-  Eio_main.run @@ fun _env ->
+  Eio_main.run @@ fun _ ->
   let asked = ref 0 in
   let down =
     Spindle.Health.check "db" (fun () ->
@@ -8650,7 +8650,7 @@ let test_liveness_runs_no_check () =
   check_int "and asked nothing" 0 !asked
 
 let test_ready_when_every_check_passes () =
-  Eio_main.run @@ fun _env ->
+  Eio_main.run @@ fun _ ->
   let up name = Spindle.Health.check name (fun () -> Ok ()) in
   let r = Spindle.Test.call (probes [ up "db"; up "cache" ]) `GET "/readyz" in
   check_status "ready" 200 r.status;
@@ -8659,7 +8659,7 @@ let test_ready_when_every_check_passes () =
 (* The refusal names the checks that failed, and why is for the log -- as
    degraded, never as our bug. *)
 let test_not_ready_names_what_failed () =
-  Eio_main.run @@ fun _env ->
+  Eio_main.run @@ fun _ ->
   let r = ref None in
   let lines =
     captured (fun () ->
@@ -8747,7 +8747,7 @@ let test_a_depth_below_one_is_refused () =
    once it is [depth] behind, is told so with a [None] after what it was
    queued, and is no longer among the subscribers. *)
 let test_a_slow_subscriber_is_dropped () =
-  Eio_main.run @@ fun _env ->
+  Eio_main.run @@ fun _ ->
   let b = Spindle.Broadcast.create ~depth:2 () in
   let quick = Spindle.Broadcast.subscribe b ~topic:"t" "quick" in
   let slow = Spindle.Broadcast.subscribe b ~topic:"t" "slow" in

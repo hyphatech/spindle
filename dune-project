@@ -1,6 +1,8 @@
 (lang dune 3.18)
 (name spindle)
 
+(using melange 0.1)
+
 (implicit_transitive_deps false)
 
 ; Generated opam files: each package's dependencies are stated here and
@@ -37,7 +39,7 @@
   (ocaml
    (>= 5.5))
   (wiretype
-   (and (>= 0.5.0) (< 0.6.0)))
+   (and (>= 0.6.0) (< 0.7.0)))
   ; A UUID is Uuidm's, in a path or a query as in a body and a row.
   (uuidm
    (>= 0.9.10))
@@ -45,7 +47,7 @@
   ; the framework so one package is the whole of starting; no library here
   ; links it.
   (ppx_wiretype
-   (and (>= 0.5.0) (< 0.6.0)))
+   (and (>= 0.6.0) (< 0.7.0)))
   (eio
    (>= 1.6))
   (eio_main
@@ -94,6 +96,11 @@
    (and
     :with-test
     (>= 1.9.1)))
+  ; The printed client's suite compiles it, as a browser's build would.
+  (melange
+   (and
+    :with-test
+    (>= 7.0.1-55)))
   (odoc
    (and
     :with-dev-setup
@@ -181,8 +188,8 @@
   (wiretype
    (and
     :with-test
-    (>= 0.5.0)
-    (< 0.6.0)))
+    (>= 0.6.0)
+    (< 0.7.0)))
   (uri
    (and
     :with-test

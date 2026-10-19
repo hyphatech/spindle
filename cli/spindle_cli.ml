@@ -11,6 +11,15 @@ let generated ~title = function
                 and generate it again."
                title)
           a
+  | `Melange ->
+      fun a ->
+        Spindle.Melange.client
+          ~header:
+            (Printf.sprintf
+               "Generated from %s's routes. Do not edit: change the routes, \
+                and generate it again."
+               title)
+          a
 
 let write_or_print output text =
   match output with
@@ -33,7 +42,7 @@ let generate app ~title ~output what =
   write_or_print output text
 
 (* Loose descriptions are always reported, and fail only with [strict]. *)
-let check app ~title ~openapi ~zod ~strict =
+let check app ~title ~openapi ~zod ~melange ~strict =
   let* a = app in
   let matches_committed what path =
     let* text =
@@ -57,7 +66,8 @@ let check app ~title ~openapi ~zod ~strict =
           ~ok:(fun () -> None)
           ~error:Option.some
           (matches_committed what path))
-      [ (`Openapi, openapi); (`Zod, zod) ]
+      ([ (`Openapi, openapi); (`Zod, zod) ]
+      @ Option.fold ~none:[] ~some:(fun path -> [ (`Melange, path) ]) melange)
   in
   match (stale, strict, loose) with
   | _ :: _, _, _ -> Error (String.concat "\n" stale)
@@ -117,8 +127,13 @@ let run ~name ?(title = name) ~app () =
   let check =
     let+ openapi = file "openapi" ~doc:"The committed document."
     and+ zod = file "zod" ~doc:"The committed module."
+    and+ melange =
+      Arg.value
+      @@ Arg.opt (Arg.some Arg.string) None
+      @@ Arg.info [ "melange" ] ~docv:"FILE"
+           ~doc:"The committed Melange client, where the application keeps one."
     and+ strict = strict in
-    exit_code (check app ~title ~openapi ~zod ~strict)
+    exit_code (check app ~title ~openapi ~zod ~melange ~strict)
   in
   let api =
     Cmd.group
@@ -132,9 +147,15 @@ let run ~name ?(title = name) ~app () =
              ~doc:"Write the TypeScript module of Zod schemas.")
           (write `Zod);
         Cmd.v
+          (Cmd.info "melange" ~exits
+             ~doc:
+               "Write the OCaml module for Melange: the shapes as types, and a \
+                function per route.")
+          (write `Melange);
+        Cmd.v
           (Cmd.info "check" ~exits
              ~doc:
-               "Write nothing; fail if either committed file is not what the \
+               "Write nothing; fail if any committed file is not what the \
                 routes make, and report every place described loosely.")
           check;
       ]
