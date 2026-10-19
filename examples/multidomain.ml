@@ -31,24 +31,22 @@ let visit page =
   n
 
 let page_name = Spindle.Path.str "page"
+let path = Spindle.Path.(s "pages" / page_name)
 
-let routes ~locked =
-  [
-    Spindle.get
-      Spindle.Path.(s "pages" / page_name)
-      Spindle.Returns.text
-      (let+ page = Spindle.param page_name in
-       let n =
-         if locked then
-           Eio.Mutex.use_rw ~protect:false lock (fun () -> visit page)
-         else visit page
-       in
-       Ok (Printf.sprintf "%s: visit number %d\n" page n));
-  ]
+let locked =
+  Spindle.get path Spindle.Returns.text
+    (let+ page = Spindle.param page_name in
+     let n = Eio.Mutex.use_rw ~protect:false lock (fun () -> visit page) in
+     Ok (Printf.sprintf "%s: visit number %d\n" page n))
+
+let unlocked =
+  Spindle.get path Spindle.Returns.text
+    (let+ page = Spindle.param page_name in
+     Ok (Printf.sprintf "%s: visit number %d\n" page (visit page)))
 
 let () =
   Spindle.Log.setup ();
   let one_domain = Array.exists (String.equal "--one-domain") Sys.argv in
   Eio_main.run @@ fun env ->
-  if one_domain then Spindle.serve env ~domains:1 (routes ~locked:false)
-  else Spindle.serve env (routes ~locked:true)
+  if one_domain then Spindle.serve env ~domains:1 [ unlocked ]
+  else Spindle.serve env [ locked ]

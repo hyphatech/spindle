@@ -31,7 +31,8 @@ data: 42
 ```
 
 - **The producer** is the function the route answers with, `fun send ->
-  ...` (here `count_from ~mono_clock n`). It runs after the response's head
+  ...` (here `count_from ~mono_clock n`, waiting on the clock the route
+  reads as a [resource](../tutorial/dependencies.md#resources)). It runs after the response's head
   is sent, and the stream ends when it returns.
 - **Declare each kind of event**: `Event.json "count" Wiretype.int`, or
   `Event.text "token"` for plain text. `type counting` is declared and never

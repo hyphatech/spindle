@@ -74,7 +74,11 @@ Here, three events of the [count stream](sse.md):
 ```ocaml
 let test_count () =
   Eio_main.run @@ fun env ->
-  let app = Spindle.Test.app (routes ~mono_clock:(Eio.Stdenv.mono_clock env)) in
+  let app =
+    Spindle.Test.app
+      ~resources:[ Spindle.Dep.resource clock (Eio.Stdenv.mono_clock env) ]
+      routes
+  in
   let seen = ref [] in
   match
     Spindle.Test.events app "/count" (fun e ->

@@ -4,22 +4,29 @@
     {!Path}, what it {!Returns} and a handler -- and a handler asks for
     everything it needs as {!Dep}endencies, a path parameter as much as the
     body, composed with [let+] and [and+], and returns the value its model names
-    or a {!Refusal}:
+    or a {!Refusal}. What the application holds -- here an engine -- is a
+    {!Dep.of_resource}, handed to the server where it starts, so the routes are
+    a value:
 
     {[
     open Spindle.Syntax
 
-    let routes ~engine =
+    let engine : Engine.t Spindle.Dep.t = Spindle.Dep.of_resource "engine"
+
+    let routes =
       [
         Spindle.post
           Spindle.Path.(s "v1" / s "analyze")
           (Spindle.Returns.json answer_json)
-          (let+ query = Spindle.json query_json in
+          (let+ engine = engine and+ query = Spindle.json query_json in
            analyze engine query);
       ]
 
     let () =
-      Eio_main.run @@ fun env -> Spindle.serve env ~port:8112 (routes ~engine)
+      Eio_main.run @@ fun env ->
+      Spindle.serve env ~port:8112
+        ~resources:[ Spindle.Dep.resource engine (Engine.load ()) ]
+        routes
     ]} *)
 
 module Status = Spindle_http.Status

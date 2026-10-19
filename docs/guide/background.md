@@ -5,25 +5,41 @@ something later. `Spindle.Background` runs work now, on its own fiber;
 `Spindle.Alarm` runs it after a delay.
 
 ```ocaml
-Eio_main.run @@ fun env ->
-Eio.Switch.run @@ fun sw ->
-let background = Spindle.Background.create ~sw in
-let alarms =
-  Spindle.Alarm.create ~background ~mono_clock:(Eio.Stdenv.mono_clock env) ()
-in
+let background : Spindle.Background.t Spindle.Dep.t =
+  Spindle.Dep.of_resource "background"
+
+let alarms : Spindle.Alarm.t Spindle.Dep.t = Spindle.Dep.of_resource "alarms"
+
 let sign_up =
   Spindle.post
     Spindle.Path.(s "sign-up")
     (Spindle.Returns.empty ~status:`Created ())
-    (let+ email = Spindle.body in
+    (let+ background = background
+     and+ alarms = alarms
+     and+ email = Spindle.body in
      Spindle.Background.fork background ~what:"welcome email" (fun () ->
          send_welcome_email email);
      Spindle.Alarm.set alarms ~key:("reminder:" ^ email) ~after:Mtime.Span.day
        ~what:"reminder" (fun () -> send_reminder email);
      Ok ())
-in
-...
+
+let () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let jobs = Spindle.Background.create ~sw in
+  let later =
+    Spindle.Alarm.create ~background:jobs
+      ~mono_clock:(Eio.Stdenv.mono_clock env) ()
+  in
+  Spindle.serve env
+    ~resources:
+      [ Spindle.Dep.resource background jobs; Spindle.Dep.resource alarms later ]
+    [ sign_up ]
 ```
+
+Both are made where the program starts and handed to the server as
+[resources](../tutorial/dependencies.md#resources), so the route reads them
+like any other input.
 
 ## Running a job now
 

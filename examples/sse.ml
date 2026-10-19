@@ -27,16 +27,24 @@ let count_from ~mono_clock n send =
   in
   go n
 
-let routes ~mono_clock =
+(* The clock the count waits on is the program's, handed to the server where
+   it starts, so the routes are a value and a test gives a clock of its own. *)
+let clock : Eio.Time.Mono.ty Eio.Resource.t Spindle.Dep.t =
+  Spindle.Dep.of_resource "clock"
+
+let routes =
   [
     Spindle.get
       Spindle.Path.(s "count")
       (Spindle.Returns.events Spindle.Event.[ declare count ])
-      (let+ last = Spindle.Header.optional "last-event-id" Spindle.Codec.int in
+      (let+ mono_clock = clock
+       and+ last = Spindle.Header.optional "last-event-id" Spindle.Codec.int in
        Ok (count_from ~mono_clock (Option.fold ~none:1 ~some:succ last)));
   ]
 
 let () =
   Spindle.Log.setup ();
   Eio_main.run @@ fun env ->
-  Spindle.serve env (routes ~mono_clock:(Eio.Stdenv.mono_clock env))
+  Spindle.serve env
+    ~resources:[ Spindle.Dep.resource clock (Eio.Stdenv.mono_clock env) ]
+    routes

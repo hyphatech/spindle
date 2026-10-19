@@ -4,7 +4,9 @@
     own:
 
     {[
+    Spindle_postgres.Pool.run env database @@ fun pool ->
     Spindle.serve env
+      ~resources:[ Spindle.Dep.resource db pool ]
       (routes @ Spindle.Health.routes [ Spindle_postgres.Pool.check pool ])
     ]}
 
