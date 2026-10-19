@@ -26,8 +26,9 @@
 - Breaking: `Session.create ~store` takes a `Session.store Dep.t`, so the
   store is read as a route reads anything the application holds:
   `Spindle.Dep.return (Spindle.Session.memory ())`, or
-  `let+ pool = db in Spindle_postgres.Session.store pool ~table` for the
-  database, and a session and the routes that read it are values made
+  `Spindle_postgres.Session.store db ~table` for the database, which
+  checks the table's name and writes its statements once, where the store
+  is made, and a session and the routes that read it are values made
   before the pool.
 - Breaking: ended sessions are swept by the sessions themselves, and
   `Session.sweep` is gone. The first request to read a session ten minutes

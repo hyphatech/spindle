@@ -130,16 +130,14 @@ Each answers a `result`: a store that fails is `Error`, and
   more than a batch. Several servers on one database share the work.
 - **Where it is kept** is `~store`, a dependency like any other.
   `Session.memory ()` lives in one process and ends with it.
-  `Spindle_postgres.Session.store pool ~table` keeps sessions in your
+  `Spindle_postgres.Session.store db ~table` keeps sessions in your
   database, read through the pool's
   [resource](../tutorial/dependencies.md#resources):
 
     ```ocaml
     let session =
       Spindle.Session.create
-        ~store:
-          (let+ pool = db in
-           Spindle_postgres.Session.store pool ~table:"sessions")
+        ~store:(Spindle_postgres.Session.store db ~table:"sessions")
         ~idle:Mtime.Span.(14 * day)
         ~absolute:Mtime.Span.(90 * day)
         visit_json

@@ -6,9 +6,7 @@
        Spindle_postgres.Session.schema ~table:"sessions" *)
     let session =
       Spindle.Session.create
-        ~store:
-          (let+ pool = db in
-           Spindle_postgres.Session.store pool ~table:"sessions")
+        ~store:(Spindle_postgres.Session.store db ~table:"sessions")
         ~idle:Mtime.Span.(14 * day)
         ~absolute:Mtime.Span.(90 * day)
         visit_json
@@ -21,10 +19,10 @@
     gives it back: a session is data about a visit, not a row a handler's
     transaction must agree with, and a store is a record of functions over a
     digest, which has no connection to be handed. [table] is a constant written
-    in source, and one that is no lowercase identifier raises
-    [Invalid_argument], since it is written into each statement. It is written
-    there quoted, so a word SQL reserves -- [user], [order] -- is a table's name
-    like any other. *)
+    in source, and one that is no lowercase identifier raises [Invalid_argument]
+    where the store is made, since it is written into each statement. It is
+    written there quoted, so a word SQL reserves -- [user], [order] -- is a
+    table's name like any other. *)
 
 val schema : table:string -> string
 (** The SQL that makes the table and its index, each commented. *)
@@ -32,7 +30,9 @@ val schema : table:string -> string
 val statements : table:string -> Rowtype.any list
 (** Every statement the store runs. *)
 
-val store : Pool.t -> table:string -> Spindle.Session.store
-(** The store over [table], each call on a connection borrowed from [pool]; an
-    [Error] is the database's failure in words, the statement's values left out.
-*)
+val store :
+  Pool.t Spindle.Dep.t -> table:string -> Spindle.Session.store Spindle.Dep.t
+(** The store over [table], each call on a connection borrowed from the pool
+    [db] reads -- the resource every route reads it through -- for a session's
+    [~store]. Its statements are written once, here. An [Error] is the
+    database's failure in words, the statement's values left out. *)

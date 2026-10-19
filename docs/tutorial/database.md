@@ -179,10 +179,10 @@ does.
 named statements.
 
 **[Sessions](../guide/cookies.md#sessions) in the database** are
-`Spindle_postgres.Session.store pool ~table`, over a table you create in a
+`Spindle_postgres.Session.store db ~table`, over a table you create in a
 migration from `Session.schema ~table`, read through `db` as every route
 reads the pool:
-`Spindle.Session.create ~store:(let+ pool = db in Spindle_postgres.Session.store pool ~table:"sessions") ...`. Migrations are
+`Spindle.Session.create ~store:(Spindle_postgres.Session.store db ~table:"sessions") ...`. Migrations are
 [`rowtype-migrate`](https://github.com/hyphatech/rowtype)'s, run before the
 server starts.
 

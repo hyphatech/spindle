@@ -96,21 +96,26 @@ let statements ~table =
 
 let error_to_string e = Rowtype_postgres.error_to_string e
 
-let store pool ~table =
+(* The table is checked, and its statements written, once where the store
+   is made: a request is handed the store over the pool it reads. *)
+let store db ~table =
   let s = statements_for ~table in
-  let run statement params =
-    Result.map_error error_to_string (Pool.exec pool statement params)
-  in
-  {
-    Spindle.Session.find =
-      (fun digest ->
-        Result.map
-          (Option.map (fun (data, created, seen, expires) ->
-               { Spindle.Session.data; created; seen; expires }))
-          (run s.find digest));
-    save =
-      (fun digest (e : Spindle.Session.entry) ->
-        run s.save (digest, e.data, e.created, e.seen, e.expires));
-    delete = (fun digest -> run s.delete digest);
-    sweep = (fun ~now ~limit -> run s.sweep (now, limit));
-  }
+  Spindle.Dep.map
+    (fun pool ->
+      let run statement params =
+        Result.map_error error_to_string (Pool.exec pool statement params)
+      in
+      {
+        Spindle.Session.find =
+          (fun digest ->
+            Result.map
+              (Option.map (fun (data, created, seen, expires) ->
+                   { Spindle.Session.data; created; seen; expires }))
+              (run s.find digest));
+        save =
+          (fun digest (e : Spindle.Session.entry) ->
+            run s.save (digest, e.data, e.created, e.seen, e.expires));
+        delete = (fun digest -> run s.delete digest);
+        sweep = (fun ~now ~limit -> run s.sweep (now, limit));
+      })
+    db

@@ -393,6 +393,24 @@ let test_a_connection_that_keeps_no_statements_reads_text () =
 let db : Spindle_postgres.Pool.t Spindle.Dep.t =
   Spindle.Dep.of_resource "database"
 
+(* The store over [table] as a route reads it, through the pool's resource:
+   kept from one request, its calls run on [pool] after it as during. *)
+let store_of pool ~table =
+  let open Spindle.Syntax in
+  let read = Spindle_postgres.Session.store db ~table and kept = ref None in
+  let app =
+    Spindle.Test.app
+      ~resources:[ Spindle.Dep.resource db pool ]
+      [
+        Spindle.get Spindle.Path.root Spindle.Returns.text
+          (let+ store = read in
+           kept := Some store;
+           Ok "kept");
+      ]
+  in
+  ignore (Spindle.Test.call app `GET "/");
+  match !kept with Some store -> store | None -> Alcotest.fail "no store"
+
 (* The pool as /readyz asks it: ready at rest, and ready while every
    connection is lent, since a server taken out of service for being busy is
    one taken out when it is needed most. *)
@@ -874,7 +892,7 @@ let test_a_deferred_conflict_answers_as_a_statement's_does () =
 let test_a_stores_busy_pool_reads_as_the_pools_words () =
   Db_target.with_postgres (fun target ->
       let pool = pool ~wait:Mtime.Span.(50 * ms) target in
-      let store = Spindle_postgres.Session.store pool ~table:"sessions" in
+      let store = store_of pool ~table:"sessions" in
       let answer =
         Spindle_postgres.Pool.use pool (fun _ -> Ok (store.find "d1"))
       in
@@ -905,9 +923,7 @@ let test_sessions_are_kept_in_a_table () =
           | Ok () -> ()
           | Error (`Disagreements ms) -> Alcotest.fail (String.concat "; " ms)
           | Error (#S.error as e) -> Alcotest.fail (S.error_to_string e));
-          let store =
-            Spindle_postgres.Session.store (pool target) ~table:"sessions"
-          in
+          let store = store_of (pool target) ~table:"sessions" in
           let entry expires =
             {
               Spindle.Session.data = {|"kim"|};
@@ -969,9 +985,7 @@ let test_sessions_read_the_pool_as_a_resource () =
       Pg.close connection;
       let session =
         Spindle.Session.create
-          ~store:
-            (let+ pool = db in
-             Spindle_postgres.Session.store pool ~table:"visits")
+          ~store:(Spindle_postgres.Session.store db ~table:"visits")
           ~idle:Mtime.Span.hour ~absolute:Mtime.Span.day Wiretype.string
       in
       let routes =
@@ -1003,6 +1017,16 @@ let test_sessions_read_the_pool_as_a_resource () =
         "found in the table" "kim" (Spindle.Test.Browser.call b `GET "/me").body;
       Spindle_postgres.Pool.close pool)
 
+(* A table's name is a constant written in source, so one that is no name
+   is refused where the store is made, as the program starts, never as a
+   request's 500. *)
+let test_a_stores_table_is_checked_where_it_is_made () =
+  Alcotest.(check bool)
+    "refused at once" true
+    (match Spindle_postgres.Session.store db ~table:"x; drop" with
+    | _ -> false
+    | exception Invalid_argument _ -> true)
+
 (* A lowercase identifier is a table's name even where SQL reserves it as
    a word: [user] and [order] are tables an application names. *)
 let test_a_reserved_word_is_a_table's_name () =
@@ -1018,9 +1042,7 @@ let test_a_reserved_word_is_a_table's_name () =
           | Ok () -> ()
           | Error (`Disagreements ms) -> Alcotest.fail (String.concat "; " ms)
           | Error (#S.error as e) -> Alcotest.fail (S.error_to_string e));
-          let store =
-            Spindle_postgres.Session.store (pool target) ~table:"user"
-          in
+          let store = store_of (pool target) ~table:"user" in
           let got = function Ok v -> v | Error m -> Alcotest.fail m in
           got
             (store.save "d1"
@@ -1127,6 +1149,8 @@ let () =
             test_sessions_are_kept_in_a_table;
           Alcotest.test_case "sessions read the pool as a resource" `Quick
             test_sessions_read_the_pool_as_a_resource;
+          Alcotest.test_case "a store's table is checked where it is made"
+            `Quick test_a_stores_table_is_checked_where_it_is_made;
           Alcotest.test_case "a reserved word is a table's name" `Quick
             test_a_reserved_word_is_a_table's_name;
           Alcotest.test_case "the longest name is a table's name" `Quick

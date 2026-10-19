@@ -51,9 +51,9 @@
 
     {b The store is read as a route reads anything the application holds}: a
     dependency -- [Dep.return] of one made at the top level, a
-    {!Dep.of_resource} the server is handed, or one made from another, as
-    [Spindle_postgres.Session.store] is from the pool -- so a session, and the
-    routes that read it, are values made before it exists. *)
+    {!Dep.of_resource} the server is handed, or one read through another, as
+    [Spindle_postgres.Session.store] is through the pool's -- so a session, and
+    the routes that read it, are values made before it exists. *)
 
 (** {1 Stores} *)
 
