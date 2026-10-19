@@ -47,8 +47,7 @@ opam install spindle
 
     ---
 
-    Its own HTTP engine and every CPU core from the first request, with no
-    tuning.
+    Multicore by design.
 
 -   :lucide-waves:{ .lg .middle } __Eio-native__
 
