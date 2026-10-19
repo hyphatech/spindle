@@ -6907,8 +6907,8 @@ let site =
     ("data.bin", "bytes");
   ]
 
-let loaded ?not_found ?shell ?immutable ?types root =
-  match Spindle.Static.load ?not_found ?shell ?immutable ?types root with
+let loaded ?not_found ?shell ?types root =
+  match Spindle.Static.load ?not_found ?shell ?types root with
   | Ok t -> t
   | Error m -> Alcotest.failf "the site was refused: %s" m
 
@@ -7116,31 +7116,87 @@ let test_a_site_under_a_prefix () =
   check_string "its index" "FRONT DOOR" (get "/static");
   check_string "beside it" "the application's" (get "/about")
 
-let test_a_file_is_typed_and_cached_by_its_prefix () =
+(* Serving a folder says nothing of how long a browser keeps it: every file
+   is asked for again, and answered 304 while it is the same. *)
+let test_a_file_is_typed_and_revalidated () =
   with_site site @@ fun root ->
   let a =
     Spindle.Test.app
       [
         Spindle.Static.route
-          (loaded ~immutable:[ "/_astro/" ]
-             ~types:[ (".WASM", "application/wasm") ]
-             root);
+          (loaded ~types:[ (".WASM", "application/wasm") ] root);
       ]
   in
   let header target name =
     Spindle.Test.header (Spindle.Test.call a `GET target) name
   in
-  check_header "a fingerprinted asset is kept a year"
-    (Some "public, max-age=31536000, immutable")
+  check_header "even a fingerprinted asset is asked for again" (Some "no-cache")
     (header "/_astro/site.3f2a.js" "cache-control");
   check_header "and typed" (Some "text/javascript; charset=utf-8")
     (header "/_astro/site.3f2a.js" "content-type");
-  check_header "a document is never kept" (Some "no-cache")
+  check_header "as a document is" (Some "no-cache")
     (header "/about" "cache-control");
   check_header "a type the application adds" (Some "application/wasm")
     (header "/module.wasm" "content-type");
   check_header "an unknown one is bytes" (Some "application/octet-stream")
     (header "/data.bin" "content-type")
+
+(* Keeping a file for a year is the application's policy, apart from what
+   serves it: what is under its prefixes and answered well, by any route,
+   and nothing else. *)
+let test_a_cache_policy_keeps_what_it_names () =
+  with_site site @@ fun root ->
+  let year = Some "public, max-age=31536000, immutable" in
+  let a =
+    Spindle.Test.app
+      ~middleware:[ Spindle.Cache.forever ~under:[ "/_astro/"; "/made/" ] ]
+      [
+        Spindle.get
+          Spindle.Path.(s "made" / s "it")
+          Spindle.Returns.text
+          (Spindle.Dep.return (Ok "made"));
+        Spindle.post
+          Spindle.Path.(s "made" / s "it")
+          Spindle.Returns.text
+          (Spindle.Dep.return (Ok "posted"));
+        Spindle.Static.route (loaded ~not_found:"/404.html" root);
+      ]
+  in
+  let call ?(headers = []) meth target =
+    Spindle.Test.call a meth target ~headers
+  in
+  let cache r = Spindle.Test.header r "cache-control" in
+  let asset = call `GET "/_astro/site.3f2a.js" in
+  check_header "a file under a prefix is kept a year" year (cache asset);
+  check_header "and so is its HEAD" year
+    (cache (call `HEAD "/_astro/site.3f2a.js"));
+  let tag = Option.value ~default:"" (Spindle.Test.header asset "etag") in
+  let unchanged =
+    call `GET "/_astro/site.3f2a.js" ~headers:[ ("if-none-match", tag) ]
+  in
+  check_status "its 304" 304 unchanged.status;
+  check_header "is kept as long" year (cache unchanged);
+  check_header "a route of the application's under one too" year
+    (cache (call `GET "/made/it"));
+  check_header "but nothing a POST answers" None (cache (call `POST "/made/it"));
+  let missing = call `GET "/_astro/gone.js" in
+  check_status "a file that is not there" 404 missing.status;
+  Alcotest.(check bool)
+    "is never kept" false
+    (Option.equal String.equal (cache missing) year);
+  check_header "and a path under none is asked for again" (Some "no-cache")
+    (cache (call `GET "/about"));
+  List.iter
+    (fun prefix ->
+      Alcotest.(check bool)
+        (Printf.sprintf "%S is refused" prefix)
+        true
+        (match
+           (Spindle.Cache.forever ~under:[ prefix ] : Spindle.Middleware.t)
+         with
+        | _ -> false
+        | exception Invalid_argument _ -> true))
+    [ "/assets"; "assets/"; "" ]
 
 let test_a_matching_tag_is_304 () =
   with_site site @@ fun root ->
@@ -9426,7 +9482,9 @@ let () =
           Alcotest.test_case "a site under a prefix" `Quick
             test_a_site_under_a_prefix;
           Alcotest.test_case "a file is typed, and cached by its prefix" `Quick
-            test_a_file_is_typed_and_cached_by_its_prefix;
+            test_a_file_is_typed_and_revalidated;
+          Alcotest.test_case "a cache policy keeps what it names" `Quick
+            test_a_cache_policy_keeps_what_it_names;
           Alcotest.test_case "a matching tag is 304" `Quick
             test_a_matching_tag_is_304;
           Alcotest.test_case "a site that cannot be served is refused" `Quick

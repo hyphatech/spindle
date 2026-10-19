@@ -166,6 +166,13 @@ let headers t = t.headers
 let cookies t = t.cookies
 let refused t = t.refused
 let add_headers extra t = { t with headers = t.headers @ extra }
+
+let with_header (name, value) t =
+  let other (n, _) =
+    not (String.equal (String.lowercase_ascii n) (String.lowercase_ascii name))
+  in
+  { t with headers = List.filter other t.headers @ [ (name, value) ] }
+
 let add_cookies extra t = { t with cookies = t.cookies @ extra }
 let close_connection t = { t with closing = true }
 let closes_connection t = t.closing

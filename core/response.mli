@@ -165,6 +165,11 @@ val add_headers : (string * string) list -> t -> t
 (** These headers as well as the ones already there -- a stream's among them,
     since its head goes out before its body. *)
 
+val with_header : string * string -> t -> t
+(** This header in place of any of its name already there, which names match
+    whatever their case: for a middleware that decides one for every route, as
+    {!Cache.forever} decides [Cache-Control]. *)
+
 val add_cookies : Cookie.t list -> t -> t
 (** These cookies as well as the ones already there. *)
 

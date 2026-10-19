@@ -76,6 +76,7 @@ module Key = Key
 module Session = Session
 module Cors = Cors
 module Compress = Compress
+module Cache = Cache
 module Rate = Rate
 module Response = Response
 module Event = Event

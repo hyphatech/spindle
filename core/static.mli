@@ -1,13 +1,15 @@
 (** A directory of files -- a built site, its assets -- served by the process.
 
     {[
-    Spindle.serve env
-      (routes
-      @ [
-          Spindle.Static.directory ~not_found:"/404.html"
-            ~immutable:[ "/_astro/" ] "dist";
-        ])
+    Spindle.serve env (routes @ [ Spindle.Static.directory "dist" ])
     ]}
+
+    {b Every file is [no-cache]}, with a strong entity tag: a browser keeps its
+    copy and asks again each time, answered [304] while it is the same. Keeping
+    a file longer -- what a build names by a hash of its contents -- is the
+    application's policy, apart from what serves it: {!Cache.forever}. There is
+    nothing in between, since a middle value for a document is how a stale page
+    outlives the assets it names.
 
     {b The whole directory is read into memory when it is loaded}, and nothing
     maps a request onto the filesystem afterwards: a request is a lookup among
@@ -35,7 +37,6 @@ val load :
   ?dotfiles:bool ->
   ?not_found:string ->
   ?shell:string * string list ->
-  ?immutable:string list ->
   ?types:(string * string) list ->
   _ Eio.Path.t ->
   (t, string) result
@@ -54,10 +55,6 @@ val load :
     - [shell] is a file and the prefixes it answers with a [200]:
       [("/app/index.html", [ "/orders/"; "/invites/" ])]. A prefix ends in
       ["/"], so [/ordersheet] is never under [/orders/].
-    - [immutable] is the prefixes whose files are fingerprinted by the build,
-      cached for a year: [[ "/_astro/" ]]. Every other file is [no-cache], and
-      nothing is in between, since a middle value for a document is how a stale
-      page outlives the assets it names.
     - [types] adds to the table of content types, by extension:
       [[ (".wasm", "application/wasm") ]], and wins over it. An extension in
       neither is served as bytes, because a wrong type is worse than a download.
@@ -91,7 +88,6 @@ val directory :
   ?dotfiles:bool ->
   ?not_found:string ->
   ?shell:string * string list ->
-  ?immutable:string list ->
   ?types:(string * string) list ->
   string ->
   Route.t

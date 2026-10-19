@@ -72,7 +72,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   a number of label values other than its family's, or a counter moved
   down), `Spindle.Broadcast.create` (for a depth below one),
   `Spindle.Compress.make` (for a level deflate has not, a negative
-  size, or a type that is no media type pattern), `Spindle.Rate.create` (for a limit or a burst below one, or a
+  size, or a type that is no media type pattern), `Spindle.Cache.forever`
+  (for a prefix that does not begin and end with `/`), `Spindle.Rate.create` (for a limit or a burst below one, or a
   period shorter than a nanosecond a call),
   `Spindle.Server.run`, `serve_on` and `Spindle.serve` (for a limit out of
   its range, or a trusted proxy that is no address), `Spindle.serve` and

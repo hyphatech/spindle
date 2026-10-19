@@ -2,7 +2,6 @@ type file = {
   at : string;  (** its own path, where its siblings are found *)
   body : string;
   content_type : string;
-  cache : string;
   tag : Spindle_http.Etag.t;
 }
 
@@ -15,7 +14,8 @@ type t = {
   not_found : file option;
 }
 
-let cache_immutable = "public, max-age=31536000, immutable"
+(* A browser keeps a copy and asks again each time, answered 304 while it
+   is the same; keeping one longer is the application's policy (Cache). *)
 let cache_revalidate = "no-cache"
 
 (* A digest rather than a date: exact, and nothing to agree with. *)
@@ -46,23 +46,17 @@ let rec walk_files dir ~dotfiles ~at ~add =
     (Eio.Path.read_dir dir)
 
 let load ?(index = "index.html") ?(dotfiles = false) ?not_found ?shell
-    ?(immutable = []) ?(types = []) dir =
+    ?(types = []) dir =
   let types =
     List.map (fun (ext, t) -> (String.lowercase_ascii ext, t)) types
   in
   let files = Hashtbl.create 128 in
   let add_file at body =
-    let cache =
-      if List.exists (fun prefix -> String.starts_with ~prefix at) immutable
-      then cache_immutable
-      else cache_revalidate
-    in
     Hashtbl.replace files at
       {
         at;
         body;
         content_type = File_types.content_type ~types at;
-        cache;
         tag = etag_of_body body;
       }
   in
@@ -145,7 +139,7 @@ let choose_representation t req f =
           (Hashtbl.find_opt t.files (f.at ^ File_types.extension c)))
   with
   | Some (coding, sibling) ->
-      ( { sibling with content_type = f.content_type; cache = f.cache },
+      ( { sibling with content_type = f.content_type },
         ("content-encoding", coding) :: varies )
   | None -> (f, varies)
 
@@ -155,7 +149,7 @@ let answer_file t req f =
   let f, coding_headers = choose_representation t req f in
   let v = { Conditional.tag = f.tag; modified = None }
   and headers =
-    ("cache-control", f.cache) :: File_types.nosniff :: coding_headers
+    ("cache-control", cache_revalidate) :: File_types.nosniff :: coding_headers
   and length = String.length f.body in
   let decision = Conditional.decide req v ~length in
   match Conditional.bodiless_response v ~headers ~length decision with
@@ -182,7 +176,8 @@ let serve_segments t segments req =
       | Some f ->
           Ok
             (Response.make ~status:`Not_found ~content_type:f.content_type
-               ~headers:[ ("cache-control", f.cache); File_types.nosniff ]
+               ~headers:
+                 [ ("cache-control", cache_revalidate); File_types.nosniff ]
                f.body)
       | None -> Error Refusal.not_found)
 
@@ -207,7 +202,7 @@ let site_route ?(at = Path.root) site =
 let route ?at t = site_route ?at (fun () -> Some t)
 
 (* Written once, as the server starts, before it accepts anything. *)
-let directory ?at ?index ?dotfiles ?not_found ?shell ?immutable ?types path =
+let directory ?at ?index ?dotfiles ?not_found ?shell ?types path =
   let site = Atomic.make None in
   let r = site_route ?at (fun () -> Atomic.get site) in
   {
@@ -219,7 +214,7 @@ let directory ?at ?index ?dotfiles ?not_found ?shell ?immutable ?types path =
             (fun fs ->
               Result.map
                 (fun t -> Atomic.set site (Some t))
-                (load ?index ?dotfiles ?not_found ?shell ?immutable ?types
+                (load ?index ?dotfiles ?not_found ?shell ?types
                    Eio.Path.(fs / path)));
           in_a_test =
             "loads it with Static.load and serves it with Static.route";

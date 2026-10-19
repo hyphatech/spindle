@@ -1,7 +1,15 @@
 # Static files
 
 Serve a directory beside your API: a built front end, its scripts and
-stylesheets, a favicon.
+stylesheets, a favicon. One route does it:
+
+```ocaml
+Spindle.Static.directory "dist"
+```
+
+That is all a folder needs. Use `Static` for files your build made, which
+are read once when the server starts; for files that change while it runs
+-- uploads, reports -- use [`Files`](#files-that-change-at-run-time).
 
 ## Serving a directory
 
@@ -49,16 +57,11 @@ framework's `404`.
 
 ## Static files beside an API
 
-A built front end at the root, its hashed assets cached for a year, and a
-page of its own for what is not there:
+A built front end at the root, beside the API, with a page of its own for
+what is not there:
 
 ```ocaml
-let routes =
-  api
-  @ [
-      Spindle.Static.directory ~not_found:"/404.html" ~immutable:[ "/_astro/" ]
-        "dist";
-    ]
+let routes = api @ [ Spindle.Static.directory ~not_found:"/404.html" "dist" ]
 
 let () = Eio_main.run @@ fun env -> Spindle.serve env routes
 ```
@@ -67,9 +70,6 @@ The options of `Static.directory`. The files and prefixes they name are
 request paths, starting with `/` (`"/404.html"`, not `"404.html"`); a file
 that is not in the directory stops the server at start:
 
-- `~immutable` -- prefixes whose files are cached for a year. Every other
-  file is `no-cache`; there is nothing in between, so a page never outlives
-  the assets it names.
 - `~not_found` -- the file answered, with a `404`, for a path with no file.
 - `~shell:(file, prefixes)` -- answers every path under the prefixes with one
   document and a `200`, for client-side pages whose ids are made at run time:
@@ -81,6 +81,31 @@ that is not in the directory stops the server at start:
 - `~types` -- add content types by extension:
   `[ (".wasm", "application/wasm") ]`. An unknown extension is served as
   bytes.
+
+## Keeping assets a year
+
+Every file is served `no-cache`: a browser keeps its copy and asks again
+each time, and is answered `304` while the file is the same. That is right
+for any file, and you need nothing more.
+
+A front-end build names its scripts and stylesheets by a hash of what is in
+them -- Vite's `assets/index-3f2a9c.js`, Astro's `_astro/` -- so a new
+version is a new name. Those a browser can keep without asking. Say so for
+the whole app, apart from what serves them:
+
+```ocaml
+Spindle.serve env
+  ~middleware:[ Spindle.Cache.forever ~under:[ "/assets/" ] ]
+  (api @ [ Spindle.Static.directory "dist" ])
+```
+
+`Cache.forever` keeps every successful `GET` under those prefixes a year,
+whichever route answered it, and never a failure. Leave it out and nothing
+is ever stale; put a prefix in it only when every name under it changes with
+its bytes. Your `index.html` never goes in it: it is how a browser finds the
+new names.
+
+## Static files in a test
 
 `Spindle.Test.app` refuses `Static.directory`, which reads its files when a
 real server starts. In a test, load the directory yourself and serve it with
