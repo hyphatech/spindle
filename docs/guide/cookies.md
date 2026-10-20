@@ -85,8 +85,8 @@ let () =
   seconds; passing `~max_age_s` to `make` can make that shorter, never
   longer.
 - **A signed or encrypted cookie holds any value its codec prints**, since
-  what is sent is encoded as base64url. You need the `encoded` codec only
-  for a plain cookie.
+  what is sent is encoded as base64url, as a plain cookie holds any text,
+  percent-encoded.
 - `Key.sign`/`Key.verify` and `Key.seal`/`Key.unseal` do the same for
   anything else, such as a token in a link; a handler reads the server's
   ring as `Spindle.keys`. They use keys derived apart from the cookies'
@@ -204,8 +204,9 @@ host and whether the browser used `https`.
       seconds).
     - `~routes` narrows the policy to some routes, say your API.
 
-    `Any` with `~credentials:true` raises. Under `Any`, a write from another site
-    passes only with no credential the browser attaches by itself: no
+    `Spindle.Cors.any ()` takes no `~credentials`: a policy letting every site
+    act as the signed-in person does not compile. Under `Cors.any ()`, a write
+    from another site passes only with no credential the browser attaches by itself: no
     `Cookie`, and no `Authorization` in a scheme a browser keeps -- `Basic`,
     `Digest`, `Negotiate`, `NTLM`. A token the page sets itself, such as
     `Authorization: Bearer ...`, is served.

@@ -67,7 +67,7 @@ module Code : sig
   (** [415]: a body sent as something the route does not read. It is not among
       {!framework}: a dependency that reads a body of one type declares it --
       {!Spindle.json}, {!Spindle.Form}'s, {!Spindle.multipart}, and
-      {!Spindle.body_stream} and {!Dep.of_body} given a [content_type] -- so a
+      {!Spindle.body_stream} and {!Dep.of_body} given [content_types] -- so a
       route's document names it where the route answers it, and nowhere else. *)
 
   val rate_limited : t

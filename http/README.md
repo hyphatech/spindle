@@ -56,13 +56,13 @@ recipient be lenient and leniency cannot be read two ways (a line ending in a
 bare LF, an empty line before a request) it is; everywhere else, the stricter
 reading is taken.
 
-**Two readers over one field grammar.** `Head.Request` is what a server
-reads and `Head.Response` what a client reads, and they differ exactly where
+**Two readers over one field grammar.** `Private.Head.Request` is what a
+server reads and `Private.Head.Response` what a client reads, and they differ exactly where
 RFC 9112 asks different things of the two ends: an obsolete folded line is
 refused in a request and joined onto its field in a response (§5.2), an
 empty line is skipped before a request line and not before a status line,
 and a response alone may have a body that ends with its connection
-(`Framing.Until_close`). Everything else -- tokens, a field line, a list's
+(`Private.Framing.Until_close`). Everything else -- tokens, a field line, a list's
 elements -- is `Field`'s, once, so what one reader refuses the other cannot
 let through. They are two functions rather than one with flags, because a
 flag is a combination nobody meant waiting to be passed.
@@ -81,7 +81,7 @@ is the conformance table.
 
 **No reader raises across the interface; a failure is a value.** Most
 answer a `result`, and the rest say a failure in their own type: `Date.parse`
-and `Multipart.boundary` answer an option, `Framing.discard` whether the
+and `Multipart.boundary` answer an option, `Private.Framing.discard` whether the
 body was read to its end, and `Urlencoded.parse` a list, since the URL
 standard reads every piece of a form as something and refuses none. A reader raises inside its own module to leave a line it cannot
 read, and never across the interface.

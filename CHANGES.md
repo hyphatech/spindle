@@ -181,8 +181,8 @@
   every file `no-cache` with its entity tag, as `Files` does, so
   `Static.directory "dist"` is the whole of serving one. Keeping the
   hashed assets a build names a year is the application's policy:
-  `Spindle.Cache.forever ~under:[ "/assets/" ]`, a middleware, keeps every
-  successful `GET` or `HEAD` under those prefixes a year, whichever route
+  `Spindle.Cache.forever ~under:Spindle.Path.[ s "assets" ]`, a middleware,
+  keeps every successful `GET` or `HEAD` under those paths a year, whichever route
   answered it, and never a failure. `Response.with_header` sets a header
   in place of one already there, which a middleware deciding one for
   every route needs.

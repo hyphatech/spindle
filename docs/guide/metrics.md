@@ -83,8 +83,11 @@ These raise `Invalid_argument`, since each is a mistake in your source:
 
 - a name, label or buckets Prometheus cannot read;
 - a name registered twice -- except a `sampled` gauge, whose second
-  registration adds its series to the first (two pools under one name);
-- counting with the wrong number of label values, or a negative `~by`.
+  registration adds its series to the first (two pools under one name).
+
+Counting never raises: it runs inside a request, so a count with the wrong
+number of label values, or a negative `~by`, is left out and logged once for
+its metric.
 
 ## Protecting /metrics
 
