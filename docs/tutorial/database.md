@@ -285,5 +285,3 @@ let add_item =
 - **What is not the database comes after.** A publish, a stream or a call to
   another server goes after the transaction returns, so it runs only once
   the work is kept.
-
-Next: [OpenAPI](openapi.md).

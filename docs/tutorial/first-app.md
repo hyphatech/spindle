@@ -124,5 +124,3 @@ allow: GET, HEAD, OPTIONS
 - A clean stop on `Ctrl-C`, letting requests in flight finish.
 
 Another port is one argument: `Spindle.serve env ~port:3000 routes`.
-
-Next: [routes](routes.md).

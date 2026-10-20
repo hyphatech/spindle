@@ -141,6 +141,3 @@ read the document:
   declares (a `Dep.bind`, or `Dep.of_request` without `~needs`) and any
   `Wiretype.Value.json`. An empty report means the document says everything.
 - A route over the rest of the path, such as `Static.directory`, is left out.
-
-Next: [client schemas](client-schemas.md), your front end's types from the
-same routes.

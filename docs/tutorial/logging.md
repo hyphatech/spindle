@@ -125,5 +125,3 @@ Spindle.Trace.span "price the order" (fun () -> price order)
 - Spans carry no secrets either: never a query string, header or
   statement parameter.
 - To send spans elsewhere, build your own with `Spindle.Trace.exporter`.
-
-Next: [static files](static-files.md).

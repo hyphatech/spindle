@@ -186,6 +186,3 @@ Path.url (order (Path.s "items")) [ Path.arg order_id "Kim Li" ]
 Each segment is percent-encoded, a segment of `.` or `..` too, which a
 browser would otherwise resolve away. A parameter left out, given twice or
 not in the path is an `Error` naming it.
-
-Next: [dependencies](dependencies.md), everything else a handler can read
-from a request.

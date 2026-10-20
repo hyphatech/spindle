@@ -261,5 +261,3 @@ Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes
 
 [Database](database.md) shows the whole shape, and [why a transaction is
 not a dependency](database.md#why-a-transaction-is-not-a-dependency).
-
-Next: [request bodies, responses and errors](bodies.md).

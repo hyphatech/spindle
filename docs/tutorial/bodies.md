@@ -254,5 +254,3 @@ to accept another site of your own, list it in `~trusted_origins` instead.
 A stream can only be read while the handler runs. A route reads one body,
 one way: listing a stream beside `Spindle.json` is refused when the app is
 made.
-
-Next: [logging](logging.md).

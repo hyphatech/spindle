@@ -151,5 +151,3 @@ Spindle.Files.directory ~at:Path.(s "uploads") ~download:true "var/uploads"
 the same options over a directory you already hold as an `Eio.Path.t`, so a
 test can serve one of its own:
 `Spindle.Files.route Eio.Path.(Eio.Stdenv.cwd env / "uploads")`.
-
-Next: [database](database.md).
