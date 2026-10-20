@@ -52,17 +52,16 @@ module.
 | How to use it | the documentation site, [docs/](docs/index.md), every program included from `examples/` |
 | Why it changed | the commit message |
 
-Every document describes today: a change that makes a sentence false edits
-that sentence in the same commit. Code cites no document.
+Code cites no document.
 
 ## Rules that must hold
 
 Each is an instruction, its reason in a clause, and the way you will find
 out you broke it, as it is true today. Cite one by its bold phrase.
 
-- **No partial functions, and `invalid_arg` only where the `.mli` says it
-  raises.** Errors are values. The exceptions each refuse a constant written
-  in source: `Spindle.Cookie.named`, `signed`, `encrypted` and
+- **`invalid_arg` is raised in these places alone**, each refusing a
+  constant written in source, so a program that starts never meets one:
+  `Spindle.Cookie.named`, `signed`, `encrypted` and
   `Spindle.Session.create` (for the name), `Spindle.Cookie.make` and
   `clear` (for a path), `Spindle_postgres.Session`'s (for a table's name
   that is no identifier, since it is written into each statement),
@@ -86,15 +85,14 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   else. Nothing else raises
   across a library boundary. Symptom: `rg -n -w invalid_arg -g '*.ml' http
   core client postgres cli` finds one this list does not name.
-- **A library prints and exits only where its `.mli` says, and these are
-  the places.** `Spindle.serve` prints the address it listens on unless
-  given `?ready`, and exits with status 1 when its application cannot
-  start, as `Spindle_postgres.Pool.run` does when its pool cannot open,
-  since a server missing what it needs is stopped where an orchestrator
-  sees it; `Spindle.Log`'s default sink writes its lines to stderr; and
+- **Spindle prints and exits in these places alone.** `Spindle.serve`
+  prints the address it listens on unless given `?ready`, and exits with
+  status 1 when its application cannot start, as
+  `Spindle_postgres.Pool.run` does when its pool cannot open, since a
+  server missing what it needs is stopped where an orchestrator sees it;
+  `Spindle.Log`'s default sink writes its lines to stderr; and
   `spindle-cli`, a command line, prints its answer and its errors and
-  exits with its status. A library printing anywhere else writes into
-  output its program owns. Symptom: `rg -n -w
+  exits with its status. Symptom: `rg -n -w
   'exit|stderr|print_string|print_endline|prerr_endline|Printf\.printf'
   -g '*.ml' http core client postgres cli` finds one in a place this list
   does not name.
@@ -250,12 +248,13 @@ out you broke it, as it is true today. Cite one by its bold phrase.
 
 ## Changes and releases
 
-Its three packages are released together. A user-visible change updates
-the page of the documentation site that describes it, not the README.
-Two variants are closed, from 1.0: `Spindle_http.Status.t` and
-`Spindle_http.Meth.t` name every status and method HTTP defined by then,
-and one registered later stays `` `Code n `` or `` `Other s `` for every
-1.x release, so a match on either keeps its meaning across them. A
-refusal's sentence is wording; a refusal's code, a route's place in the
-document and what the OpenAPI, Zod and Melange printers write for a route
-are behaviour: changing any is breaking.
+Its packages are `spindle`, `spindle-postgres` and `spindle-cli`. A
+user-visible change updates the page of the documentation site that
+describes it, not the README. Two variants are closed, from 1.0:
+`Spindle_http.Status.t` and `Spindle_http.Meth.t` name every status and
+method HTTP defined by then, and one registered later stays
+`` `Code n `` or `` `Other s `` for every 1.x release, so a match on
+either keeps its meaning across them. A refusal's sentence is wording; a
+refusal's code, a route's place in the document and what the OpenAPI,
+Zod and Melange printers write for a route are behaviour: changing any is
+breaking.
