@@ -125,7 +125,7 @@ type error =
 (** The words every Hypha library uses for what happened to the work, so a
     handler's one [let*] runs over a call here and a statement there. *)
 
-val error_to_string : error -> string
+val error_to_string : [< error ] -> string
 
 val call :
   t ->
@@ -134,7 +134,7 @@ val call :
   ?body:string ->
   Spindle_http.Meth.t ->
   string ->
-  (string response, error) result
+  (string response, [> error ]) result
 (** [call t meth url]. Any status is an answer: what a [4xx] means is the
     caller's to say. The URL's path and query are sent byte for byte as it wrote
     them, so a signed URL arrives as it was signed, and its fragment is not
@@ -149,7 +149,7 @@ val call :
 module Body : sig
   type t
 
-  val read : t -> ([ `Data of string | `End ], error) result
+  val read : t -> ([ `Data of string | `End ], [> error ]) result
   (** The next piece as it arrived, or its end. Each read waits at most the
       call's [read_timeout]; a read after one that failed answers that failure
       again, since a read cut off leaves a TLS connection unreadable; and a read
@@ -165,7 +165,7 @@ val stream :
   Spindle_http.Meth.t ->
   string ->
   (Body.t response -> 'a) ->
-  ('a, error) result
+  ('a, [> error ]) result
 (** [stream t meth url f]: [f] handed the answer as its head arrives, its body
     to read as it comes -- a model's streamed answer, a download too large to
     hold. [timeout] (the client's) bounds the head, and [read_timeout]
@@ -192,7 +192,7 @@ val events :
   ?last_event_id:string ->
   string ->
   (Spindle_http.Event_stream.event -> [ `Continue | `Stop ]) ->
-  (events_end, error) result
+  (events_end, [> error ]) result
 (** [events t url f]: a [GET] asking for [text/event-stream] -- with
     [Last-Event-ID] where given one -- and each event handed to [f] as it
     arrives, read as the server wrote it ({!Spindle_http.Event_stream}), until
@@ -209,7 +209,7 @@ type websocket_error =
     (** how the function's socket ended *) ]
 (** A handshake that could not be made is a call's {!error}. *)
 
-val websocket_error_to_string : websocket_error -> string
+val websocket_error_to_string : [< websocket_error ] -> string
 
 val websocket :
   t ->
@@ -221,7 +221,7 @@ val websocket :
   string ->
   (('s, 'c) Spindle_http.Websocket.t ->
   ('a, Spindle_http.Websocket.error) result) ->
-  ('a, websocket_error) result
+  ('a, [> websocket_error ]) result
 (** [websocket t protocol url f] opens a socket to a [ws://] or [wss://] URL and
     runs [f] on it: the connection is [f]'s alone, never kept and never lent,
     opened for it and closed after it. [timeout] (the client's) bounds the

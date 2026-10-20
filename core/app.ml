@@ -1194,7 +1194,14 @@ let start ?(resources = []) ?keys ?fs t ~mono_clock =
              route name)
     | None -> Ok ()
   in
-  Ok { app = t; resources = supplied; keys }
+  (* The keys are a resource, however they were given: [~keys], or
+     [Spindle.keys] among [~resources]. *)
+  Ok
+    {
+      app = t;
+      resources = supplied;
+      keys = Dep_repr.supplied Dep_repr.cookie_keys supplied;
+    }
 
 let app (i : instance) = i.app
 let keys (i : instance) = i.keys

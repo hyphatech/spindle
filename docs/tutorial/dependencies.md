@@ -26,7 +26,7 @@ plain values: an `int64` (if `user_id` is a `Path.int64`), an `int option`,
 a `Ptime.t`.
 
 - **A bad request is answered all at once.** Every wrong path parameter,
-  query parameter, header and cookie is reported in one `400`, each problem
+  query parameter and header is reported in one `400`, each problem
   at its place (`path.user_id`, `query.page`). Only when those are all fine
   is the body read, and its problems (`body.items[2].count`) are then
   reported together the same way. The handler never runs.
@@ -155,6 +155,12 @@ Spindle.Query.list "tag" Codec.string            (* ?tag=a&tag=b *)
 Spindle.Header.optional "x-count" Codec.int      (* name matched without case *)
 ```
 
+- **A parameter sent twice** (`?role=viewer&role=admin`) is read by its
+  first value, as a browser's `URLSearchParams.get` reads it; `Query.list`
+  reads every one. A repeated parameter is a valid URL, so it never fails a
+  route. A form's field is read the same way. A header is the exception: one
+  that holds a single value sent twice is an invalid message by RFC 9110, and
+  is refused.
 - **Codecs**: `string`, `int`, `int64`, `float`, `bool`, `uuid` (a
   `Uuidm.t`, as a JSON body's and a row's), `date`, `instant` (a
   `Ptime.t`), `enum ~kind to_string values`, and `custom` for a type of
@@ -180,8 +186,8 @@ Spindle.Cookie.clear visits                      (* removes it *)
 ```
 
 A handler sets a cookie by listing `Spindle.set_cookie` among its inputs and
-calling it ([how](bodies.md#setting-cookies-and-headers)). For a cookie
-holding arbitrary text, use the `Spindle.Cookie.encoded` codec. Signed and
+calling it ([how](bodies.md#setting-cookies-and-headers)). A cookie holds any
+text: `Kim Li` is written `Kim%20Li` and read back as it was. Signed and
 encrypted cookies and sessions are on [their own page](../guide/cookies.md).
 
 **Other built-ins**:

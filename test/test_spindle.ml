@@ -986,35 +986,15 @@ let test_cookie_is_secure_except_on_loopback () =
        ~headers:[ ("host", "localhost"); ("x-forwarded-proto", "https") ]
        ())
 
-(* A value is a constant or it is encoded: an invalid constant is a bug, and
-   says so without saying the value, which may be a credential. A name is
-   refused where the cookie is declared, and a value where it is made. *)
-let test_a_cookie_refuses_what_it_cannot_hold () =
+(* A name is a constant written in source, refused where the cookie is
+   declared; a value is whatever the request brought, and never refused. *)
+let test_a_cookie_refuses_a_name_it_cannot_hold () =
   List.iter
-    (fun (name, value) ->
-      match
-        Spindle.Cookie.make
-          (Spindle.Cookie.named name Spindle.Codec.string)
-          value
-      with
-      | _ -> Alcotest.failf "%S=%S was made" name value
-      | exception Invalid_argument m ->
-          Alcotest.(check bool)
-            "the message keeps the value to itself" false
-            (String.length value > 3 && contains ~sub:value m))
-    [
-      ("k", "a;b");
-      ("k", "a b");
-      ("k", "secret\r\nSet-Cookie: x=1");
-      ("a b", "v");
-      ("", "v");
-      ("k", "back\\slash");
-    ];
-  ignore
-    (Spindle.Cookie.make
-       (Spindle.Cookie.named "k" Spindle.Codec.string)
-       "\"quoted\""
-      : Spindle.Cookie.t);
+    (fun name ->
+      match Spindle.Cookie.named name Spindle.Codec.string with
+      | _ -> Alcotest.failf "%S was declared" name
+      | exception Invalid_argument _ -> ())
+    [ "a b"; ""; "a;b" ];
   ignore
     (Spindle.Cookie.clear (Spindle.Cookie.named "k" Spindle.Codec.string)
       : Spindle.Cookie.t)
@@ -1033,56 +1013,106 @@ let written ?keys cookie =
   Option.value ~default:""
     (Spindle.Test.header (Spindle.Test.call app `POST "/") "set-cookie")
 
-let decoded =
-  Spindle.get
-    Spindle.Path.(s "decoded")
-    Spindle.Returns.response
-    (let+ v =
-       Spindle.Cookie.optional (Spindle.Cookie.named "k" Spindle.Cookie.encoded)
-     in
-     Ok (Spindle.Response.make (Option.value v ~default:"<none>")))
+(* Text the echo can answer: JSON carries only UTF-8, and a segment of other
+   bytes is a value its route cannot write. *)
+let utf8_text =
+  QCheck.make ~print:(Printf.sprintf "%S")
+    QCheck.Gen.(
+      map
+        (fun points ->
+          let b = Buffer.create 16 in
+          List.iter (fun p -> Buffer.add_utf_8_uchar b (Uchar.of_int p)) points;
+          Buffer.contents b)
+        (list_small
+           (oneof
+              [
+                int_range 0 0x7f;
+                int_range 0x80 0xd7ff;
+                int_range 0xe000 0x10ffff;
+              ])))
 
-let test_an_encoded_cookie_carries_any_text =
-  QCheck.Test.make ~count:300 ~name:"an encoded cookie carries any text"
-    QCheck.string (fun v ->
-      let c =
-        Spindle.Cookie.make (Spindle.Cookie.named "k" Spindle.Cookie.encoded) v
-      in
-      let sent =
-        match String.split_on_char ';' (written c) with
-        | pair :: _ -> pair
-        | [] -> ""
-      in
-      let r =
-        Spindle.Test.call
-          (Spindle.Test.app [ decoded ])
-          `GET "/decoded"
-          ~headers:[ ("cookie", sent) ]
-      in
-      String.equal r.body v)
+(* A plain cookie of any text, set from the path and read back. *)
+let plain = Spindle.Cookie.named "k" Spindle.Codec.string
 
-(* A cookie the server did not write is an input that does not parse, and
-   the request is told so; one that is not there at all is none. *)
-let test_a_cookie_not_encoded_by_us_is_a_problem () =
+let plain_app =
+  Spindle.Test.app
+    [
+      Spindle.post
+        Spindle.Path.(s "set" / Spindle.Path.string "v")
+        Spindle.Returns.text
+        (let+ v = Spindle.param (Spindle.Path.string "v")
+         and+ set_cookie = Spindle.set_cookie in
+         set_cookie (Spindle.Cookie.make plain v);
+         Ok "set");
+      Spindle.get
+        Spindle.Path.(s "read")
+        Spindle.Returns.response
+        (let+ v = Spindle.Cookie.optional plain in
+         Ok (Spindle.Response.make (Option.value v ~default:"<none>")));
+    ]
+
+(* The name and value a Set-Cookie line writes, its attributes left off. *)
+let pair_of line =
+  match String.split_on_char ';' line with pair :: _ -> pair | [] -> ""
+
+let read_plain sent =
+  Spindle.Test.call plain_app `GET "/read" ~headers:[ ("cookie", sent) ]
+
+let test_a_cookie_holds_text_from_the_request () =
+  let set = Spindle.Test.call plain_app `POST "/set/Kim%20Li" in
+  check_status "a name with a space is set" 200 set.status;
+  let line = Option.value ~default:"" (Spindle.Test.header set "set-cookie") in
+  check_string "written as a cookie can hold it" "k=Kim%20Li" (pair_of line);
+  check_string "and read back as it was" "Kim Li"
+    (read_plain (pair_of line)).body
+
+let test_a_cookie_carries_any_text =
+  QCheck.Test.make ~count:300 ~name:"a cookie carries any text" utf8_text
+    (fun v ->
+      let sent = pair_of (written (Spindle.Cookie.make plain v)) in
+      String.equal (read_plain sent).body v)
+
+(* Encoding changes only what a cookie cannot hold, and the % that marks it:
+   a word, a tag or a token is written as it is. *)
+let test_a_plain_value_keeps_its_spelling () =
+  List.iter
+    (fun v ->
+      check_string v ("k=" ^ v)
+        (pair_of (written (Spindle.Cookie.make plain v))))
+    [ "dark"; "en-GB"; "aGk_-x.y"; "a=b" ];
+  check_string "a % is encoded" "k=50%25"
+    (pair_of (written (Spindle.Cookie.make plain "50%")));
+  check_string "and read back" "50%" (read_plain "k=50%25").body
+
+(* What would end the value or the line is text: no attribute, no header. *)
+let test_a_value_writes_no_attribute () =
+  let line = written (Spindle.Cookie.make plain "x; Domain=evil.com") in
+  check_string "the semicolon and space encoded" "k=x%3B%20Domain=evil.com"
+    (pair_of line);
+  Alcotest.(check bool)
+    "no Domain attribute" false
+    (contains ~sub:"; Domain" line);
+  let line = written (Spindle.Cookie.make plain "x\r\nSet-Cookie: admin=1") in
+  Alcotest.(check bool)
+    "no line break" false
+    (String.exists (fun c -> c = '\r' || c = '\n') line)
+
+(* A browser's script writes with encodeURIComponent, which encodes more than
+   it must; any escape reads as its byte. *)
+let test_a_cookie_a_script_wrote_reads () =
+  check_string "an encoded slash" "Kim/Li" (read_plain "k=Kim%2FLi").body;
+  check_string "lower case" "a;b" (read_plain "k=a%3bb").body
+
+(* An escape that is not two hex digits is no value anybody wrote: it is
+   absent, as any cookie that does not read is. *)
+let test_a_broken_escape_is_absent () =
   List.iter
     (fun sent ->
-      let r =
-        Spindle.Test.call
-          (Spindle.Test.app [ decoded ])
-          `GET "/decoded"
-          ~headers:[ ("cookie", sent) ]
-      in
-      check_status sent 400 r.status;
-      Alcotest.(check bool)
-        "at the cookie" true
-        (contains ~sub:"cookie.k" r.body))
-    [ "k=not*base64"; "k=a" ];
-  check_string "none" "<none>"
-    (Spindle.Test.call
-       (Spindle.Test.app [ decoded ])
-       `GET "/decoded"
-       ~headers:[ ("cookie", "other=aGk") ])
-      .body
+      let r = read_plain sent in
+      check_status sent 200 r.status;
+      check_string sent "<none>" r.body)
+    [ "k=50%zz"; "k=50%2"; "k=%" ];
+  check_string "none" "<none>" (read_plain "other=x").body
 
 (* ---------------------------------------------------------------- *)
 (* Cookies a browser cannot forge *)
@@ -1097,22 +1127,24 @@ and new_key = key (String.make 32 'n')
 
 (* A route that sets the cookie, and one that reads it, both through the
    same declaration, sealed under the keys the app is given. *)
+let sealed_routes c =
+  [
+    Spindle.post
+      Spindle.Path.(s "set" / Spindle.Path.string "v")
+      Spindle.Returns.text
+      (let+ v = Spindle.param (Spindle.Path.string "v")
+       and+ set_cookie = Spindle.set_cookie in
+       set_cookie (Spindle.Cookie.make c v);
+       Ok "set");
+    Spindle.get
+      Spindle.Path.(s "read")
+      Spindle.Returns.text
+      (let+ v = Spindle.Cookie.optional c in
+       Ok (Option.value v ~default:"absent"));
+  ]
+
 let sealed_app ?(keys = Spindle.Key.ring new_key []) c =
-  Spindle.Test.app ~keys
-    [
-      Spindle.post
-        Spindle.Path.(s "set" / Spindle.Path.string "v")
-        Spindle.Returns.text
-        (let+ v = Spindle.param (Spindle.Path.string "v")
-         and+ set_cookie = Spindle.set_cookie in
-         set_cookie (Spindle.Cookie.make c v);
-         Ok "set");
-      Spindle.get
-        Spindle.Path.(s "read")
-        Spindle.Returns.text
-        (let+ v = Spindle.Cookie.optional c in
-         Ok (Option.value v ~default:"absent"));
-    ]
+  Spindle.Test.app ~keys (sealed_routes c)
 
 let issued ?(now = Ptime.epoch) app v =
   let r = Spindle.Test.call ~now app `POST ("/set/" ^ v) in
@@ -1365,6 +1397,22 @@ let test_the_server_holds_the_keys () =
     (Spindle.Key.verify ring ~mac:(Spindle.Test.call app `GET "/token").body
        "invite:7")
 
+(* Spindle.keys is a resource, so it may be supplied as one; a cookie is then
+   sealed under it as it is read under it. *)
+let test_keys_supplied_as_a_resource_seal () =
+  let c =
+    Spindle.Cookie.signed ~max_age:Mtime.Span.hour "who" Spindle.Codec.string
+  in
+  let app =
+    Spindle.Test.app
+      ~resources:
+        [ Spindle.Dep.resource Spindle.keys (Spindle.Key.ring new_key []) ]
+      (sealed_routes c)
+  in
+  let set = Spindle.Test.call app `POST "/set/kim" in
+  check_status "a cookie is set" 200 set.status;
+  check_string "and read back" "kim" (read_with app (issued app "kim"))
+
 let test_a_signed_cookie_ages () =
   test_a_sealed_cookie_ages Spindle.Cookie.signed
 
@@ -1414,6 +1462,8 @@ let string_session ?(idle = Mtime.Span.hour) ?(absolute = Mtime.Span.day)
     ~store:(Spindle.Dep.return r.store)
     ~idle ~absolute Wiretype.string
 
+let wrong_password = code "wrong_password" `Forbidden
+
 let session_routes ?mono_clock session =
   let v = Spindle.Path.string "v" in
   let finished = function Ok () -> Ok "done" | Error e -> Error e in
@@ -1442,6 +1492,12 @@ let session_routes ?mono_clock session =
          finished
            (let* () = Spindle.Session.rotate session in
             Spindle.Session.put session v));
+      Spindle.post ~refuses:[ wrong_password ]
+        Spindle.Path.(s "rotate-then-refuse")
+        Spindle.Returns.text
+        (let+ session = session in
+         let* () = Spindle.Session.rotate session in
+         Error (Spindle.Refusal.make wrong_password "That password is wrong."));
       Spindle.post
         Spindle.Path.(s "put-then-rotate" / v)
         Spindle.Returns.text
@@ -1471,6 +1527,19 @@ let session_cookie (r : Spindle.Test.response) =
 
 let as_visitor ?(now = Ptime.epoch) app cookie meth target =
   Spindle.Test.call ~now app meth target ~headers:[ ("cookie", cookie) ]
+
+(* The store has moved the session by the time the handler refuses, so an
+   answer that dropped its cookie would leave the browser an id the store no
+   longer holds: signed out by a wrong password. *)
+let test_a_refusal_carries_the_session_it_moved () =
+  let b =
+    Spindle.Test.browser (session_routes (string_session (recorded ())))
+  in
+  let call meth target = Spindle.Test.Browser.call b meth target in
+  check_string "signed in" "done" (call `POST "/put/kim").body;
+  check_status "a refusal after the session moved" 403
+    (call `POST "/rotate-then-refuse").status;
+  check_string "and the browser still holds it" "kim" (call `GET "/me").body
 
 let test_a_session_is_kept_on_the_server () =
   let r = recorded () in
@@ -1613,6 +1682,60 @@ let captured ?(level = Some Logs.Debug) ?sources f =
 (* A handler can do nothing with a store that fails but answer 500, so a
    session's call is that refusal, the store's words in the log and none on
    the wire. *)
+(* A cookie is state the server wrote and the browser kept, so one that no
+   longer reads -- a value an older deploy wrote, an escape a script broke --
+   is absent, as a sealed one that does not open is: refused, it would close
+   every page that reads it to a person who did nothing wrong. *)
+type theme = Light | Dark
+
+let theme =
+  Spindle.Cookie.named "theme"
+    (Spindle.Codec.enum
+       (function Light -> "light" | Dark -> "dark")
+       [ Light; Dark ])
+
+let theme_app =
+  Spindle.Test.app
+    [
+      Spindle.get
+        Spindle.Path.(s "page")
+        Spindle.Returns.text
+        (let+ t = Spindle.Cookie.optional theme in
+         Ok
+           (match t with
+           | Some Dark -> "dark"
+           | Some Light -> "light"
+           | None -> "default"));
+      Spindle.get
+        Spindle.Path.(s "needs")
+        Spindle.Returns.text
+        (let+ _ = Spindle.Cookie.required theme in
+         Ok "read");
+    ]
+
+let test_a_cookie_that_does_not_read_is_absent () =
+  let call target sent =
+    Spindle.Test.call theme_app `GET target ~headers:[ ("cookie", sent) ]
+  in
+  check_string "one that reads" "dark" (call "/page" "theme=dark").body;
+  let lines =
+    captured (fun () ->
+        let r = call "/page" "theme=sepia" in
+        check_status "one an older deploy wrote is no refusal" 200 r.status;
+        check_string "and reads as absent" "default" r.body)
+  in
+  check_string "bytes that are no text" "default"
+    (call "/page" "theme=%80").body;
+  Alcotest.(check bool)
+    "said at debug, naming the cookie and never its value" true
+    (List.exists (contains ~sub:"theme") lines
+    && not (List.exists (contains ~sub:"sepia") lines));
+  let r = call "/needs" "theme=sepia" in
+  check_status "a required one is missing" 400 r.status;
+  Alcotest.(check bool)
+    "as one not sent is" true
+    (contains ~sub:"\"required\"" r.body && contains ~sub:"cookie.theme" r.body)
+
 let test_a_failing_store_is_a_500 () =
   let r = recorded () in
   let failing =
@@ -1828,6 +1951,57 @@ let profile =
        (Printf.sprintf "%s %s [%s] %b" email
           (match age with Some a -> string_of_int a | None -> "-")
           (String.concat "," tags) remember))
+
+(* A value sent twice is read by its first, as the URL standard's
+   URLSearchParams.get reads it, and as the client that wrote the URL reads
+   it back; a list reads every one, and a valid URL never fails a route. *)
+let test_a_value_sent_twice_is_read_by_its_first () =
+  let reads meth name read =
+    Spindle.route meth Spindle.Path.(s name) Spindle.Returns.text read
+  in
+  let a =
+    Spindle.Test.app
+      [
+        reads `GET "required"
+          (let+ v = Spindle.Query.required "role" Spindle.Codec.string in
+           Ok v);
+        reads `GET "optional"
+          (let+ v = Spindle.Query.optional "role" Spindle.Codec.string in
+           Ok (Option.value v ~default:"-"));
+        reads `GET "default"
+          (let+ v = Spindle.Query.default "role" Spindle.Codec.string "-" in
+           Ok v);
+        reads `GET "list"
+          (let+ v = Spindle.Query.list "role" Spindle.Codec.string in
+           Ok (String.concat "," v));
+        reads `POST "required"
+          (let+ v = Spindle.Form.required "role" Spindle.Codec.string in
+           Ok v);
+        reads `POST "optional"
+          (let+ v = Spindle.Form.optional "role" Spindle.Codec.string in
+           Ok (Option.value v ~default:"-"));
+        reads `POST "list"
+          (let+ v = Spindle.Form.list "role" Spindle.Codec.string in
+           Ok (String.concat "," v));
+      ]
+  in
+  List.iter
+    (fun (name, read) ->
+      check_string ("query, " ^ name) read
+        (Spindle.Test.call a `GET ("/" ^ name ^ "?role=viewer&role=admin")).body)
+    [
+      ("required", "viewer");
+      ("optional", "viewer");
+      ("default", "viewer");
+      ("list", "viewer,admin");
+    ];
+  List.iter
+    (fun (name, read) ->
+      check_string ("form, " ^ name) read
+        (Spindle.Test.call a `POST ("/" ^ name) ~headers:form_headers
+           ~body:"role=viewer&role=admin")
+          .body)
+    [ ("required", "viewer"); ("optional", "viewer"); ("list", "viewer,admin") ]
 
 let test_a_form's_fields_are_typed_inputs () =
   let a = Spindle.Test.app [ profile ] in
@@ -3233,6 +3407,26 @@ let test_a_quoted_keep_alive_timeout_is_read () =
   call ();
   check_int "each call on a connection of its own" 2 !connections
 
+(* A call's failure is one of the words every Hypha library uses, so one
+   [let*] runs over it and the caller's own. *)
+let test_a_calls_failure_joins_the_callers () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let client =
+    Spindle_client.create ~sw ~net:(Eio.Stdenv.net env)
+      ~mono_clock:(Eio.Stdenv.mono_clock env)
+      ()
+  in
+  let fetched () =
+    let* r = Spindle_client.call client `GET "/no-host" in
+    match r.status with `OK -> Ok r.body | _ -> Error `Not_ok
+  in
+  Alcotest.(check bool)
+    "a URL with no host is unsent" true
+    (match fetched () with
+    | Error (`Unsent _) -> true
+    | Error (`Lost _ | `Not_ok) | Ok _ -> false)
+
 (* A call made for a request sends its trace, unless the caller named one. *)
 let test_a_call_carries_the_trace () =
   Eio_main.run @@ fun env ->
@@ -3819,7 +4013,9 @@ let test_every_domain_counts_into_one_series () =
 
 let test_a_metric_that_cannot_be_exposed_is_refused () =
   let m = Spindle.Metrics.create () in
-  let hits = Spindle.Metrics.counter m ~labels:[ "page" ] "hits" in
+  let (_ : Spindle.Metrics.counter) =
+    Spindle.Metrics.counter m ~labels:[ "page" ] "hits"
+  in
   List.iter
     (fun (why, f) ->
       match f () with
@@ -3834,10 +4030,6 @@ let test_a_metric_that_cannot_be_exposed_is_refused () =
       ( "buckets that fall",
         fun () -> ignore (Spindle.Metrics.histogram m ~buckets:[ 1.; 0.5 ] "h")
       );
-      ("too few values", fun () -> Spindle.Metrics.inc hits []);
-      ("too many", fun () -> Spindle.Metrics.inc hits [ "a"; "b" ]);
-      ( "a counter moved down",
-        fun () -> Spindle.Metrics.inc ~by:(-1) hits [ "home" ] );
     ];
   Spindle.Metrics.sampled m ~labels:[ "pool" ] "pools" (fun () ->
       [ ([ "a" ], 1.) ]);
@@ -3854,6 +4046,49 @@ let test_a_metric_that_cannot_be_exposed_is_refused () =
     "a series with the wrong number of values is left out, the page kept" true
     (contains ~sub:"pools{pool=\"c\"} 4" page
     && not (contains ~sub:"pools 3" page))
+
+(* Counting runs inside a request, where a raise would fail work that was
+   done: a count with the wrong number of label values, or a counter moved
+   down, is left out and said once for its family. *)
+let test_counting_never_fails_a_request () =
+  let m = Spindle.Metrics.create () in
+  let hits = Spindle.Metrics.counter m ~labels:[ "page" ] "hits"
+  and pools = Spindle.Metrics.gauge m ~labels:[ "pool" ] "open"
+  and took = Spindle.Metrics.histogram m ~buckets:[ 1. ] "took" in
+  let app =
+    Spindle.Test.app
+      [
+        Spindle.post
+          Spindle.Path.(s "count")
+          Spindle.Returns.text
+          (let+ () = Spindle.Dep.return () in
+           Spindle.Metrics.inc hits [ "home" ];
+           Spindle.Metrics.inc ~by:(-2) hits [ "home" ];
+           Spindle.Metrics.inc hits [];
+           Spindle.Metrics.inc hits [ "a"; "b" ];
+           Spindle.Metrics.add pools [] 1;
+           Spindle.Metrics.observe took [ "x" ] 0.5;
+           Ok "counted");
+      ]
+  in
+  let lines =
+    captured ~level:(Some Logs.Warning) (fun () ->
+        let r = Spindle.Test.call app `POST "/count" in
+        check_status "the request is answered" 200 r.status;
+        ignore (Spindle.Test.call app `POST "/count" : Spindle.Test.response))
+  in
+  let page = Spindle.Metrics.exposition m in
+  Alcotest.(check bool)
+    "what was counted right stands" true
+    (contains ~sub:"hits_total{page=\"home\"} 2" page);
+  Alcotest.(check bool)
+    "and nothing else was counted" false
+    (contains ~sub:"open{" page || contains ~sub:"took_count{" page);
+  List.iter
+    (fun name ->
+      check_int (name ^ " is said once") 1
+        (List.length (List.filter (contains ~sub:name) lines)))
+    [ "hits"; "open"; "took" ]
 
 (* A server counts its requests by method, route and status -- a request no
    route answered under no route, a method HTTP does not name as [_OTHER]
@@ -6817,24 +7052,6 @@ let test_the_table_answers_as_the_rule =
               | Some _ -> Spindle.Status.to_int r.status = 405
               | None -> Spindle.Status.to_int r.status = 404)))
 
-(* Text the echo can answer: JSON carries only UTF-8, and a segment of other
-   bytes is a value its route cannot write. *)
-let utf8_text =
-  QCheck.make ~print:(Printf.sprintf "%S")
-    QCheck.Gen.(
-      map
-        (fun points ->
-          let b = Buffer.create 16 in
-          List.iter (fun p -> Buffer.add_utf_8_uchar b (Uchar.of_int p)) points;
-          Buffer.contents b)
-        (list_small
-           (oneof
-              [
-                int_range 0 0x7f;
-                int_range 0x80 0xd7ff;
-                int_range 0xe000 0x10ffff;
-              ])))
-
 let test_a_printed_path_parses_back =
   QCheck.Test.make ~count:300 ~name:"a printed path parses back"
     QCheck.(triple utf8_text int bool)
@@ -8173,7 +8390,7 @@ let test_serve_listens_and_stops () =
 
 (* A cookie and a header the endpoint set go with its value, and are
    dropped with a refusal, which says only what it says. *)
-let test_what_an_endpoint_sets_goes_only_with_ok () =
+let test_what_an_endpoint_sets_goes_with_its_answer () =
   let a =
     Spindle.Test.app
       [
@@ -8201,8 +8418,38 @@ let test_what_an_endpoint_sets_goes_only_with_ok () =
   check_header "the header" (Some "yes") (Spindle.Test.header ok "x-seen");
   let refused = Spindle.Test.call a `GET "/set?fail=true" in
   check_status "the refusal" 410 refused.status;
-  check_header "no cookie" None (Spindle.Test.header refused "set-cookie");
-  check_header "no header" None (Spindle.Test.header refused "x-seen")
+  Alcotest.(check bool)
+    "carries the cookie" true
+    (contains ~sub:"seen=1"
+       (Option.value (Spindle.Test.header refused "set-cookie") ~default:""));
+  check_header "and the header" (Some "yes")
+    (Spindle.Test.header refused "x-seen")
+
+(* A refusal's own fields are what it means, so one the handler set by the
+   same name gives way: two Retry-After fields say nothing. *)
+let test_a_refusals_own_fields_win () =
+  let a =
+    Spindle.Test.app
+      [
+        Spindle.get
+          Spindle.Path.(s "busy")
+          Spindle.Returns.text
+          (let+ add_header = Spindle.add_header in
+           add_header ("Retry-After", "5");
+           add_header ("x-seen", "yes");
+           Error (Spindle.Refusal.busy ~retry_after_s:30 ()));
+      ]
+  in
+  let r = Spindle.Test.call a `GET "/busy" in
+  Alcotest.(check (list string))
+    "the refusal's Retry-After alone" [ "30" ]
+    (List.filter_map
+       (fun (n, v) ->
+         if String.equal (String.lowercase_ascii n) "retry-after" then Some v
+         else None)
+       r.headers);
+  check_header "and the handler's others" (Some "yes")
+    (Spindle.Test.header r "x-seen")
 
 (* A function kept past the answer writes to nothing: the next request is
    not given what the last one's leftover set, and the bug is logged. *)
@@ -9748,10 +9995,14 @@ let () =
             test_a_signed_cookie_ages;
           Alcotest.test_case "the server holds the keys" `Quick
             test_the_server_holds_the_keys;
+          Alcotest.test_case "keys supplied as a resource seal" `Quick
+            test_keys_supplied_as_a_resource_seal;
           Alcotest.test_case "an encrypted cookie ages" `Quick
             test_an_encrypted_cookie_ages;
           Alcotest.test_case "a session is kept on the server" `Quick
             test_a_session_is_kept_on_the_server;
+          Alcotest.test_case "a refusal carries the session it moved" `Quick
+            test_a_refusal_carries_the_session_it_moved;
           Alcotest.test_case "a session ends by its limits" `Quick
             test_a_session_ends_by_its_limits;
           Alcotest.test_case "sign-in rotates the id" `Quick
@@ -9764,11 +10015,21 @@ let () =
             test_the_memory_store_sweeps_by_expiry;
           Alcotest.test_case "a session's cookie lasts its limit, rounded up"
             `Quick test_a_sessions_cookie_lasts_its_limit_rounded_up;
-          Alcotest.test_case "refuses what it cannot hold" `Quick
-            test_a_cookie_refuses_what_it_cannot_hold;
-          QCheck_alcotest.to_alcotest test_an_encoded_cookie_carries_any_text;
-          Alcotest.test_case "one not encoded by us is a problem" `Quick
-            test_a_cookie_not_encoded_by_us_is_a_problem;
+          Alcotest.test_case "refuses a name it cannot hold" `Quick
+            test_a_cookie_refuses_a_name_it_cannot_hold;
+          Alcotest.test_case "holds text from the request" `Quick
+            test_a_cookie_holds_text_from_the_request;
+          QCheck_alcotest.to_alcotest test_a_cookie_carries_any_text;
+          Alcotest.test_case "a plain value keeps its spelling" `Quick
+            test_a_plain_value_keeps_its_spelling;
+          Alcotest.test_case "a value writes no attribute" `Quick
+            test_a_value_writes_no_attribute;
+          Alcotest.test_case "one a script wrote reads" `Quick
+            test_a_cookie_a_script_wrote_reads;
+          Alcotest.test_case "a broken escape is absent" `Quick
+            test_a_broken_escape_is_absent;
+          Alcotest.test_case "one that does not read is absent" `Quick
+            test_a_cookie_that_does_not_read_is_absent;
         ] );
       ( "forgery",
         [
@@ -9843,6 +10104,8 @@ let () =
         [
           Alcotest.test_case "a form's fields are typed inputs" `Quick
             test_a_form's_fields_are_typed_inputs;
+          Alcotest.test_case "a value sent twice is read by its first" `Quick
+            test_a_value_sent_twice_is_read_by_its_first;
           Alcotest.test_case "a form is read once, and only as a form" `Quick
             test_a_form_is_read_once_and_only_as_a_form;
           Alcotest.test_case "a form is described" `Quick
@@ -9880,6 +10143,8 @@ let () =
             test_posted_work_keeps_the_trace;
           Alcotest.test_case "a call carries the trace" `Quick
             test_a_call_carries_the_trace;
+          Alcotest.test_case "a call's failure joins the caller's" `Quick
+            test_a_calls_failure_joins_the_callers;
           Alcotest.test_case "a kept trace records its spans" `Quick
             test_a_kept_trace_records_its_spans;
           Alcotest.test_case "a cancelled span is no error" `Quick
@@ -10072,8 +10337,10 @@ let () =
             test_an_answer_encodes_what_the_route_returns;
           Alcotest.test_case "a page and text are their media types" `Quick
             test_a_page_and_text_are_their_media_types;
-          Alcotest.test_case "what an endpoint sets goes only with Ok" `Quick
-            test_what_an_endpoint_sets_goes_only_with_ok;
+          Alcotest.test_case "what an endpoint sets goes with its answer" `Quick
+            test_what_an_endpoint_sets_goes_with_its_answer;
+          Alcotest.test_case "a refusal's own fields win" `Quick
+            test_a_refusals_own_fields_win;
           Alcotest.test_case "a call after the answer changes nothing" `Quick
             test_a_call_after_the_answer_changes_nothing;
           Alcotest.test_case "serve refuses routes before it listens" `Quick
@@ -10136,6 +10403,8 @@ let () =
             test_every_domain_counts_into_one_series;
           Alcotest.test_case "a metric that cannot be exposed is refused" `Quick
             test_a_metric_that_cannot_be_exposed_is_refused;
+          Alcotest.test_case "counting never fails a request" `Quick
+            test_counting_never_fails_a_request;
           Alcotest.test_case "a server counts its requests" `Quick
             test_a_server_counts_its_requests;
           Alcotest.test_case "guarded as a route is" `Quick

@@ -5,11 +5,15 @@ module Codec = Codec
 module Cookie = struct
   include Cookie
 
-  (* A sealed cookie that does not open is absent, never an error: a browser
-     holding one from a retired key did nothing wrong. Described as the
-     string the browser holds. *)
-  let sealed_input ~required c =
+  (* A cookie that does not read is absent, never an error: the server wrote
+     it and the browser only kept it, so one from a retired key, an older
+     deploy or a script that broke its escape is no mistake of the person's.
+     A sealed one is described as the string the browser holds, and reads
+     the server's keys; a plain one is described by its codec. *)
+  let input ~required c =
     let name = Cookie.Named.name c and codec = Cookie.Named.codec c in
+    let sealed = Cookie.Named.sealed c in
+    let at = "cookie." ^ name in
     let carried =
       Dep.of_request
         ~needs:
@@ -19,58 +23,51 @@ module Cookie = struct
                 name;
                 required;
                 many = false;
-                shape = Codec.String;
-                kind = None;
+                shape = (if sealed then Codec.String else Codec.shape codec);
+                kind = (if sealed then None else Codec.kind codec);
                 default = None;
               };
           ]
         (fun r -> Ok (Request.cookie r name, Request.now r))
+    and keys =
+      if sealed then Dep.map Option.some Dep_repr.cookie_keys
+      else Dep.return None
     in
     Dep.join
       (Dep.map
          (fun ((raw, now), keys) ->
            let absent () =
-             if required then Error (Input.missing ~at:("cookie." ^ name))
-             else Ok None
+             if required then Error (Input.missing ~at) else Ok None
            in
            match raw with
            | None -> absent ()
            | Some raw -> (
+               let opened =
+                 match keys with
+                 | Some keys -> Cookie.Named.unseal c ~keys ~now raw
+                 | None -> Cookie_repr.unescape raw
+               in
                match
-                 Option.bind (Cookie.Named.unseal c ~keys ~now raw) (fun v ->
-                     Result.to_option (Codec.parse codec v))
+                 Option.bind opened (fun v ->
+                     Result.to_option (Input.parse ~at codec v))
                with
                | Some v -> Ok (Some v)
                | None ->
                    Logs.debug ~src:Log.http (fun m ->
-                       m "the cookie %s did not open, and is read as absent"
+                       m "the cookie %s did not read, and is read as absent"
                          name);
                    absent ()))
-         (Dep.both carried Dep_repr.cookie_keys))
+         (Dep.both carried keys))
 
-  let optional c =
-    if Cookie.Named.sealed c then sealed_input ~required:false c
-    else
-      Input.optional Input.cookie (Cookie.Named.name c) (Cookie.Named.codec c)
+  let optional c = input ~required:false c
 
   let required c =
-    if Cookie.Named.sealed c then
-      Dep.join
-        (Dep.map
-           (function
-             | Some v -> Ok v
-             | None ->
-                 Error (Input.missing ~at:("cookie." ^ Cookie.Named.name c)))
-           (sealed_input ~required:true c))
-    else
-      Input.required Input.cookie (Cookie.Named.name c) (Cookie.Named.codec c)
-
-  let encoded =
-    Codec.custom ~kind:"encoded"
-      ~parse:(fun s ->
-        Option.to_result ~none:"This is not a value this server wrote."
-          (Cookie_repr.decode s))
-      ~print:Cookie_repr.encode ()
+    Dep.join
+      (Dep.map
+         (function
+           | Some v -> Ok v
+           | None -> Error (Input.missing ~at:("cookie." ^ Cookie.Named.name c)))
+         (input ~required:true c))
 end
 
 (* Binding operators only, so opening it brings no other name into scope. *)

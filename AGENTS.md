@@ -63,17 +63,15 @@ out you broke it, as it is true today. Cite one by its bold phrase.
 - **No partial functions, and `invalid_arg` only where the `.mli` says it
   raises.** Errors are values. The exceptions each refuse a constant written
   in source: `Spindle.Cookie.named`, `signed`, `encrypted` and
-  `Spindle.Session.create` (for the name), `Spindle.Cookie.make` (for a value
-  its codec prints that no cookie can hold, or a path) and `clear` (for a
-  path), `Spindle_postgres.Session`'s (for a table's name
+  `Spindle.Session.create` (for the name), `Spindle.Cookie.make` and
+  `clear` (for a path), `Spindle_postgres.Session`'s (for a table's name
   that is no identifier, since it is written into each statement),
   `Spindle.Cors.make` (for `Any` beside credentials, which the Fetch standard
   refuses), `Spindle.Metrics`'s registrations (for a name, a label or buckets
-  Prometheus cannot read, or a name registered twice) and its counting (for
-  a number of label values other than its family's, or a counter moved
-  down), `Spindle.Broadcast.create` (for a depth below one),
-  `Spindle.Compress.make` (for a level deflate has not, a negative
-  size, or a type that is no media type pattern), `Spindle.Cache.forever`
+  Prometheus cannot read, or a name registered twice),
+  `Spindle.Broadcast.create` (for a depth below one), `Spindle.Compress.make`
+  (for a level deflate has not, a negative size, or a type that is no media
+  type pattern), `Spindle.Cache.forever`
   (for a prefix that does not begin and end with `/`), `Spindle.Rate.create` (for a limit or a burst below one, or a
   period shorter than a nanosecond a call),
   `Spindle.Server.run`, `serve_on` and `Spindle.serve` (for a limit out of
@@ -124,9 +122,11 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   and a route that reads nothing twice keeps no table. Test: a
   signed-in person read twice from the database, or an input listed twice
   in the document; `test_spindle` counts both.
-- **A cookie that fails its signature, its seal or its age is absent, never
-  an error**, and its age is held by the server as well as the browser: a
-  browser holding one from a retired key or an old visit did nothing wrong,
+- **A cookie that does not read is absent, never an error** -- one that
+  fails its signature, its seal or its age, or a plain one its codec does not
+  read -- and a sealed one's age is held by the server as well as the
+  browser: a browser holding one from a retired key, an old visit or an
+  older deploy did nothing wrong,
   and a copied one would otherwise replay for ever. A signed or sealed value
   is bound to its cookie's name and stamped from the application's `now` as
   the answer is written. Test: a `400` for a cookie an old deploy made, or

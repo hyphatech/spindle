@@ -26,8 +26,8 @@ Visit number 2.
 ```
 
 - `Cookie.optional` reads it (`None` when absent) and `Cookie.required`
-  refuses without it. A value that does not parse is `400 invalid` at
-  `cookie.<name>`.
+  refuses without it. A value that does not read -- one an older deploy
+  wrote, say -- is absent too, so a stale cookie never locks anyone out.
 - `Cookie.make` defaults to `Path=/; HttpOnly; SameSite=Lax`. A plain
   cookie lasts until the browser closes unless you give `~max_age_s`
   (seconds); a signed or encrypted one is given `Max-Age` from its own
@@ -37,10 +37,12 @@ Visit number 2.
   `Secure` cookie sent over plain http. Behind a proxy that ends TLS, list
   the proxy in `~trusted_proxies` so that its word that the browser used
   `https` is believed ([below](#the-clients-ip-address)).
-- **The value must be cookie-safe.** `Cookie.make` raises
-  `Invalid_argument` on a value with a space, quote, comma, semicolon,
-  backslash or control character. For text that arrived at run time, use
-  the `Spindle.Cookie.encoded` codec, which holds any string.
+- **Any text is a value.** What a cookie cannot hold -- a space, quote,
+  comma, semicolon, backslash or control character -- is percent-encoded,
+  and so is `%`, and reading decodes it: `Cookie.make theme "Kim Li"` is
+  written `theme=Kim%20Li`. A word, a tag or a token keeps its spelling, so
+  a script reading `document.cookie` sees it as written, and decodes the
+  rest with `decodeURIComponent`.
 
 ## Signed and encrypted cookies
 

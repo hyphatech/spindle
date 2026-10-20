@@ -3,7 +3,13 @@
     Each is a dependency that says what it reads, by name and
     {!Codec.type-shape}. A value that does not parse is {!Refusal.invalid} at
     [query.<name>], and a required one that is missing is too -- reported with
-    every other problem of the request, at once. *)
+    every other problem of the request, at once.
+
+    A parameter sent more than once, [?role=viewer&role=admin], is read by its
+    first value, as the URL standard's [URLSearchParams.get] reads it and as the
+    client that wrote the URL reads it back; {!list} reads every one. Such a URL
+    is valid, so it never fails a route, and no value is made that was not sent,
+    as joining them would. *)
 
 val optional : string -> 'a Codec.t -> 'a option Dep.t
 (** The first value given, if any. *)

@@ -79,7 +79,7 @@ val respond :
   'r ->
   Response.t
 (** The handler's result as a response: what the route set -- [cookies],
-    [headers] -- goes with a success, never with a refusal. *)
+    [headers] -- goes with the answer, a refusal as much as a success. *)
 
 val declares : shape -> Spindle_http.Status.t -> bool
 (** Whether a model may answer a status: a route with one status sets it itself,

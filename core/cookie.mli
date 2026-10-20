@@ -98,13 +98,17 @@ val make :
     defaults to ["/"]; [max_age_s] is its [Max-Age], in seconds, and without it
     the cookie lasts as long as the browser's session.
 
-    Raises [Invalid_argument] for a printed value or a path RFC 6265 does not
-    allow -- a space, a quote, a comma, a semicolon, a backslash or a control
-    character, any of which could end the cookie early or write an attribute of
-    its own. A token the application mints, a number, a word of an enum: none
-    can. Text that arrived at run time is declared with the [encoded] codec,
-    which writes any string as one a cookie can hold ([Spindle.Cookie.encoded]).
-*)
+    A plain cookie holds any text: what RFC 6265 leaves out of a value -- a
+    space, a quote, a comma, a semicolon, a backslash, a control character, any
+    of which could end the cookie early or write an attribute of its own -- is
+    percent-encoded, and so is [%], and reading decodes it, so
+    [make theme "Kim Li"] is written [theme=Kim%20Li] and read back as
+    ["Kim Li"]. A word, a tag or a token keeps its spelling. A value a request
+    carries with a [%] not followed by two hex digits is absent, as any cookie
+    that does not read is ([Spindle.Cookie.optional]).
+
+    Raises [Invalid_argument] for a path RFC 6265 does not allow -- a control
+    character or a semicolon --, a constant written in source. *)
 
 val clear : ?path:string -> 'a named -> t
 (** [clear cookie] removes the cookie at [path]: an empty value with no

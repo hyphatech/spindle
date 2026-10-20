@@ -116,7 +116,13 @@ type 'body response = {
 
 type error = [ `Unsent of string | `Lost of string ]
 
-let error_to_string : error -> string = function `Unsent m | `Lost m -> m
+let error_to_string : [< error ] -> string = function `Unsent m | `Lost m -> m
+
+(* Open where it is answered, so a caller's own failures join it under one
+   [let*]; inside, a failure is exactly one of these. *)
+let opened : ('a, error) result -> ('a, [> error ]) result = function
+  | Ok v -> Ok v
+  | Error (#error as e) -> Error e
 
 (* Whether the request went out or not, a deadline that passed may have
    been after it did. *)
@@ -732,7 +738,7 @@ let call t ?timeout ?(headers = []) ?body meth url =
         Mtime.Span.pp
         (Mtime.span started (Eio.Time.Mono.now t.clock)));
   (match result with Ok r -> answered r.status | Error e -> failed e);
-  result
+  opened result
 
 (* ------------------------------------------------------------------ *)
 (* An answer read as it arrives *)
@@ -783,6 +789,8 @@ module Body = struct
           | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
           | exception ex -> (
               match error_of_exn ex with Some e -> failed e | None -> raise ex))
+
+  let read b = opened (read b)
 end
 
 (* The connection and the answer's head, retried as a call is. *)
@@ -821,7 +829,9 @@ let open_answer ~sw t ~headers ~body meth target =
 (* The span includes the reading: a stream's length is its cost. *)
 let stream t ?timeout ?read_timeout ?(headers = []) ?body meth url f =
   let uri = Uri.of_string url in
-  within_client_span meth uri @@ fun ~answered ~failed ->
+  opened
+  @@ within_client_span meth uri
+  @@ fun ~answered ~failed ->
   let deadline = Option.value timeout ~default:t.timeout in
   let wait = Option.value read_timeout ~default:deadline in
   let caller_closes = Field.has_element headers "connection" "close" in
@@ -970,7 +980,7 @@ let events t ?timeout ?read_timeout ?(headers = []) ?last_event_id url on_event
 type websocket_error =
   [ error | `Not_upgraded of string response | `Websocket of Websocket.error ]
 
-let websocket_error_to_string : websocket_error -> string = function
+let websocket_error_to_string : [< websocket_error ] -> string = function
   | #error as e -> error_to_string e
   | `Not_upgraded r ->
       Printf.sprintf "answered %d, which opens no socket"
@@ -1187,10 +1197,10 @@ let websocket t ?timeout ?headers ?keep_alive ?max_message protocol url f =
   match
     open_websocket t ?timeout ?headers ?keep_alive ?max_message protocol url f
   with
-  | Ok _ as result ->
+  | Ok v ->
       log_end Logs.Info "closed";
-      result
-  | Error e as result ->
+      Ok v
+  | Error e ->
       let level =
         match e with
         | `Websocket
@@ -1200,7 +1210,8 @@ let websocket t ?timeout ?headers ?keep_alive ?max_message protocol url f =
         | `Unsent _ | `Lost _ | `Not_upgraded _ | `Websocket _ -> Logs.Warning
       in
       log_end level (websocket_error_to_string e);
-      result
+      (* Open, as [opened] makes a call's failure. *)
+      Error (match e with #websocket_error as e -> e)
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
   | exception ex ->
       let bt = Printexc.get_raw_backtrace () in

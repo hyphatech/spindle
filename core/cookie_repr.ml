@@ -37,13 +37,45 @@ let is_cookie_octet = function
       true
   | _ -> false
 
-let is_valid_value v =
-  let n = String.length v in
-  let inner =
-    if n >= 2 && v.[0] = '"' && v.[n - 1] = '"' then String.sub v 1 (n - 2)
-    else v
+(* What a cookie-octet leaves out would end the value or write an attribute
+   of its own, so a plain value is written with it percent-encoded, and the
+   % that marks an escape with it: any text is a value a cookie holds, and a
+   word, a tag or a token keeps its spelling. *)
+let escape v =
+  let b = Buffer.create (String.length v) in
+  String.iter
+    (fun c ->
+      if is_cookie_octet c && c <> '%' then Buffer.add_char b c
+      else Buffer.add_string b (Printf.sprintf "%%%02X" (Char.code c)))
+    v;
+  Buffer.contents b
+
+(* Any escape reads as its byte, in either case, since a browser's script
+   encodes more than it must; one that is not two hex digits is no value
+   anybody wrote. *)
+let unescape v =
+  let hex = function
+    | '0' .. '9' as c -> Some (Char.code c - Char.code '0')
+    | 'a' .. 'f' as c -> Some (Char.code c - Char.code 'a' + 10)
+    | 'A' .. 'F' as c -> Some (Char.code c - Char.code 'A' + 10)
+    | _ -> None
   in
-  String.for_all is_cookie_octet inner
+  let n = String.length v in
+  let b = Buffer.create n in
+  let rec from i =
+    if i >= n then Some (Buffer.contents b)
+    else if v.[i] <> '%' then (
+      Buffer.add_char b v.[i];
+      from (i + 1))
+    else if i + 2 >= n then None
+    else
+      match (hex v.[i + 1], hex v.[i + 2]) with
+      | Some high, Some low ->
+          Buffer.add_char b (Char.chr ((high * 16) + low));
+          from (i + 3)
+      | (Some _ | None), (Some _ | None) -> None
+  in
+  from 0
 
 let is_valid_path p =
   String.for_all
@@ -79,18 +111,16 @@ module Named = struct
   let sealed n = Option.is_some n.sealer
 
   let unseal n ~keys ~now raw =
-    match n.sealer with None -> Some raw | Some s -> s.unseal keys ~now raw
+    match n.sealer with
+    | None -> unescape raw
+    | Some s -> s.unseal keys ~now raw
 end
 
-(* The message names the cookie and never its value, which may be a
-   credential. *)
+(* [value] is one a cookie holds: a plain one escaped, a sealed one
+   base64url. A path is a constant written in source. *)
 let make_cookie ?(path = "/") ?max_age ?(http_only = true) ?(same_site = Lax)
     name value =
-  if not (is_valid_value value) then
-    invalid_arg
-      (Printf.sprintf "Cookie.make: cookie %s has a value no cookie can hold"
-         name)
-  else if not (is_valid_path path) then
+  if not (is_valid_path path) then
     invalid_arg
       (Printf.sprintf "Cookie.make: cookie %s has a path no cookie can hold"
          name)
@@ -115,14 +145,15 @@ let make ?path ?max_age_s ?http_only ?same_site n v =
     | Some a, None | None, Some a -> Some a
     | None, None -> None
   in
-  let printed = Codec.print n.codec v in
   match n.sealer with
-  | None -> make_cookie ?path ?max_age ?http_only ?same_site n.cookie printed
+  | None ->
+      make_cookie ?path ?max_age ?http_only ?same_site n.cookie
+        (escape (Codec.print n.codec v))
   | Some s ->
       (* Sealed as base64url, which any cookie holds. *)
       {
         (make_cookie ?path ?max_age ?http_only ?same_site n.cookie "") with
-        value = printed;
+        value = Codec.print n.codec v;
         seal = Some s.seal;
       }
 

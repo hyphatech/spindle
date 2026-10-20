@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+- Breaking: a plain cookie that does not read is absent, as a signed or
+  encrypted one that fails its check already was: `Cookie.optional` answers
+  `None`, and `Cookie.required` refuses it as missing, with a `debug` line
+  naming the cookie. It was `400 invalid`, so a value an older deploy wrote
+  -- an enum's word since removed -- refused every page that read it, and
+  the person could not mend it from the site. FastAPI refuses such a value;
+  the server wrote the cookie and the browser only kept it, so Spindle
+  holds it to the rule its sealed cookies keep.
+
+- Breaking: counting never raises. `Spindle.Metrics.inc` with a negative
+  `~by`, and `inc`, `add` or `observe` with a number of label values other
+  than the family's, raised `Invalid_argument` inside the request that
+  counted, so a route that had done its work answered `500` for a metric.
+  Such a count is left out, and logged once for its family, as a sampled
+  gauge's series of the wrong length already was.
+
+- Breaking: a plain cookie holds any text. What RFC 6265 leaves out of a
+  value -- a space, a quote, a comma, a semicolon, a backslash, a control
+  character -- is percent-encoded, and so is `%`, and reading decodes any
+  escape, as Express and Rails do: `Cookie.make theme "Kim Li"` is written
+  `theme=Kim%20Li` and read back as `"Kim Li"`. `Cookie.make` raised
+  `Invalid_argument` on such a value, so a cookie set from what a request
+  brought answered `500`. A word, a tag or a token keeps its spelling; a
+  value written raw with a `%` reads differently.
+  `Spindle.Cookie.encoded`, the codec that held such text, is gone: every
+  plain cookie holds it now.
+
+- Breaking: what a handler sets -- a cookie with `Spindle.set_cookie`, a
+  header with `Spindle.add_header` -- goes with its answer, an `Ok` or a
+  refusal, as a 4xx a handler renders carries its cookies in Rails and Plug.
+  It went with an `Ok` alone, so a session moved before a refusal --
+  `Session.rotate`, then a wrong password -- had changed its store but not
+  the browser's cookie, and signed its person out. A field the refusal writes
+  itself -- a challenge, a `Retry-After` -- is the one sent, never beside the
+  handler's of the same name.
+
+- An app given its keys as a resource -- `Spindle.Dep.resource Spindle.keys
+  ring` among `~resources` -- seals its cookies under them. It started, and
+  read its signed and encrypted cookies, but answered `500` wherever a route
+  set one, since only `~keys` was what cookies were sealed under.
+
+- `Spindle_client.call`, `stream`, `events` and `Body.read` answer
+  `[> Spindle_client.error ]`, and `websocket` `[> websocket_error ]`, open as
+  rowtype's and `Spindle_postgres`'s failures are, so a handler's one `let*`
+  runs over a call and its own failures, as `Spindle_client.error` says; they
+  were closed, and such a `let*` did not compile.
+
 - `Spindle.Health.routes`, `Spindle.Openapi.docs` and `Spindle.Openapi.routes`
   take `?guard`, as `Spindle.Metrics.routes` does: a `unit Dep.t` run first,
   whose refusal is the answer, so the probes and the API's reference can be

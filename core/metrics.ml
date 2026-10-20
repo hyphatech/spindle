@@ -11,6 +11,7 @@ type 'c family = {
   lock : Mutex.t;
   mutable all_cells : (string list * 'c) list;
       (** every domain's, newest first *)
+  warned : bool Atomic.t;  (** of a count left out *)
 }
 
 type counter = int Atomic.t family
@@ -101,22 +102,35 @@ let family ~help ~unit ~labels name =
     domain_cells = Domain.DLS.new_key (fun () -> Hashtbl.create 8);
     lock = Mutex.create ();
     all_cells = [];
+    warned = Atomic.make false;
   }
 
-(* This domain's cell for those values, made and listed the first time. *)
+(* Counting runs inside a request, where a raise would fail work already
+   done, so a count that cannot be kept is left out, and said once for its
+   family rather than once a request. *)
+let left_out (f : _ family) what =
+  if Atomic.compare_and_set f.warned false true then
+    Logs.warn ~src:Log.http (fun m -> m "%s: %s, left out" f.name what)
+
+(* This domain's cell for those values, made and listed the first time; none
+   for a number of values other than the family's. *)
 let cell (f : _ family) make values =
-  if List.compare_lengths values f.labels <> 0 then
-    invalid_arg
-      (Printf.sprintf "Spindle.Metrics: %s takes %d label values, not %d" f.name
-         (List.length f.labels) (List.length values));
-  let cells = Domain.DLS.get f.domain_cells in
-  match Hashtbl.find_opt cells values with
-  | Some c -> c
-  | None ->
-      let c = make () in
-      Hashtbl.add cells values c;
-      Mutex.protect f.lock (fun () -> f.all_cells <- (values, c) :: f.all_cells);
-      c
+  if List.compare_lengths values f.labels <> 0 then begin
+    left_out f
+      (Printf.sprintf "a count with %d label values, not %d"
+         (List.length values) (List.length f.labels));
+    None
+  end
+  else
+    let cells = Domain.DLS.get f.domain_cells in
+    match Hashtbl.find_opt cells values with
+    | Some c -> Some c
+    | None ->
+        let c = make () in
+        Hashtbl.add cells values c;
+        Mutex.protect f.lock (fun () ->
+            f.all_cells <- (values, c) :: f.all_cells);
+        Some c
 
 (* ------------------------------------------------------------------ *)
 (* Counting *)
@@ -126,13 +140,13 @@ let counter t ?help ?unit ?labels name =
   register t (Counter f);
   f
 
+(* Prometheus reads a counter that went down as its process restarting. *)
 let inc ?(by = 1) c values =
-  if by < 0 then
-    invalid_arg
-      (Printf.sprintf "Spindle.Metrics: counter %s cannot go down by %d" c.name
-         (-by));
-  ignore
-    (Atomic.fetch_and_add (cell c (fun () -> Atomic.make 0) values) by : int)
+  if by < 0 then left_out c (Printf.sprintf "a counter moved down by %d" (-by))
+  else
+    Option.iter
+      (fun cell -> ignore (Atomic.fetch_and_add cell by : int))
+      (cell c (fun () -> Atomic.make 0) values)
 
 let gauge t ?help ?unit ?labels name =
   let f = family ~help ~unit ~labels name in
@@ -140,8 +154,9 @@ let gauge t ?help ?unit ?labels name =
   f
 
 let add g values n =
-  ignore
-    (Atomic.fetch_and_add (cell g (fun () -> Atomic.make 0) values) n : int)
+  Option.iter
+    (fun cell -> ignore (Atomic.fetch_and_add cell n : int))
+    (cell g (fun () -> Atomic.make 0) values)
 
 let sampled t ?help ?unit ?labels name read =
   let s_name = exposed_name ~unit name
@@ -197,22 +212,22 @@ let rec add_float a v =
 (* A count per bucket, the last past every bound; they are summed into
    Prometheus's cumulative counts when read. *)
 let observe h values v =
-  let c =
-    cell h.family
-      (fun () ->
-        {
-          counts =
-            Array.init (Array.length h.bounds + 1) (fun _ -> Atomic.make 0);
-          sum = Atomic.make 0.;
-        })
-      values
-  in
   let n = Array.length h.bounds in
   let rec bucket_index i =
     if i < n && v > h.bounds.(i) then bucket_index (i + 1) else i
   in
-  Atomic.incr c.counts.(bucket_index 0);
-  add_float c.sum v
+  Option.iter
+    (fun c ->
+      Atomic.incr c.counts.(bucket_index 0);
+      add_float c.sum v)
+    (cell h.family
+       (fun () ->
+         {
+           counts =
+             Array.init (Array.length h.bounds + 1) (fun _ -> Atomic.make 0);
+           sum = Atomic.make 0.;
+         })
+       values)
 
 (* ------------------------------------------------------------------ *)
 (* Prometheus's text format, 0.0.4 *)

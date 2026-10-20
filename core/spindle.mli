@@ -41,14 +41,14 @@ module Cookie : sig
   end
 
   val optional : 'a named -> 'a option Dep.t
-  (** The cookie's value, if the request carries it: one that does not parse is
-      {!Refusal.invalid} at [cookie.<name>]. A {!signed} or {!encrypted} one
-      that fails its signature, its seal or its age is [None]. *)
+  (** The cookie's value, if the request carries one that reads. One that does
+      not -- a value its codec does not read, a broken escape, or a {!signed} or
+      {!encrypted} one that fails its signature, its seal or its age -- is
+      [None], and a [debug] line naming the cookie: the server wrote it and the
+      browser only kept it, so one an older deploy wrote is no refusal. *)
 
   val required : 'a named -> 'a Dep.t
-
-  val encoded : string Codec.t
-  (** Any text: written as one a cookie can hold, and read back as it was. *)
+  (** {!optional}, refused as missing at [cookie.<name>] when it is [None]. *)
 end
 
 (** The binding operators a route is written with, and nothing else:
@@ -253,7 +253,7 @@ val keys : Key.ring Dep.t
 val set_cookie : (Cookie.t -> unit) Dep.t
 (** A function that sets a cookie on this request's answer: a handler that sets
     one takes it among its inputs and calls it, and one that sets nothing never
-    mentions it. What it set goes with an [Ok] and never with a refusal. It is
+    mentions it. What it set goes with the answer, an [Ok] or a refusal. It is
     this request's alone; a call after the answer has gone -- from a fibre the
     handler left behind -- changes nothing and is logged as the route's bug.
     Whether the cookie is [Secure] is the framework's to say ({!Cookie}).

@@ -17,7 +17,7 @@
 
     The endpoint returns the plain value, or a {!Refusal}: an [Error] is the
     refusal's answer, and an [Ok] is the model's. A cookie or a header the
-    endpoint sets goes with an [Ok] ({!Spindle.set_cookie},
+    endpoint sets goes with either ({!Spindle.set_cookie},
     {!Spindle.add_header}). *)
 
 type 'r t = 'r Returns_repr.t

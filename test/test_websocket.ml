@@ -219,6 +219,24 @@ let test_the_client_calls_the_server env () =
   check_outcome "the same protocol from the other end" (Ok "hi 100000")
     (called got)
 
+(* A socket's failure is a call's words and its own, so one [let*] runs over
+   it and the caller's own, as a call's does. *)
+let test_a_sockets_failure_joins_the_callers env () =
+  Eio.Switch.run @@ fun sw ->
+  let echoed () =
+    let* text =
+      Spindle_client.websocket (client ~sw env ()) chat "ws:///echo" (fun ws ->
+          let* back = Ws.receive ws in
+          Ok back.text)
+    in
+    if String.equal text "" then Error `Empty else Ok text
+  in
+  Alcotest.(check bool)
+    "a URL with no host is unsent" true
+    (match echoed () with
+    | Error (`Unsent _) -> true
+    | Error (`Lost _ | `Not_upgraded _ | `Websocket _ | `Empty) | Ok _ -> false)
+
 (* A program's client, for as long as its function runs, taken from the
    environment as a server's routes are. *)
 let test_a_client_runs_as_long_as_its_function env () =
@@ -803,6 +821,8 @@ let () =
         [
           Alcotest.test_case "the client calls the server" `Quick
             (test_the_client_calls_the_server env);
+          Alcotest.test_case "a socket's failure joins the caller's" `Quick
+            (test_a_sockets_failure_joins_the_callers env);
           Alcotest.test_case "a client runs as long as its function" `Quick
             (test_a_client_runs_as_long_as_its_function env);
           Alcotest.test_case "a refusal reaches the client" `Quick

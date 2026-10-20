@@ -32,7 +32,8 @@ module Named : sig
   val unseal :
     'a named -> keys:Key_repr.ring -> now:Ptime.t -> string -> string option
   (** The value a request carried, if its signature, seal and age hold at [now]
-      under [keys]; the value itself for a plain cookie. *)
+      under [keys]; for a plain cookie its value decoded, if it is one
+      ({!unescape}). *)
 end
 
 val make :
@@ -43,11 +44,15 @@ val make :
   'a named ->
   'a ->
   t
-(** As {!Cookie.make}. Raises [Invalid_argument] for a value its codec prints
-    that no cookie can hold, or a path. *)
+(** As {!Cookie.make}. Raises [Invalid_argument] for a path no cookie can hold.
+*)
 
 val clear : ?path:string -> 'a named -> t
 (** As {!Cookie.clear}. Raises as {!make} does, for a path. *)
+
+val unescape : string -> string option
+(** A plain cookie's value as its codec printed it: every escape decoded, in
+    either case, and [None] for a [%] not followed by two hex digits. *)
 
 val encode : string -> string
 (** Base64url with no padding, every character of which a cookie holds. *)

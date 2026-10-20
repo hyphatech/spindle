@@ -25,9 +25,11 @@
     counter's [_total] -- [http_server_request_duration_seconds]. A name, a
     label or a list of buckets that cannot be exposed, and a name registered
     twice, raise [Invalid_argument] where it is registered, since each is a
-    constant written in source; so does counting with a number of label values
-    other than the family's, or adding less than nothing to a counter, which
-    Prometheus would read as the process restarting.
+    constant written in source. Counting never raises: it runs inside a request,
+    where a raise would fail work already done, so a count with a number of
+    label values other than the family's, or a counter moved down -- which
+    Prometheus would read as the process restarting -- is left out, and logged
+    once for its family.
 
     {b A label's value is the program's, never a request's}: a route and never a
     path, a method HTTP names and never another, since every value is a series

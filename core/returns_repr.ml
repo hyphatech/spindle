@@ -200,7 +200,8 @@ let send_checked ~pattern declared send e =
   | Some _ | None -> ());
   send (Event.to_string e)
 
-(* What the route set goes with a success, never with a refusal. *)
+(* What the route set goes with its answer, a refusal as much as a success:
+   a cookie may say where a session the handler already moved has gone. *)
 let respond : type r.
     r t ->
     pattern:string ->
@@ -214,7 +215,20 @@ let respond : type r.
   let with_outgoing response =
     Response.add_cookies cookies (Response.add_headers headers response)
   in
-  let refuse = Response.refusal in
+  (* A refusal's own fields are what it means -- a challenge, a Retry-After
+     -- so the handler's by the same name give way to them. *)
+  let refuse (refusal : Refusal.t) =
+    let its_own (name, _) =
+      List.exists
+        (fun (n, _) ->
+          String.equal (String.lowercase_ascii n) (String.lowercase_ascii name))
+        refusal.headers
+    in
+    Response.add_cookies cookies
+      (Response.add_headers
+         (List.filter (fun h -> not (its_own h)) headers)
+         (Response.refusal refusal))
+  in
   match returns with
   | Json { status; description; examples = _ } -> (
       match r with
@@ -241,9 +255,7 @@ let respond : type r.
       | Error refusal -> refuse refusal
       | Ok status -> Response.empty ~status ~headers ~cookies ())
   | Response -> (
-      match r with
-      | Error refusal -> Response.refusal refusal
-      | Ok p -> with_outgoing p)
+      match r with Error refusal -> refuse refusal | Ok p -> with_outgoing p)
   | Events { declared; keep_alive } -> (
       match r with
       | Error refusal -> refuse refusal

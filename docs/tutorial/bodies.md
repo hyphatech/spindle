@@ -141,7 +141,9 @@ Spindle.get Path.(s "welcome") Returns.text
    Ok "Welcome back.")
 ```
 
-- What you set is sent with an `Ok` answer only, never with a refusal.
+- What you set is sent with the answer, an `Ok` or a refusal: a session moved
+  before a refusal still tells the browser where it went. A field the refusal
+  writes itself, such as `Retry-After`, is sent in place of yours.
 - Set cookies with `set_cookie`, never with `add_header ("set-cookie", …)`.
 - Some fields are the server's alone to write. A handler that sets one of
   them itself, or a header value containing a line break, answers `500`:

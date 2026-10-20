@@ -10,7 +10,9 @@
     [multipart/form-data], what it posts from one with a file (below). A body of
     any other [Content-Type] is {!Refusal.unsupported_media_type} before it is
     read, and a field whose text is not UTF-8 is a problem at its name. The body
-    is held whole, up to the server's [max_body].
+    is held whole, up to the server's [max_body]. A field sent more than once is
+    read by its first value, as a query parameter is ({!Query}), and {!list}
+    reads every one.
 
     A form is a body as {!Spindle.json} is: a route that reads a field beside
     another body, or beside {!Spindle.body_stream}, is refused when the app is
