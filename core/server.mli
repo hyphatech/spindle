@@ -9,6 +9,46 @@ type proxy_header = Request.proxy_header =
   | X_forwarded_for
   | Forwarded  (** which forwarding header a trusted proxy writes *)
 
+(** What a server lets a client make it hold or wait for. Each is described
+    under {!run} by its name; few programs change any. *)
+module Limits : sig
+  type t
+
+  val make :
+    ?max_body:int ->
+    ?max_header_bytes:int ->
+    ?head_timeout:Mtime.Span.t ->
+    ?idle_timeout:Mtime.Span.t ->
+    ?body_timeout:Mtime.Span.t ->
+    ?min_body_rate:int ->
+    ?send_timeout:Mtime.Span.t ->
+    ?discard_limit:int ->
+    ?linger:Mtime.Span.t ->
+    ?body_budget:int ->
+    ?max_connections:int ->
+    ?backlog:int ->
+    ?drain:Mtime.Span.t ->
+    unit ->
+    t
+  (** The limits, each its default unless given: [max_body] 1 MiB, [body_budget]
+      64 MiB, [discard_limit] 64 KiB, [max_header_bytes] 16 KiB, [head_timeout]
+      10 s, [idle_timeout] 60 s, [body_timeout] 20 s, [min_body_rate] 500 bytes
+      a second, [send_timeout] 30 s, [linger] 1 s, [max_connections] 512,
+      [backlog] 128 and [drain] 10 s.
+
+      {[
+      Spindle.Server.Limits.make ~max_body:(10 * 1024 * 1024) ()
+      ]}
+
+      Raises [Invalid_argument] for one out of its range -- fewer than one
+      connection, header byte or byte a second; a negative size; a timeout of
+      zero, where [linger] and [drain] may be zero: a constant written where the
+      limits are made, which read as given would serve nobody without a word. *)
+
+  val default : t
+  (** [make ()]. *)
+end
+
 val run :
   sw:Eio.Switch.t ->
   net:_ Eio.Net.t ->
@@ -18,22 +58,10 @@ val run :
   ?domains:int ->
   port:int ->
   ?host:string ->
-  ?max_body:int ->
-  ?max_header_bytes:int ->
-  ?head_timeout:Mtime.Span.t ->
-  ?idle_timeout:Mtime.Span.t ->
-  ?body_timeout:Mtime.Span.t ->
-  ?min_body_rate:int ->
-  ?send_timeout:Mtime.Span.t ->
-  ?discard_limit:int ->
-  ?linger:Mtime.Span.t ->
-  ?body_budget:int ->
+  ?limits:Limits.t ->
   ?trusted_proxies:string list ->
   ?proxy_header:proxy_header ->
-  ?backlog:int ->
-  ?max_connections:int ->
   ?stop:unit Eio.Promise.t ->
-  ?drain:Mtime.Span.t ->
   ?on_stop:(unit -> unit) ->
   ?ready:(string -> unit) ->
   ?trace:Spindle_http.Trace.exporter ->
@@ -57,8 +85,9 @@ val run :
 
     [localhost] is the default so that listening beyond this machine is written
     down where the server starts, and a laptop never serves the network it
-    happens to be on. The limits below hold with no proxy in front at all; TLS
-    is the one thing left to one, or to the platform.
+    happens to be on. The limits below are [limits]'s ({!Limits}), its defaults
+    unless given, and hold with no proxy in front at all; TLS is the one thing
+    left to one, or to the platform.
 
     {b Domains.} Connections are served on [domains] domains --
     [Domain.recommended_domain_count ()] unless told, every core the machine has
@@ -176,33 +205,21 @@ val run :
     through the IPv6 wildcard is its IPv4 address, so a proxy named by one is
     trusted through the other.
 
-    {b Raises} [Invalid_argument], before anything listens, for a limit out of
-    its range -- fewer than one domain, connection, header byte or byte a
-    second; a negative size; a timeout of zero, where [linger] and [drain] may
-    be zero -- and for a trusted proxy that is no address, range or
-    [unix:<path>]: each is a constant written where the server starts, and read
-    as given it would serve nobody, or trust nobody, without a word. *)
+    {b Raises} [Invalid_argument], before anything listens, for fewer than one
+    domain, and for a trusted proxy that is no address, range or [unix:<path>]:
+    each is a constant written where the server starts, and read as given it
+    would serve nobody, or trust nobody, without a word. A limit out of its
+    range is refused where it is made ({!Limits.make}). *)
 
 val serve_on :
   mono_clock:_ Eio.Time.Mono.t ->
   read_clock:(unit -> Ptime.t) ->
   domain_mgr:_ Eio.Domain_manager.t ->
   ?domains:int ->
-  ?max_body:int ->
-  ?max_header_bytes:int ->
-  ?head_timeout:Mtime.Span.t ->
-  ?idle_timeout:Mtime.Span.t ->
-  ?body_timeout:Mtime.Span.t ->
-  ?min_body_rate:int ->
-  ?send_timeout:Mtime.Span.t ->
-  ?discard_limit:int ->
-  ?linger:Mtime.Span.t ->
-  ?body_budget:int ->
+  ?limits:Limits.t ->
   ?trusted_proxies:string list ->
   ?proxy_header:proxy_header ->
-  ?max_connections:int ->
   ?stop:unit Eio.Promise.t ->
-  ?drain:Mtime.Span.t ->
   ?on_stop:(unit -> unit) ->
   ?trace:Spindle_http.Trace.exporter ->
   ?metrics:Metrics.t ->
@@ -210,7 +227,8 @@ val serve_on :
   App.instance ->
   unit
 (** {!run} on sockets the caller is already listening on -- a test's own, on a
-    port the system chose -- with everything else exactly as {!run} does it. *)
+    port the system chose -- with everything else exactly as {!run} does it, but
+    [limits]'s [backlog], which the caller gave its sockets. *)
 
 val stop_on_signals : sw:Eio.Switch.t -> unit -> unit Eio.Promise.t
 (** A promise resolved by the first SIGTERM or SIGINT, for {!run}'s [stop].

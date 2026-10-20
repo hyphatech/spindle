@@ -8,19 +8,20 @@ supplied as a [resource](../tutorial/dependencies.md#resources):
 let () =
   Eio_main.run @@ fun env ->
   Spindle_postgres.Pool.run env database @@ fun pool ->
-  Spindle.serve env ~port:3000 ~max_connections:1024
+  Spindle.serve env ~port:3000
+    ~limits:(Spindle.Server.Limits.make ~max_connections:1024 ())
     ~resources:[ Spindle.Dep.resource db pool ] routes
 ```
 
 By default it serves on `localhost:8080`, on every CPU core, stops cleanly
 on SIGTERM or SIGINT, and prints where it listens. Every setting is an
-optional argument.
+optional argument, and the limits on clients are one of them, `~limits`.
 
 Three mistakes stop the server before it listens:
 
 - A route table that cannot be right -- two routes answering one URL, say
   -- raises `Invalid_argument`, naming the route. So does a limit out of
-  its range.
+  its range, where `Limits.make` is called.
 - A `Static.directory` or a `Files.directory` that cannot be read, a
   resource a route reads that `~resources` does not hold, or a signed or
   encrypted cookie a route reads with no `~keys`, logs an error saying why,
@@ -57,9 +58,10 @@ is not serves with `~domains:1`. [Multicore and shared state](domains.md) has th
 
 Every wait on a client is bounded, so a slow or stuck client cannot hold a
 connection for ever. The defaults suit an ordinary API; change one only for
-a reason.
+a reason. They are one value, `~limits`, made by `Spindle.Server.Limits.make`,
+which takes each by its name and keeps the rest at their defaults.
 
-| Argument | Default | When it is passed |
+| Limit | Default | When it is passed |
 |---|---|---|
 | `max_body` | 1 MiB | the body is `413` |
 | `body_budget` | 64 MiB | bodies held at once, across all requests; past it `503 busy` |
@@ -69,10 +71,14 @@ a reason.
 | `body_timeout` | 20 s | a body gets 20 s, plus one second for every `min_body_rate` (500) bytes received; one that falls behind is closed |
 | `send_timeout` | 30 s | a client that stops reading the answer is closed |
 | `max_connections` | 512 | connections held at once, per address; the rest wait in `backlog` (128) |
+| `discard_limit` | 64 KiB | a body a route left unread is read and dropped up to it; with more left, the connection is closed |
+| `linger` | 1 s | a closing connection's last bytes are read and dropped, so the client gets the answer |
+| `drain` | 10 s | requests in flight at shutdown are cancelled ([below](#graceful-shutdown)) |
 
 A wait is an `Mtime.Span.t`, named for what it bounds:
-`~send_timeout:Mtime.Span.(60 * s)`. A timeout of zero is refused, since
-the server would wait for nothing; only `~drain` and `~linger` may be zero.
+`Limits.make ~send_timeout:Mtime.Span.(60 * s) ()`. A timeout of zero is
+refused where the limits are made, since the server would wait for nothing;
+only `drain` and `linger` may be zero.
 
 A route that takes large uploads reads its body as a stream, with a limit of
 its own ([large bodies](../tutorial/bodies.md#large-bodies)).
@@ -90,7 +96,7 @@ On the first SIGTERM or SIGINT:
 1. `~on_stop` runs. End your streams here -- an event stream or a broadcast
    never ends on its own.
 2. The server stops accepting connections.
-3. Requests in flight get `~drain` (10 s) to finish, each answered
+3. Requests in flight get `drain` (10 s, a [limit](#limits)) to finish, each answered
    with `Connection: close`. A stream of known length -- a file -- counts
    as one until its last byte is sent; an event stream does not, since only
    `~on_stop` ends it.
@@ -153,8 +159,6 @@ Fields against RFC 9651's published test suite, run whole.
 | `~metrics` | counts requests and connections ([Metrics](metrics.md)) |
 | `~ready` | told the address once the server listens; by default it is printed to stdout |
 | `~read_clock` | the clock a handler reads as `Spindle.now`; the system clock by default |
-| `~discard_limit` | 64 KiB: how much of a body a route left unread is read and dropped; with more left, the connection is closed |
-| `~linger` | 1 s: how long a closing connection's last bytes are read and dropped, so the client gets the answer |
 
 ## Without Spindle.serve
 

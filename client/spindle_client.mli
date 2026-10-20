@@ -77,12 +77,13 @@ val run :
   ?per_host:int ->
   ?idle_timeout:Mtime.Span.t ->
   ?authenticator:X509.Authenticator.t ->
-  Eio_unix.Stdenv.base ->
+  < net : _ Eio.Net.t ; mono_clock : _ Eio.Time.Mono.t ; .. > ->
   (t -> 'a) ->
   'a
-(** [run env f]: a client for as long as [f] runs, everything taken from Eio's
-    environment, and every connection it kept closed when [f] returns -- a
-    program whose job is calling out:
+(** [run env f]: a client for as long as [f] runs, the network and the monotonic
+    clock taken from [env], Eio's environment or anything that has them, and
+    every connection it kept closed when [f] returns -- a program whose job is
+    calling out:
 
     {[
     let () =

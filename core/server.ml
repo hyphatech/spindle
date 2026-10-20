@@ -79,6 +79,60 @@ let check_wait name span =
     (not (Mtime.Span.equal span Mtime.Span.zero))
     (Format.asprintf "%a" Mtime.Span.pp span)
 
+module Limits = struct
+  type t = {
+    max_body : int;
+    max_header_bytes : int;
+    head_timeout : Mtime.Span.t;
+    idle_timeout : Mtime.Span.t;
+    body_timeout : Mtime.Span.t;
+    min_body_rate : int;
+    send_timeout : Mtime.Span.t;
+    discard_limit : int;
+    linger : Mtime.Span.t;
+    body_budget : int;
+    max_connections : int;
+    backlog : int;
+    drain : Mtime.Span.t;
+  }
+
+  let make ?(max_body = 1_048_576) ?(max_header_bytes = 16_384)
+      ?(head_timeout = Mtime.Span.(10 * s))
+      ?(idle_timeout = Mtime.Span.(60 * s))
+      ?(body_timeout = Mtime.Span.(20 * s)) ?(min_body_rate = 500)
+      ?(send_timeout = Mtime.Span.(30 * s)) ?(discard_limit = 65_536)
+      ?(linger = Mtime.Span.s) ?(body_budget = 67_108_864)
+      ?(max_connections = 512) ?(backlog = 128) ?(drain = Mtime.Span.(10 * s))
+      () =
+    check_count "max_body" ~least:0 max_body;
+    check_count "max_header_bytes" ~least:1 max_header_bytes;
+    check_count "min_body_rate" ~least:1 min_body_rate;
+    check_count "discard_limit" ~least:0 discard_limit;
+    check_count "body_budget" ~least:0 body_budget;
+    check_count "max_connections" ~least:1 max_connections;
+    check_wait "head_timeout" head_timeout;
+    check_wait "idle_timeout" idle_timeout;
+    check_wait "body_timeout" body_timeout;
+    check_wait "send_timeout" send_timeout;
+    {
+      max_body;
+      max_header_bytes;
+      head_timeout;
+      idle_timeout;
+      body_timeout;
+      min_body_rate;
+      send_timeout;
+      discard_limit;
+      linger;
+      body_budget;
+      max_connections;
+      backlog;
+      drain;
+    }
+
+  let default = make ()
+end
+
 let is_trusted proxies who =
   match proxies with
   | [] -> false
@@ -1090,41 +1144,30 @@ type settings = {
   drain : Mtime.Span.t;
 }
 
-let settings ?domains ?(max_body = 1_048_576) ?(max_header_bytes = 16_384)
-    ?(head_timeout = Mtime.Span.(10 * s)) ?(idle_timeout = Mtime.Span.(60 * s))
-    ?(body_timeout = Mtime.Span.(20 * s)) ?(min_body_rate = 500)
-    ?(send_timeout = Mtime.Span.(30 * s)) ?(discard_limit = 65_536)
-    ?(linger = Mtime.Span.s) ?(body_budget = 67_108_864) ?(trusted_proxies = [])
-    ?(proxy_header = Request.X_forwarded_for) ?(max_connections = 512)
-    ?(drain = Mtime.Span.(10 * s)) () =
+let settings ?domains ?(limits = Limits.default) ?(trusted_proxies = [])
+    ?(proxy_header = Request.X_forwarded_for) () =
   Option.iter (check_count "domains" ~least:1) domains;
-  check_count "max_body" ~least:0 max_body;
-  check_count "max_header_bytes" ~least:1 max_header_bytes;
-  check_count "min_body_rate" ~least:1 min_body_rate;
-  check_count "discard_limit" ~least:0 discard_limit;
-  check_count "body_budget" ~least:0 body_budget;
-  check_count "max_connections" ~least:1 max_connections;
-  check_wait "head_timeout" head_timeout;
-  check_wait "idle_timeout" idle_timeout;
-  check_wait "body_timeout" body_timeout;
-  check_wait "send_timeout" send_timeout;
-  let limits =
-    {
-      max_body;
-      send_timeout;
-      max_header_bytes;
-      head_timeout;
-      idle_timeout;
-      body_timeout;
-      min_body_rate;
-      discard_limit;
-      linger;
-      body_budget;
-      trusted_proxies = List.map proxy_of_string trusted_proxies;
-      proxy_header;
-    }
-  in
-  { limits; domains; max_connections; drain }
+  let (l : Limits.t) = limits in
+  {
+    limits =
+      {
+        max_body = l.max_body;
+        send_timeout = l.send_timeout;
+        max_header_bytes = l.max_header_bytes;
+        head_timeout = l.head_timeout;
+        idle_timeout = l.idle_timeout;
+        body_timeout = l.body_timeout;
+        min_body_rate = l.min_body_rate;
+        discard_limit = l.discard_limit;
+        linger = l.linger;
+        body_budget = l.body_budget;
+        trusted_proxies = List.map proxy_of_string trusted_proxies;
+        proxy_header;
+      };
+    domains;
+    max_connections = l.max_connections;
+    drain = l.drain;
+  }
 
 let serve settings ~mono_clock:clock ~read_clock ~domain_mgr ?stop
     ?(on_stop = ignore) ?trace ?metrics sockets app =
@@ -1271,29 +1314,18 @@ let serve settings ~mono_clock:clock ~read_clock ~domain_mgr ?stop
           Eio.Promise.resolve stop_accepting ();
           wait_for_drain ~clock state ~drain)
 
-let serve_on ~mono_clock ~read_clock ~domain_mgr ?domains ?max_body
-    ?max_header_bytes ?head_timeout ?idle_timeout ?body_timeout ?min_body_rate
-    ?send_timeout ?discard_limit ?linger ?body_budget ?trusted_proxies
-    ?proxy_header ?max_connections ?stop ?drain ?on_stop ?trace ?metrics sockets
-    app =
+let serve_on ~mono_clock ~read_clock ~domain_mgr ?domains ?limits
+    ?trusted_proxies ?proxy_header ?stop ?on_stop ?trace ?metrics sockets app =
   serve
-    (settings ?domains ?max_body ?max_header_bytes ?head_timeout ?idle_timeout
-       ?body_timeout ?min_body_rate ?send_timeout ?discard_limit ?linger
-       ?body_budget ?trusted_proxies ?proxy_header ?max_connections ?drain ())
+    (settings ?domains ?limits ?trusted_proxies ?proxy_header ())
     ~mono_clock ~read_clock ~domain_mgr ?stop ?on_stop ?trace ?metrics sockets
     app
 
 let run ~sw ~net ~mono_clock:clock ~read_clock ~domain_mgr ?domains ~port
-    ?(host = "localhost") ?max_body ?max_header_bytes ?head_timeout
-    ?idle_timeout ?body_timeout ?min_body_rate ?send_timeout ?discard_limit
-    ?linger ?body_budget ?trusted_proxies ?proxy_header ?(backlog = 128)
-    ?max_connections ?stop ?drain ?on_stop ?(ready = ignore) ?trace ?metrics app
-    =
-  let settings =
-    settings ?domains ?max_body ?max_header_bytes ?head_timeout ?idle_timeout
-      ?body_timeout ?min_body_rate ?send_timeout ?discard_limit ?linger
-      ?body_budget ?trusted_proxies ?proxy_header ?max_connections ?drain ()
-  in
+    ?(host = "localhost") ?(limits = Limits.default) ?trusted_proxies
+    ?proxy_header ?stop ?on_stop ?(ready = ignore) ?trace ?metrics app =
+  let settings = settings ?domains ~limits ?trusted_proxies ?proxy_header ()
+  and backlog = limits.backlog in
   let bind addr =
     Eio.Net.listen net ~sw ~backlog ~reuse_addr:true (`Tcp (addr, port))
   in

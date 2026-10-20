@@ -219,10 +219,8 @@ let until = Spindle_http.Instant.until
    the program ends before it listens, saying why. *)
 let serve ?(port = 8080) ?host ?domains ?resources ?middleware ?codes ?not_found
     ?cors ?compress ?check_origin ?trusted_origins ?trailing_slash ?read_clock
-    ?max_body ?max_header_bytes ?head_timeout ?idle_timeout ?body_timeout
-    ?min_body_rate ?send_timeout ?discard_limit ?linger ?body_budget
-    ?trusted_proxies ?proxy_header ?backlog ?max_connections ?stop ?drain
-    ?on_stop ?ready ?trace ?metrics ?keys env routes =
+    ?limits ?trusted_proxies ?proxy_header ?stop ?on_stop ?ready ?trace ?metrics
+    ?keys env routes =
   let app =
     match
       App.make ?middleware ?codes ?not_found ?cors ?compress ?check_origin
@@ -264,7 +262,5 @@ let serve ?(port = 8080) ?host ?domains ?resources ?middleware ?codes ?not_found
     ~mono_clock:(Eio.Stdenv.mono_clock env)
     ~read_clock
     ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-    ?domains ~port ?host ?max_body ?max_header_bytes ?head_timeout ?idle_timeout
-    ?body_timeout ?min_body_rate ?send_timeout ?discard_limit ?linger
-    ?body_budget ?trusted_proxies ?proxy_header ?backlog ?max_connections ~stop
-    ?drain ?on_stop ~ready ?trace ?metrics instance
+    ?domains ~port ?host ?limits ?trusted_proxies ?proxy_header ~stop ?on_stop
+    ~ready ?trace ?metrics instance

@@ -375,9 +375,11 @@ let serve ~sw env =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:4
         ~read_clock:(fun () -> example_instant)
-        ~max_body:max_body_on_the_server
-        ~max_header_bytes:max_head_on_the_server
-        ~discard_limit:discard_on_the_server [ listening ] app;
+        ~limits:
+          (Spindle.Server.Limits.make ~max_body:max_body_on_the_server
+             ~max_header_bytes:max_head_on_the_server
+             ~discard_limit:discard_on_the_server ())
+        [ listening ] app;
       `Stop_daemon);
   connect
 

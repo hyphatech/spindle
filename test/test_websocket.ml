@@ -190,7 +190,7 @@ let serve ~sw env ?stop routes =
         ~domains:1
         ~read_clock:(fun () -> Ptime.epoch)
         ?stop
-        ~drain:Mtime.Span.(100 * ms)
+        ~limits:(Spindle.Server.Limits.make ~drain:Mtime.Span.(100 * ms) ())
         [ socket ] (Spindle.Test.app routes);
       `Stop_daemon);
   port
@@ -633,7 +633,8 @@ let test_a_peer_reading_slowly_is_sent_the_whole_message () =
   Eio.Fiber.fork_daemon ~sw (fun () ->
       Spindle.Server.serve_on ~mono_clock:clock
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-        ~domains:1 ~send_timeout:Mtime.Span.s
+        ~domains:1
+        ~limits:(Spindle.Server.Limits.make ~send_timeout:Mtime.Span.s ())
         ~read_clock:(fun () -> Ptime.epoch)
         [ listening ]
         (Spindle.Test.app [ large ]);
@@ -708,7 +709,10 @@ let test_a_socket_whose_peer_stopped_reading_gives_back_its_slot () =
       Spindle.Server.serve_on
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-        ~domains:1 ~max_connections:1 ~send_timeout:Mtime.Span.s
+        ~domains:1
+        ~limits:
+          (Spindle.Server.Limits.make ~max_connections:1
+             ~send_timeout:Mtime.Span.s ())
         ~read_clock:(fun () -> Ptime.epoch)
         [ listening ]
         (Spindle.Test.app [ flood; hello ]);

@@ -4645,7 +4645,10 @@ let serve ~sw ~net ~clock ~domain_mgr ~domains
   in
   Eio.Fiber.fork_daemon ~sw (fun () ->
       Spindle.Server.serve_on ~mono_clock:clock ~read_clock ~domain_mgr ~domains
-        ?trusted_proxies ?proxy_header ?max_body ?send_timeout ?max_connections
+        ?trusted_proxies ?proxy_header
+        ~limits:
+          (Spindle.Server.Limits.make ?max_body ?send_timeout ?max_connections
+             ())
         [ socket ] served;
       `Stop_daemon);
   port
@@ -5056,13 +5059,48 @@ let test_every_serving_domain_raises_its_minor_heap () =
   in
   ask [] 200
 
-(* A limit out of range, or a proxy that names nobody, is refused before
-   anything is served, and the edge of each range is taken. *)
+(* A limit out of range is a constant written wrong, refused where it is
+   written -- [Limits.make] -- and a domain count or a proxy that names
+   nobody where the server starts, before anything is served; the edge of
+   each range is taken. *)
 let test_a_limit_out_of_range_is_refused () =
+  let refused why f =
+    match f () with
+    | () -> Alcotest.failf "%s: accepted" why
+    | exception Invalid_argument _ -> ()
+  in
+  let limits f () = ignore (f () : Spindle.Server.Limits.t) in
+  List.iter
+    (fun (why, f) -> refused why (limits f))
+    [
+      ( "no connections",
+        fun () -> Spindle.Server.Limits.make ~max_connections:0 () );
+      ( "fewer than none",
+        fun () -> Spindle.Server.Limits.make ~max_connections:(-1) () );
+      ("no rate", fun () -> Spindle.Server.Limits.make ~min_body_rate:0 ());
+      ("no head", fun () -> Spindle.Server.Limits.make ~max_header_bytes:0 ());
+      ("a negative body", fun () -> Spindle.Server.Limits.make ~max_body:(-1) ());
+      ( "a negative budget",
+        fun () -> Spindle.Server.Limits.make ~body_budget:(-1) () );
+      ( "a negative discard",
+        fun () -> Spindle.Server.Limits.make ~discard_limit:(-1) () );
+      ( "no time for a head",
+        fun () -> Spindle.Server.Limits.make ~head_timeout:Mtime.Span.zero () );
+      ( "no time idle",
+        fun () -> Spindle.Server.Limits.make ~idle_timeout:Mtime.Span.zero () );
+      ( "no time for a body",
+        fun () -> Spindle.Server.Limits.make ~body_timeout:Mtime.Span.zero () );
+      ( "no time to send",
+        fun () -> Spindle.Server.Limits.make ~send_timeout:Mtime.Span.zero () );
+    ];
+  limits
+    (fun () ->
+      Spindle.Server.Limits.make ~max_connections:1 ~min_body_rate:1
+        ~max_header_bytes:1 ~max_body:0 ~body_budget:0 ~discard_limit:0
+        ~linger:Mtime.Span.zero ~drain:Mtime.Span.zero ~backlog:1 ())
+    ();
   Eio_main.run @@ fun env ->
-  let serve ?domains ?max_body ?max_header_bytes ?head_timeout ?idle_timeout
-      ?body_timeout ?min_body_rate ?send_timeout ?discard_limit ?linger
-      ?body_budget ?trusted_proxies ?max_connections ?drain () =
+  let serve ?domains ?trusted_proxies () =
     Eio.Switch.run @@ fun sw ->
     let socket =
       Eio.Net.listen (Eio.Stdenv.net env) ~sw ~backlog:1 ~reuse_addr:true
@@ -5074,36 +5112,18 @@ let test_a_limit_out_of_range_is_refused () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~mono_clock:(Eio.Stdenv.mono_clock env)
       ~read_clock:(fun () -> Ptime.epoch)
-      ?domains ?max_body ?max_header_bytes ?head_timeout ?idle_timeout
-      ?body_timeout ?min_body_rate ?send_timeout ?discard_limit ?linger
-      ?body_budget ?trusted_proxies ?max_connections ?drain ~stop [ socket ]
-      (Spindle.Test.app [])
+      ?domains ?trusted_proxies ~limits:Spindle.Server.Limits.default ~stop
+      [ socket ] (Spindle.Test.app [])
   in
   List.iter
-    (fun (why, f) ->
-      match f () with
-      | () -> Alcotest.failf "%s: served" why
-      | exception Invalid_argument _ -> ())
+    (fun (why, f) -> refused why f)
     [
       ("no domains", fun () -> serve ~domains:0 ());
-      ("no connections", fun () -> serve ~max_connections:0 ());
-      ("fewer than none", fun () -> serve ~max_connections:(-1) ());
-      ("no rate", fun () -> serve ~min_body_rate:0 ());
-      ("no head", fun () -> serve ~max_header_bytes:0 ());
-      ("a negative body", fun () -> serve ~max_body:(-1) ());
-      ("a negative budget", fun () -> serve ~body_budget:(-1) ());
-      ("a negative discard", fun () -> serve ~discard_limit:(-1) ());
-      ("no time for a head", fun () -> serve ~head_timeout:Mtime.Span.zero ());
-      ("no time idle", fun () -> serve ~idle_timeout:Mtime.Span.zero ());
-      ("no time for a body", fun () -> serve ~body_timeout:Mtime.Span.zero ());
-      ("no time to send", fun () -> serve ~send_timeout:Mtime.Span.zero ());
       ( "a range no address has",
         fun () -> serve ~trusted_proxies:[ "10.0.0.0/33" ] () );
       ("an address cut short", fun () -> serve ~trusted_proxies:[ "10.0.0" ] ());
     ];
-  serve ~domains:1 ~max_connections:1 ~min_body_rate:1 ~max_header_bytes:1
-    ~max_body:0 ~body_budget:0 ~discard_limit:0 ~linger:Mtime.Span.zero
-    ~drain:Mtime.Span.zero
+  serve ~domains:1
     ~trusted_proxies:[ "10.0.0.0/8"; "::1"; "unix:/run/proxy.sock" ]
     ()
 
@@ -5513,7 +5533,9 @@ let serve_in_memory ~sw env ?domains ?send_timeout ?max_connections served =
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~read_clock:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-        ?domains ?send_timeout ?max_connections [ listening ] served;
+        ?domains
+        ~limits:(Spindle.Server.Limits.make ?send_timeout ?max_connections ())
+        [ listening ] served;
       `Stop_daemon);
   connect
 
@@ -5546,7 +5568,9 @@ let test_a_drain_that_runs_out_ends_on_time domains () =
       Spindle.Server.serve_on ~mono_clock:clock
         ~read_clock:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-        ~domains ~stop ~drain [ listening ]
+        ~domains ~stop
+        ~limits:(Spindle.Server.Limits.make ~drain ())
+        [ listening ]
         (Spindle.Test.app [ never ]);
       Eio.Promise.resolve return (Eio.Time.Mono.now clock));
   Eio.Switch.run @@ fun inner ->
@@ -5606,7 +5630,7 @@ let test_a_stop_lets_answers_finish domains () =
         ~read_clock:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains ~stop
-        ~drain:Mtime.Span.(2 * s)
+        ~limits:(Spindle.Server.Limits.make ~drain:Mtime.Span.(2 * s) ())
         ~on_stop:(fun () -> Spindle.Broadcast.close hub)
         [ listening ]
         (Spindle.Test.app [ slow; events ]);
@@ -5666,7 +5690,7 @@ let test_a_stop_lets_a_stream_of_known_length_finish domains () =
         ~read_clock:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains ~stop
-        ~drain:Mtime.Span.(2 * s)
+        ~limits:(Spindle.Server.Limits.make ~drain:Mtime.Span.(2 * s) ())
         [ listening ]
         (Spindle.Test.app [ file ]);
       Eio.Promise.resolve return (Eio.Time.Mono.now clock));
@@ -5838,7 +5862,9 @@ let test_a_failed_accept_is_not_the_servers_end domains () =
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~read_clock:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-        ~domains ~max_connections:1 [ listening ]
+        ~domains
+        ~limits:(Spindle.Server.Limits.make ~max_connections:1 ())
+        [ listening ]
         (Spindle.Test.app [ hello ]);
       `Stop_daemon);
   Eio.Switch.run @@ fun inner ->
@@ -5983,7 +6009,8 @@ let test_run_checks_its_limits_before_it_binds () =
       ~domains:1
       ~mono_clock:(Eio.Stdenv.mono_clock env)
       ~read_clock:(fun () -> Ptime.epoch)
-      ~port ~host:"127.0.0.1" ~max_connections:0
+      ~port ~host:"127.0.0.1"
+      ~limits:(Spindle.Server.Limits.make ~max_connections:0 ())
       ~ready:(fun where -> Alcotest.failf "ready on %s" where)
       (Spindle.Test.app [ hello ])
   with
@@ -8388,8 +8415,39 @@ let test_serve_listens_and_stops () =
     ];
   Alcotest.(check bool) "said where" true (Option.is_some !told)
 
-(* A cookie and a header the endpoint set go with its value, and are
-   dropped with a refusal, which says only what it says. *)
+(* Each takes the capabilities it uses, and no more, as Eio would have it:
+   what reaches the network, the clocks and the disk is named in its type,
+   and [env] is one value that has them. *)
+let test_serve_takes_only_what_it_uses () =
+  Eio_main.run @@ fun env ->
+  let only_these =
+    object
+      method net = Eio.Stdenv.net env
+      method clock = Eio.Stdenv.clock env
+      method mono_clock = Eio.Stdenv.mono_clock env
+      method domain_mgr = Eio.Stdenv.domain_mgr env
+      method fs = Eio.Stdenv.fs env
+    end
+  in
+  let stop, stopped = Eio.Promise.create () in
+  Spindle.serve only_these ~port:0 ~domains:1 ~stop
+    ~ready:(fun _ -> Eio.Promise.resolve stopped ())
+    [
+      Spindle.get Spindle.Path.root Spindle.Returns.text
+        (Spindle.Dep.return (Ok "a"));
+    ];
+  let called =
+    Spindle_client.run
+      object
+        method net = Eio.Stdenv.net env
+        method mono_clock = Eio.Stdenv.mono_clock env
+      end
+      (fun _ -> "made")
+  in
+  check_string "and a client its own" "made" called
+
+(* A cookie and a header the endpoint set go with its answer, a value or a
+   refusal. *)
 let test_what_an_endpoint_sets_goes_with_its_answer () =
   let a =
     Spindle.Test.app
@@ -10347,6 +10405,8 @@ let () =
             test_serve_refuses_routes_before_it_listens;
           Alcotest.test_case "serve listens, and stops" `Quick
             test_serve_listens_and_stops;
+          Alcotest.test_case "serve takes only what it uses" `Quick
+            test_serve_takes_only_what_it_uses;
           Alcotest.test_case "a code nobody declared is the route's bug" `Quick
             test_a_code_nobody_declared_is_the_routes_bug;
           Alcotest.test_case "a middleware's codes are declared" `Quick

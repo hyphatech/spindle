@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Breaking: what a server lets a client make it hold or wait for is one
+  value, `Spindle.Server.Limits.t`, given as `~limits` to `Spindle.serve`,
+  `Server.run` and `Server.serve_on`, where each took thirteen arguments:
+  `max_body`, `max_header_bytes`, `head_timeout`, `idle_timeout`,
+  `body_timeout`, `min_body_rate`, `send_timeout`, `discard_limit`, `linger`,
+  `body_budget`, `max_connections`, `backlog` and `drain`. Their defaults are
+  written once, in `Limits.make`, which refuses one out of its range where it
+  is made: `~limits:(Spindle.Server.Limits.make ~max_body:(10 * 1024 * 1024)
+  ())`. `serve` takes about twenty arguments, the ones a program sets.
+
+- `Spindle.serve` and `Spindle_client.run` take the capabilities they use,
+  as `Spindle_postgres.Pool.run` does, where they took the whole
+  `Eio_unix.Stdenv.base`: `serve` the network, both clocks, the domain
+  manager and the filesystem, and the client the network and the monotonic
+  clock. `env` is still what a program passes; a test may pass an object
+  with only those, a mock clock among them.
+
 - Breaking: a plain cookie that does not read is absent, as a signed or
   encrypted one that fails its check already was: `Cookie.optional` answers
   `None`, and `Cookie.required` refuses it as missing, with a `debug` line

@@ -19,7 +19,7 @@ let serve ~sw env =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1
         ~read_clock:(fun () -> Ptime.epoch)
-        ~drain:Mtime.Span.(100 * ms)
+        ~limits:(Spindle.Server.Limits.make ~drain:Mtime.Span.(100 * ms) ())
         [ socket ]
         (Spindle.Test.app App.routes);
       `Stop_daemon);

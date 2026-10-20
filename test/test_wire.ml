@@ -74,8 +74,10 @@ let serve ~sw env ?(domains = 4) ?max_body ?max_header_bytes ?discard_limit
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains
         ~read_clock:(fun () -> Ptime.epoch)
-        ?max_body ?max_header_bytes ?discard_limit ?body_budget ?stop ?drain
-        [ listening ] served;
+        ~limits:
+          (Spindle.Server.Limits.make ?max_body ?max_header_bytes ?discard_limit
+             ?body_budget ?drain ())
+        ?stop [ listening ] served;
       `Stop_daemon);
   connect
 

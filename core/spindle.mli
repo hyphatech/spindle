@@ -125,33 +125,28 @@ val serve :
   ?trusted_origins:string list ->
   ?trailing_slash:App.trailing_slash ->
   ?read_clock:(unit -> Ptime.t) ->
-  ?max_body:int ->
-  ?max_header_bytes:int ->
-  ?head_timeout:Mtime.Span.t ->
-  ?idle_timeout:Mtime.Span.t ->
-  ?body_timeout:Mtime.Span.t ->
-  ?min_body_rate:int ->
-  ?send_timeout:Mtime.Span.t ->
-  ?discard_limit:int ->
-  ?linger:Mtime.Span.t ->
-  ?body_budget:int ->
+  ?limits:Server.Limits.t ->
   ?trusted_proxies:string list ->
   ?proxy_header:Server.proxy_header ->
-  ?backlog:int ->
-  ?max_connections:int ->
   ?stop:unit Eio.Promise.t ->
-  ?drain:Mtime.Span.t ->
   ?on_stop:(unit -> unit) ->
   ?ready:(string -> unit) ->
   ?trace:Trace.exporter ->
   ?metrics:Metrics.t ->
   ?keys:Key.ring ->
-  Eio_unix.Stdenv.base ->
+  < net : _ Eio.Net.t
+  ; clock : _ Eio.Time.clock
+  ; mono_clock : _ Eio.Time.Mono.t
+  ; domain_mgr : _ Eio.Domain_manager.t
+  ; fs : _ Eio.Path.t
+  ; .. > ->
   Route.t list ->
   unit
 (** [serve env routes]: the routes made into an app ({!App.make}) and served
-    ({!Server.run}) until the process is told to stop, everything taken from
-    Eio's environment:
+    ({!Server.run}) until the process is told to stop, with the capabilities it
+    uses taken from [env] -- the network it listens on, the clocks, the domains
+    it serves on and the filesystem a route reads as it starts -- and nothing
+    else, so Eio's whole environment is one value that has them:
 
     {[
     let () = Eio_main.run @@ fun env -> Spindle.serve env routes
