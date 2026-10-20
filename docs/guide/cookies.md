@@ -185,13 +185,12 @@ host and whether the browser used `https`.
     ```ocaml
     Spindle.serve env
       ~cors:
-        (Spindle.Cors.make ~credentials:true
-           (Spindle.Cors.Origins [ "https://app.example.com" ]))
+        (Spindle.Cors.origins ~credentials:true [ "https://app.example.com" ])
       routes
     ```
 
     Spindle answers the preflight itself and names an allowed origin in
-    `Access-Control-Allow-Origin`, or answers `*` under `Any`; an origin you
+    `Access-Control-Allow-Origin`, or answers `*` under `Spindle.Cors.any ()`, which allows no cookies; an origin you
     did not allow is told nothing. An allowed origin also passes the forgery
     check.
 

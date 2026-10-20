@@ -1,5 +1,6 @@
-(** A CORS policy as the server applies it: what {!Cors.make} makes, and the
-    fields of the Fetch standard's answers it owes a cross-origin request. *)
+(** A CORS policy as the server applies it: what {!Cors.origins} or {!Cors.any}
+    makes, and the fields of the Fetch standard's answers it owes a cross-origin
+    request. *)
 
 type origins = Origins of string list | Any
 

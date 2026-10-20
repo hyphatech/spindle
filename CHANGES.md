@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Breaking: a CORS policy is made by the kind of origin it allows:
+  `Spindle.Cors.origins ~credentials:true [ "https://app.example.com" ]` for
+  sites named, and `Spindle.Cors.any ()` for any site, which takes no
+  `~credentials`, so a policy letting every site act as the signed-in person
+  -- which the Fetch standard refuses -- is a compile error where
+  `Cors.make ~credentials:true Any` raised as the server started.
+  `Cors.make` and the `origins` type are gone.
+
 - Breaking: `Spindle.Openapi.routes` is the routes that serve the API's
   document and reference, a plain list, as `Health.routes` and
   `Metrics.routes` are, raising for routes written wrong in source: it was

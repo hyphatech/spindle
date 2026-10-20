@@ -66,8 +66,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   `Spindle.Session.create` (for the name), `Spindle.Cookie.make` and
   `clear` (for a path), `Spindle_postgres.Session`'s (for a table's name
   that is no identifier, since it is written into each statement),
-  `Spindle.Cors.make` (for `Any` beside credentials, which the Fetch standard
-  refuses), `Spindle.Metrics`'s registrations (for a name, a label or buckets
+  `Spindle.Metrics`'s registrations (for a name, a label or buckets
   Prometheus cannot read, or a name registered twice),
   `Spindle.Broadcast.create` (for a depth below one), `Spindle.Compress.make`
   (for a level deflate has not, a negative size, or a type that is no media

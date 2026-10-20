@@ -2335,8 +2335,7 @@ let test_a_preflight_is_the_framework's () =
   let a =
     Spindle.Test.app
       ~cors:
-        (Spindle.Cors.make ~credentials:true ~routes:api_only
-           (Spindle.Cors.Origins [ app_origin ]))
+        (Spindle.Cors.origins ~credentials:true ~routes:api_only [ app_origin ])
       cors_routes
   in
   let preflight ?(origin = app_origin) target =
@@ -2380,8 +2379,7 @@ let test_an_answer_says_who_may_read_it () =
   let a =
     Spindle.Test.app
       ~cors:
-        (Spindle.Cors.make ~credentials:true ~routes:api_only
-           (Spindle.Cors.Origins [ app_origin ]))
+        (Spindle.Cors.origins ~credentials:true ~routes:api_only [ app_origin ])
       ~middleware:
         [
           (fun h r ->
@@ -2417,8 +2415,7 @@ let test_an_allowed_origin_may_write () =
   let named =
     Spindle.Test.app
       ~cors:
-        (Spindle.Cors.make ~credentials:true ~routes:api_only
-           (Spindle.Cors.Origins [ app_origin ]))
+        (Spindle.Cors.origins ~credentials:true ~routes:api_only [ app_origin ])
       cors_routes
   in
   check_status "a named origin's credentialed write passes the origin check" 200
@@ -2432,9 +2429,7 @@ let test_an_allowed_origin_may_write () =
   check_status "and so is one to a route the policy does not cover" 403
     (Spindle.Test.call named `POST "/page" ~headers:(cross_site app_origin))
       .status;
-  let any =
-    Spindle.Test.app ~cors:(Spindle.Cors.make Spindle.Cors.Any) cors_routes
-  in
+  let any = Spindle.Test.app ~cors:(Spindle.Cors.any ()) cors_routes in
   let from_anywhere = cross_site "https://anyone.example" in
   let r = Spindle.Test.call any `POST "/api/item" ~headers:from_anywhere in
   check_status "under Any, a write with no cookie passes" 200 r.status;
@@ -2470,12 +2465,7 @@ let test_an_allowed_origin_may_write () =
        ~headers:
          (("authorization", "Bearer mF_9.B5f-4.1JqM")
          :: ("sec-fetch-mode", "cors") :: from_anywhere))
-      .status;
-  Alcotest.(check bool)
-    "Any beside credentials is refused" true
-    (match Spindle.Cors.make ~credentials:true Spindle.Cors.Any with
-    | _ -> false
-    | exception Invalid_argument _ -> true)
+      .status
 
 (* ---------------------------------------------------------------- *)
 (* Compression *)

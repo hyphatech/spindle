@@ -1,4 +1,4 @@
-(* A CORS policy, made by [Cors.make] and applied by [App]. *)
+(* A CORS policy, made by [Cors.origins] or [Cors.any] and applied by [App]. *)
 
 module Meth = Spindle_http.Meth
 
