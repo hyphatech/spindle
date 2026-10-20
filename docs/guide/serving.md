@@ -148,7 +148,7 @@ Fields against RFC 9651's published test suite, run whole.
 | `~resources` | what the routes read that the program holds -- a pool, a client -- made where it starts ([Resources](../tutorial/dependencies.md#resources)) |
 | `~keys` | what signed and encrypted cookies are sealed under, from a secret the program reads ([Signed and encrypted cookies](cookies.md#signed-and-encrypted-cookies)) |
 | `~middleware` | wraps every route ([Middleware](middleware.md)) |
-| `~codes` | the refusal codes your middleware may answer ([Middleware](middleware.md#writing-middleware)) |
+| `~refuses` | the refusal codes your middleware may answer ([Middleware](middleware.md#writing-middleware)) |
 | `~not_found` | answers a request no route claims ([Routes](../tutorial/routes.md#how-routes-are-matched)) |
 | `~trailing_slash` | `Strict` by default; `Redirect` answers `/a/` with a `308` to `/a` ([Routes](../tutorial/routes.md#how-routes-are-matched)) |
 | `~check_origin`, `~trusted_origins` | the cross-site check on requests that change something ([CSRF and CORS](cookies.md#csrf-and-cors)) |

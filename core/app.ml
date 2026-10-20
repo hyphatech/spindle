@@ -478,7 +478,7 @@ let find_with_params ~rest t meth segs =
     (fun (r, _, _) -> (r, params_of_segments r segs))
     (find_route ~rest t.table meth segs)
 
-let make ?(middleware = []) ?(codes = []) ?not_found ?cors ?compress
+let make ?(middleware = []) ?(refuses = []) ?not_found ?cors ?compress
     ?(check_origin = true) ?(trusted_origins = []) ?(trailing_slash = Strict)
     routes =
   let not_found =
@@ -489,9 +489,9 @@ let make ?(middleware = []) ?(codes = []) ?not_found ?cors ?compress
         match not_found with
         | Some r -> (
             match check r with
-            | Ok () -> check_codes ~codes ~not_found routes
+            | Ok () -> check_codes ~codes:refuses ~not_found routes
             | Error m -> Error (Printf.sprintf "%s: %s" not_found_name m))
-        | None -> check_codes ~codes ~not_found routes)
+        | None -> check_codes ~codes:refuses ~not_found routes)
     | r :: rest -> (
         match (check r, List.find_opt (could_match_alike r) rest) with
         | Error m, _ -> Error m
@@ -514,7 +514,7 @@ let make ?(middleware = []) ?(codes = []) ?not_found ?cors ?compress
             [] routes;
         not_found;
         middleware;
-        codes;
+        codes = refuses;
         check_origin;
         trusted_origins;
         cors;

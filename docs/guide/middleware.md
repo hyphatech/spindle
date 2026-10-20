@@ -71,7 +71,7 @@ let () =
   route answered. A route puts a value there with `~meta`, as `/drafts` does
   above, and the middleware reads it with `Meta.find`. To send someone
   elsewhere, answer a redirect.
-- **Declare its refusal codes** in `~codes`, on
+- **Declare its refusal codes** in `~refuses`, on
   `Spindle.serve` or `App.make`. A code nobody declared is logged as a bug,
   and raises in a test. These codes are not written into the OpenAPI document.
 - **A raise is a `500`**, as a handler's is.

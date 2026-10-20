@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Breaking: `App.make`, `Spindle.serve` and `Test.app` take `~refuses`, where
+  they took `~codes`: the codes the middleware may refuse with, named as a
+  route's and a dependency's are, so one word declares them everywhere.
+  `Dep.codes` and a route's `codes` still read them back.
+
 - Breaking: `spindle.http` promises what an application names, and keeps
   how Spindle reads and writes the wire apart, under
   `Spindle_http.Private`, as Eio keeps its own under `Eio.Private`:

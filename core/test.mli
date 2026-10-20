@@ -13,7 +13,7 @@ val app :
   ?resources:Dep.resource list ->
   ?mono_clock:_ Eio.Time.Mono.t ->
   ?middleware:Middleware.t list ->
-  ?codes:Refusal.Code.t list ->
+  ?refuses:Refusal.Code.t list ->
   ?not_found:(Response.t, Refusal.t) result Dep.t ->
   ?cors:Cors.t ->
   ?compress:Compress.t ->
@@ -68,7 +68,7 @@ val call :
 
     Raises [Invalid_argument] when the route read a resource {!app} was not
     given, naming it, and when the answer refused with a code that neither the
-    matched route, nor any of its inputs, nor the app's [codes], nor the
+    matched route, nor any of its inputs, nor the app's [refuses], nor the
     framework declares, or answered a status its route's
     {!Returns.json_response} or {!Returns.empty_response} does not list
     ({!App.answered}): a test that reaches that answer has found a bug, which

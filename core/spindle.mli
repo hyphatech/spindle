@@ -117,7 +117,7 @@ val serve :
   ?domains:int ->
   ?resources:Dep.resource list ->
   ?middleware:Middleware.t list ->
-  ?codes:Refusal.Code.t list ->
+  ?refuses:Refusal.Code.t list ->
   ?not_found:(Response.t, Refusal.t) result Dep.t ->
   ?cors:Cors.t ->
   ?compress:Compress.t ->

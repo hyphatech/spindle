@@ -420,7 +420,7 @@ let test_middleware_may_answer_alone () =
   in
   let r =
     Spindle.Test.call
-      (Spindle.Test.app ~middleware:[ closed ] ~codes:[ shut ] [ seen ])
+      (Spindle.Test.app ~middleware:[ closed ] ~refuses:[ shut ] [ seen ])
       `GET "/seen"
   in
   check_status "its own answer" 503 r.status;
@@ -2390,7 +2390,7 @@ let test_an_answer_says_who_may_read_it () =
                 (Spindle.Refusal.make (code "nope" `Forbidden) "No.")
             else h r);
         ]
-      ~codes:[ code "nope" `Forbidden ]
+      ~refuses:[ code "nope" `Forbidden ]
       cors_routes
   in
   let get headers = Spindle.Test.call a `GET "/api/item" ~headers in
@@ -8764,7 +8764,7 @@ let test_a_codes_status_is_a_failure () =
       Alcotest.(check bool)
         "a route's, named" true
         (contains ~sub:"the code made_it in GET /x is 200" m));
-  match Spindle.App.make ~codes:[ moved ] [] with
+  match Spindle.App.make ~refuses:[ moved ] [] with
   | Ok _ -> Alcotest.fail "the application's code of 302 was accepted"
   | Error m ->
       Alcotest.(check bool)
@@ -8795,7 +8795,7 @@ let test_a_middlewares_codes_are_declared () =
       Alcotest.(check bool) "naming it" true (contains ~sub:"closed" m));
   check_status "declared, it is answered" 503
     (Spindle.Test.call
-       (Spindle.Test.app ~middleware:[ shut ] ~codes:[ closed ] [ hello ])
+       (Spindle.Test.app ~middleware:[ shut ] ~refuses:[ closed ] [ hello ])
        `GET "/hello")
       .status;
   let refusing c =
@@ -8805,7 +8805,7 @@ let test_a_middlewares_codes_are_declared () =
       (Spindle.Dep.return (Ok (Spindle.Response.empty ())))
   in
   (match
-     Spindle.App.make ~codes:[ code "closed" `Gone ] [ refusing closed ]
+     Spindle.App.make ~refuses:[ code "closed" `Gone ] [ refusing closed ]
    with
   | Error m ->
       Alcotest.(check bool)
@@ -8814,7 +8814,7 @@ let test_a_middlewares_codes_are_declared () =
   | Ok _ -> Alcotest.fail "a middleware's code was given a second meaning");
   match
     Spindle.App.make
-      ~codes:
+      ~refuses:
         [
           Spindle.Refusal.Code.make "signed_out" ~status:`Unauthorized
             ~doc:"Sign in.";

@@ -12,7 +12,7 @@ type response = {
    on it as [Spindle.serve] does. A test is given only the resources the
    routes it calls read, so each route reads the test's own, where a server's
    are App.start's. *)
-let app ?(resources = []) ?mono_clock ?middleware ?codes ?not_found ?cors
+let app ?(resources = []) ?mono_clock ?middleware ?refuses ?not_found ?cors
     ?compress ?check_origin ?trusted_origins ?trailing_slash ?keys routes =
   let mono_clock =
     match mono_clock with
@@ -55,7 +55,7 @@ let app ?(resources = []) ?mono_clock ?middleware ?codes ?not_found ?cors
       routes
   in
   match
-    App.make ?middleware ?codes ?not_found ?cors ?compress ?check_origin
+    App.make ?middleware ?refuses ?not_found ?cors ?compress ?check_origin
       ?trusted_origins ?trailing_slash routes
   with
   | Error m -> refuse m

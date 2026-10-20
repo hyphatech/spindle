@@ -31,7 +31,7 @@ type trailing_slash =
 
 val make :
   ?middleware:Middleware.t list ->
-  ?codes:Refusal.Code.t list ->
+  ?refuses:Refusal.Code.t list ->
   ?not_found:(Response.t, Refusal.t) result Dep.t ->
   ?cors:Cors.t ->
   ?compress:Compress.t ->
@@ -65,7 +65,7 @@ val make :
     dependencies declare are ones it may refuse with. A rest route at the root
     ({!Path.rest}) takes every path no other route names, so behind one it is
     never reached. [middleware] wraps the routes and the not-found answer alike,
-    the first listed outermost (see {!Middleware.t}). [codes] are what they may
+    the first listed outermost (see {!Middleware.t}). [refuses] is what they may
     refuse with, held to what a route's are -- one meaning to a name, a
     challenge on a [401] -- and not written into the API's document, since a
     middleware that is a policy for some routes would have them claimed by every
@@ -139,9 +139,9 @@ val keys : instance -> Key.ring option
 (** What an answer held that nobody declared. *)
 type undeclared =
   | Code of Refusal.Code.t
-      (** a refusal's code that is not one of [make]'s [codes], one the matched
-          route declares, nor one of the framework's its document lists -- or,
-          where no route matched, one of {!Refusal.Code.framework} *)
+      (** a refusal's code that is not one of [make]'s [refuses], one the
+          matched route declares, nor one of the framework's its document lists
+          -- or, where no route matched, one of {!Refusal.Code.framework} *)
   | Status of Spindle_http.Status.t
       (** a success status the matched route does not list, where it lists the
           ones it may answer *)

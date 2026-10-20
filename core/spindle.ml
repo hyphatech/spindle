@@ -217,13 +217,13 @@ let until = Spindle_http.Instant.until
 
 (* A route table [App.make] refuses is a constant in source, so it raises:
    the program ends before it listens, saying why. *)
-let serve ?(port = 8080) ?host ?domains ?resources ?middleware ?codes ?not_found
-    ?cors ?compress ?check_origin ?trusted_origins ?trailing_slash ?read_clock
-    ?limits ?trusted_proxies ?proxy_header ?stop ?on_stop ?ready ?trace ?metrics
-    ?keys env routes =
+let serve ?(port = 8080) ?host ?domains ?resources ?middleware ?refuses
+    ?not_found ?cors ?compress ?check_origin ?trusted_origins ?trailing_slash
+    ?read_clock ?limits ?trusted_proxies ?proxy_header ?stop ?on_stop ?ready
+    ?trace ?metrics ?keys env routes =
   let app =
     match
-      App.make ?middleware ?codes ?not_found ?cors ?compress ?check_origin
+      App.make ?middleware ?refuses ?not_found ?cors ?compress ?check_origin
         ?trusted_origins ?trailing_slash routes
     with
     | Ok app -> app
