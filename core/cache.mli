@@ -3,7 +3,7 @@
 
     {[
     Spindle.serve env
-      ~middleware:[ Spindle.Cache.forever ~under:[ "/assets/" ] ]
+      ~middleware:[ Spindle.Cache.forever ~under:Spindle.Path.[ s "assets" ] ]
       (routes @ [ Spindle.Static.directory "dist" ])
     ]}
 
@@ -12,7 +12,7 @@
     asks again each time, and is answered [304] while the file is the same. That
     is right for any file, and it is what a folder needs. *)
 
-val forever : under:string list -> Middleware.t
+val forever : under:Path.path list -> Middleware.t
 (** Every successful [GET] or [HEAD] -- a [2xx] or a [304] -- whose path is
     under one of [under] is kept a year and never asked for again
     ([public, max-age=31536000, immutable]), whatever the route answered it
@@ -21,6 +21,5 @@ val forever : under:string list -> Middleware.t
     [/_astro/], so a new version is a new name and nothing is kept stale. A
     failure is never kept.
 
-    A prefix ends in ["/"], so [/assetsheet] is never under [/assets/]. Raises
-    [Invalid_argument] for one that does not begin and end with ["/"]: a prefix
-    is a constant written in source. *)
+    A path is under [Path.(s "assets")] when it is beneath it, [/assets/...], so
+    [/assetsheet] never is. *)

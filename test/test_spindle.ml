@@ -7518,7 +7518,8 @@ let test_a_cache_policy_keeps_what_it_names () =
   let year = Some "public, max-age=31536000, immutable" in
   let a =
     Spindle.Test.app
-      ~middleware:[ Spindle.Cache.forever ~under:[ "/_astro/"; "/made/" ] ]
+      ~middleware:
+        [ Spindle.Cache.forever ~under:Spindle.Path.[ s "_astro"; s "made" ] ]
       [
         Spindle.get
           Spindle.Path.(s "made" / s "it")
@@ -7528,6 +7529,10 @@ let test_a_cache_policy_keeps_what_it_names () =
           Spindle.Path.(s "made" / s "it")
           Spindle.Returns.text
           (Spindle.Dep.return (Ok "posted"));
+        Spindle.get
+          Spindle.Path.(s "madeup")
+          Spindle.Returns.text
+          (Spindle.Dep.return (Ok "another name"));
         Spindle.Static.route (loaded ~not_found:"/404.html" root);
       ]
   in
@@ -7555,17 +7560,8 @@ let test_a_cache_policy_keeps_what_it_names () =
     (Option.equal String.equal (cache missing) year);
   check_header "and a path under none is asked for again" (Some "no-cache")
     (cache (call `GET "/about"));
-  List.iter
-    (fun prefix ->
-      Alcotest.(check bool)
-        (Printf.sprintf "%S is refused" prefix)
-        true
-        (match
-           (Spindle.Cache.forever ~under:[ prefix ] : Spindle.Middleware.t)
-         with
-        | _ -> false
-        | exception Invalid_argument _ -> true))
-    [ "/assets"; "assets/"; "" ]
+  check_header "nor a path that only begins with one's name" None
+    (cache (call `GET "/madeup"))
 
 let test_a_matching_tag_is_304 () =
   with_site site @@ fun root ->

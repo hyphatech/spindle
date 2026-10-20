@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Breaking: `Spindle.Cache.forever ~under` takes paths, as every `?at` does:
+  `~under:Spindle.Path.[ s "assets" ]`, where it took `[ "/assets/" ]` and
+  raised for a string that did not begin and end with `/`. A path is under
+  one when it is beneath it, so `/assetsheet` never is under `/assets`.
+
 - Breaking: a CORS policy is made by the kind of origin it allows:
   `Spindle.Cors.origins ~credentials:true [ "https://app.example.com" ]` for
   sites named, and `Spindle.Cors.any ()` for any site, which takes no

@@ -95,11 +95,12 @@ the whole app, apart from what serves them:
 
 ```ocaml
 Spindle.serve env
-  ~middleware:[ Spindle.Cache.forever ~under:[ "/assets/" ] ]
+  ~middleware:[ Spindle.Cache.forever ~under:Spindle.Path.[ s "assets" ] ]
   (api @ [ Spindle.Static.directory "dist" ])
 ```
 
-`Cache.forever` keeps every successful `GET` under those prefixes a year,
+`Cache.forever` keeps every successful `GET` under those paths a year --
+`/assets/...`, never `/assetsheet` --
 whichever route answered it, and never a failure. Leave it out and nothing
 is ever stale; put a prefix in it only when every name under it changes with
 its bytes. Your `index.html` never goes in it: it is how a browser finds the
