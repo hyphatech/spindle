@@ -356,8 +356,11 @@ val json :
     -- [body.items[2].count], or [body] when it is not JSON at all -- with its
     code and a sentence. [refusal] is the route's own answer instead, a code and
     a sentence, with the problems as its detail, for the log; the dependency
-    declares the code. [examples] are bodies it reads, for whoever documents the
-    route.
+    declares the code. Only a body has one: it is the route's own object,
+    refused alone once every other input has passed, so a route may answer the
+    code its own check answers -- one for a query it cannot use, however it is
+    wrong -- where the inputs read before it are refused together, in one [400].
+    [examples] are bodies it reads, for whoever documents the route.
 
     A request whose [Content-Type] names anything but [application/json] or an
     [application/...+json] is {!Refusal.unsupported_media_type}, before its body
