@@ -133,7 +133,7 @@ let peer = Dep.of_request ~needs:[] (fun r -> Ok (Request.peer r))
 let client_ip = Dep.of_request ~needs:[] (fun r -> Ok (Request.client_ip r))
 let request_id = Dep.of_request ~needs:[] (fun r -> Ok (Request.id r))
 let client_gone = Dep.of_request ~needs:[] (fun r -> Ok (Request.client_gone r))
-let body = Dep.of_body ~need:(Dep.Raw { content_types = [] }) (fun s -> Ok s)
+let body = Dep.of_body (fun s -> Ok s)
 
 let body_stream ?(content_types = []) ~max () : Body.t Dep.t =
   let codes =
@@ -195,7 +195,7 @@ let body_problems problems =
     problems
 
 let json ?refusal ?(examples = []) t =
-  Dep.of_body
+  Dep_repr.of_body
     ?refuses:(Option.map (fun (code, _) -> [ code ]) refusal)
     ~need:(Dep.Json { description = t; examples })
     (fun s ->

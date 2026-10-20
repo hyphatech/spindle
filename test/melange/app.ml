@@ -113,9 +113,8 @@ let routes =
       Spindle.Path.(s "echo")
       Spindle.Returns.text
       (let+ body =
-         Spindle.Dep.of_body
-           ~need:(Spindle.Dep.Raw { content_types = [ "text/plain" ] })
-           (fun body -> Ok body)
+         Spindle.Dep.of_body ~content_types:[ "text/plain" ] (fun body ->
+             Ok body)
        in
        Ok body);
     Spindle.get

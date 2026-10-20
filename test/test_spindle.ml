@@ -708,9 +708,7 @@ let test_uncached_runs_at_every_use () =
 let test_a_body_dependency_is_read_once () =
   let parsed = ref 0 in
   let upper =
-    Spindle.Dep.of_body
-      ~need:(Spindle.Dep.Raw { content_types = [] })
-      (fun s ->
+    Spindle.Dep.of_body (fun s ->
         incr parsed;
         Ok (String.uppercase_ascii s))
   in

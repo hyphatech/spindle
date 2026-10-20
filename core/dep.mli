@@ -153,16 +153,20 @@ val resource : 'a t -> 'a -> resource
 
 val of_body :
   ?refuses:Refusal.Code.t list ->
-  need:body ->
+  ?content_types:string list ->
   (string -> ('a, Refusal.t) result) ->
   'a t
 (** A dependency on the body, run in the second stage with the body as it
-    arrived. A body the server could not read -- past its limit, broken, or with
-    no room to hold it -- has already been refused by then. A request whose
-    [Content-Type] is none of the types [need] names -- [Raw]'s [content_types],
-    [Json]'s -- is {!Refusal.unsupported_media_type} in the first stage, its
-    body never read; one that names no [Content-Type] is read. Its type and
-    subtype are compared without case, and its parameters are not compared. *)
+    arrived, whole -- [Dep.of_body ~content_types:[ "text/csv" ] parse] -- and
+    reported as [Raw] ({!needs}). A body the server could not read -- past its
+    limit, broken, or with no room to hold it -- has already been refused by
+    then. [content_types] are the types it takes, each [type/subtype], [type/*]
+    or [type/*+suffix], as {!Spindle.body_stream}'s, any where none is named: a
+    request whose [Content-Type] is none of them is
+    {!Refusal.unsupported_media_type} in the first stage, its body never read;
+    one that names no [Content-Type] is read. A JSON body is {!Spindle.json}'s.
+    Its type and subtype are compared without case, and its parameters are not
+    compared. *)
 
 val return : 'a -> 'a t
 (** A value that reads nothing: what a route with no inputs is given, as

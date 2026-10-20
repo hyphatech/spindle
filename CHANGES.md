@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Breaking: `Spindle.Dep.of_body` takes `?content_types`, as
+  `Spindle.body_stream` does, where it took `~need:Dep.body`:
+  `Dep.of_body ~content_types:[ "text/csv" ] parse`. It always read the
+  body whole and handed over the string, so a `need` of `Multipart`, `Stream`,
+  `Form` or `Json` only made the API's document say what it never did. A JSON
+  body is `Spindle.json`'s; `Dep.needs` reports a body as before.
+
 - Breaking: `Spindle.Cache.forever ~under` takes paths, as every `?at` does:
   `~under:Spindle.Path.[ s "assets" ]`, where it took `[ "/assets/" ]` and
   raised for a string that did not begin and end with `/`. A path is under

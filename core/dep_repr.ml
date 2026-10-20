@@ -351,3 +351,22 @@ let run d ~table ~resources request ~params ~outgoing ~body =
       Fun.protect
         ~finally:(fun () -> Body_repr.end_handler held)
         (fun () -> k held)
+
+(* A dependency that refuses a type declares it, so its route's document
+   says so. *)
+let of_body ?(refuses = []) ~need f =
+  let content_types = content_types need in
+  let codes =
+    match content_types with
+    | [] -> refuses
+    | _ :: _ -> refuses @ [ Refusal.Code.unsupported_media_type ]
+  in
+  make ~codes ~needs:[ Body need ] (fun c ->
+      if not (takes_content_type content_types c.request) then
+        Now (Error Refusal.unsupported_media_type)
+      else
+        Later
+          (fun held ->
+            match Body_repr.whole held with
+            | Ok s -> f s
+            | Error e -> Error (Body_repr.refusal e)))

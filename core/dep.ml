@@ -4,24 +4,9 @@ let of_request ?needs ?(refuses = []) f =
   make ?needs ~codes:refuses ~opaque:(Option.is_none needs) (fun c ->
       Now (f c.request))
 
-(* A dependency that refuses a type declares it, so its route's document
-   says so. *)
-let of_body ?(refuses = []) ~need f =
-  let content_types = Dep_repr.content_types need in
-  let codes =
-    match content_types with
-    | [] -> refuses
-    | _ :: _ -> refuses @ [ Refusal.Code.unsupported_media_type ]
-  in
-  make ~codes ~needs:[ Body need ] (fun c ->
-      if not (Dep_repr.takes_content_type content_types c.request) then
-        Now (Error Refusal.unsupported_media_type)
-      else
-        Later
-          (fun held ->
-            match Body_repr.whole held with
-            | Ok s -> f s
-            | Error e -> Error (Body_repr.refusal e)))
+(* Read whole as it arrived; what it says it reads is only that. *)
+let of_body ?refuses ?(content_types = []) f =
+  Dep_repr.of_body ?refuses ~need:(Raw { content_types }) f
 
 (* Nothing of its own to run, so nothing to share. *)
 let return v =

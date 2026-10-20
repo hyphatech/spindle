@@ -102,7 +102,7 @@ $ curl 'localhost:8080/books?page=two&per_page=x'
 - `Dep.map f d` derives a value that cannot fail:
   `Spindle.Dep.map String.lowercase_ascii email`.
 - `Dep.refuse refusal` always refuses, for a route that is switched off.
-- `Dep.of_body ~need:(Raw { content_types = [ "text/csv" ] }) parse` reads
+- `Dep.of_body ~content_types:[ "text/csv" ] parse` reads
   the whole body as a string and parses it into a type of your own. A
   request of any other `Content-Type` is answered `415` before its body is
   read.

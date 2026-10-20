@@ -199,3 +199,12 @@ val run :
   ('a, Refusal.t) result
 (** A route's dependency run for one request. Once it returns the body is the
     connection loop's again, so a read left behind reads nothing. *)
+
+val of_body :
+  ?refuses:Refusal.Code.t list ->
+  need:body ->
+  (string -> ('a, Refusal.t) result) ->
+  'a t
+(** A dependency on the body, read whole and handed to the function, described
+    as [need]: [Dep.of_body] with [Raw], and the framework's own JSON reader
+    with [Json]. *)
