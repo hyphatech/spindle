@@ -47,7 +47,10 @@ opam install spindle
 
     ---
 
-    Multicore by design.
+    Multicore by design: your handlers run on every core in parallel, with
+    nothing to configure.
+
+    [Multicore :octicons-arrow-right-24:](guide/domains.md){ .md-button }
 
 -   :lucide-waves:{ .lg .middle } __Eio-native__
 
@@ -63,17 +66,15 @@ opam install spindle
     Interactive docs at `/docs`, generated from your routes and never out
     of date.
 
-    [:octicons-arrow-right-24: OpenAPI](tutorial/openapi.md)
+    [OpenAPI :octicons-arrow-right-24:](tutorial/openapi.md){ .md-button }
 
 -   :lucide-wand-sparkles:{ .lg .middle } __Front end in sync__
 
     ---
 
-    Your OCaml types become your front end's schemas, Zod or an OCaml
-    client for Melange, in one command. Change a type and both ends change
-    with it.
+    Zod or Melange schemas, derived from your OCaml types.
 
-    [:octicons-arrow-right-24: Client schemas](tutorial/client-schemas.md)
+    [Client schemas :octicons-arrow-right-24:](tutorial/client-schemas.md){ .md-button }
 
 -   :lucide-braces:{ .lg .middle } __Typed end to end__
 
@@ -82,9 +83,9 @@ opam install spindle
     JSON derived from your types and validated on the way in, with every
     mistake reported at once.
 
-    [:octicons-arrow-right-24: Request bodies](tutorial/bodies.md)
+    [Request bodies :octicons-arrow-right-24:](tutorial/bodies.md){ .md-button }
 
--   :lucide-shield-check:{ .lg .middle } __Battle-tested__
+-   :lucide-shield-check:{ .lg .middle } __RFC-strict__
 
     ---
 
@@ -97,7 +98,7 @@ opam install spindle
 
     Typed queries, a pool and transactions, on a driver written in OCaml.
 
-    [:octicons-arrow-right-24: Database](tutorial/database.md)
+    [Database :octicons-arrow-right-24:](tutorial/database.md){ .md-button }
 
 -   :lucide-boxes:{ .lg .middle } __Batteries included__
 
@@ -106,6 +107,6 @@ opam install spindle
     WebSockets, live updates, sessions, logging, traces, metrics, and
     tests that need no server.
 
-    [:octicons-arrow-right-24: Guides](guide/pages.md)
+    [Guides :octicons-arrow-right-24:](guide/pages.md){ .md-button }
 
 </div>

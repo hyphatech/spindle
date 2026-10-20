@@ -144,3 +144,21 @@
 .md-typeset .language-text .md-code__button[data-md-type="copy"] {
   display: none;
 }
+
+/* A card's link is a button, held to the card's foot so a row's buttons
+   line up whatever the text above them. */
+.md-typeset .grid.cards > ul > li {
+  display: flex;
+  flex-direction: column;
+}
+
+.md-typeset .grid.cards > ul > li > p:last-child:has(> .md-button) {
+  margin-top: auto;
+  padding-top: 0.6rem;
+}
+
+.md-typeset .grid.cards .md-button {
+  border-radius: 9999px;
+  padding: 0.35em 1.1em;
+  font-size: 0.7rem;
+}

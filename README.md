@@ -17,12 +17,12 @@ The Eio-native web framework for modern OCaml.
 
 ## Features
 
-- **Interactive docs**: OpenAPI docs via Scalar at `/docs`, generated from your routes.
-- **Front end in sync**: schemas for your front end, derived from your OCaml types.
-- **Typed end to end**: JSON derived from your types, every input validated.
+- **RFC-strict**: its own HTTP/1.1 engine, every requirement it meets a test: RFC 9112 and 9110 for HTTP, 6455 for WebSockets, 7578 for forms, and RFC 9651's published suite for Structured Fields.
 - **Eio-native**: straight-line handlers on OCaml 5, multicore by design.
-- **Battle-tested**: its own HTTP/1.1 engine, every requirement it meets a test: RFC 9112 and 9110 for HTTP, 6455 for WebSockets, 7578 for forms, and RFC 9651's published suite for Structured Fields.
-- **Batteries included**: Postgres, WebSockets, sessions, logging, traces and metrics.
+- **Typed end to end**: JSON derived from your types, every input validated.
+- **Interactive docs**: OpenAPI docs via Scalar at `/docs`, generated from your routes.
+- **Front end in sync**: Zod or Melange schemas, derived from your OCaml types.
+- **Batteries included**: Postgres, WebSockets, SSE, sessions, logging, traces and metrics.
 
 ## Install
 
