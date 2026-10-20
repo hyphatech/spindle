@@ -13,17 +13,21 @@ about a connection -- whether to keep one, how long to wait, what to answer
 -- because those are the server's or the client's, and a message is the
 same whoever reads it.
 
-Each module's `.mli` is the reference.
+Each module's `.mli` is the reference. The modules under `Private` are Spindle's own -- how its
+server and client read and write the wire -- and are not covered by the
+library's version: any may change in any release, and an application names
+none of them.
 
 | Module | What it is |
 |---|---|
 | `Status`, `Meth` | the statuses and methods; `Spindle.Status` and `Spindle.Meth` are these |
+| `Version` | the HTTP/1 versions, `Http_1_0` and `Http_1_1`: what a request says it speaks |
 | `Field` | the one field grammar: tokens, a field line split and checked, a list field's elements -- not split inside a quoted string -- a value quoted where it must be, a field found by name |
 | `Media_type` | a media type (RFC 9110 §8.3.1): a type, a subtype, parameters |
 | `Accept` | content negotiation (§12): `Accept`'s ranges and the weighted token lists, and choosing among a route's offers |
 | `Auth` | credentials and challenges (§11): a scheme compared without case, then a token68 or parameters |
 | `Cache_control` | `Cache-Control`'s directives (RFC 9111 §5.2), and delta-seconds read as §1.2.2 has them |
-| `Date` | an HTTP-date read (§5.6.7) into a `Ptime.t`: the IMF-fixdate and the two obsolete forms a recipient accepts; `Write.date` writes one |
+| `Date` | an HTTP-date read (§5.6.7) into a `Ptime.t`: the IMF-fixdate and the two obsolete forms a recipient accepts; `Date.to_string` writes one |
 | `Instant` | an instant read from a clock as a `Ptime.t`, an instant a span on, and the wait until one, zero once it has passed; `Spindle.until` is its `until`; and a sleep for a span where no Eio loop runs |
 | `Etag` | entity tags (§8.8.3), compared strongly and weakly, and the `*` or list `If-Match` and `If-None-Match` hold |
 | `Range` | byte ranges (§14): a request's `Range`, what one asks of a length, and a `Content-Range` |
@@ -32,11 +36,12 @@ Each module's `.mli` is the reference.
 | `Urlencoded` | `application/x-www-form-urlencoded`, as the WHATWG URL standard reads and writes it: a form's fields |
 | `Forwarded` | the proxies in `Forwarded` (RFC 7239) |
 | `Structured` | RFC 9651's Structured Fields: items, lists and dictionaries, both ways |
-| `Head` | a head read off a connection: `Head.Request` a request's, with its target's form and the host it is for, and `Head.Response` a response's |
-| `Framing` | where a body ends, decided from a request's head or from a response's and the method it answers, and a reader for it |
-| `Write` | a start line and fields, checked whole before any byte is written, and a body's chunks |
+| `Private.Head` | a head read off a connection: `Head.Request` a request's, with its target's form and the host it is for, and `Head.Response` a response's |
+| `Private.Framing` | where a body ends, decided from a request's head or from a response's and the method it answers, and a reader for it |
+| `Private.Write` | a start line and fields, checked whole before any byte is written, and a body's chunks |
 | `Connection` | a connection once a protocol spoken after HTTP has it: its reader and writer, a clock, a send limit, and whether this end is stopping |
 | `Websocket` | RFC 6455, served and called in one model; `Spindle.Websocket` is this |
+| `Private.Websocket` | a socket run over a connection whose handshake is done, as a server or as a client |
 | `Log` | the framework's source, a line's structured fields, a caught exception as fields, and the request a fiber runs for; `Spindle.Log` adds the reporter |
 | `Trace` | spans, under the trace `Log` carries: what one is, an exporter a server, a client and a database record into, and a span begun around work; `Spindle.Trace` is this |
 | `Local` | the switch of the domain a fiber runs on; `Spindle.Local` is this |

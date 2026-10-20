@@ -91,8 +91,8 @@ let handshake protocol req =
     has_token req "upgrade" "websocket"
     &&
     match Request.version req with
-    | Spindle_http.Head.Http_1_1 -> true
-    | Spindle_http.Head.Http_1_0 -> false
+    | Spindle_http.Version.Http_1_1 -> true
+    | Spindle_http.Version.Http_1_0 -> false
   in
   let refuse_upgrade headers message =
     Error
@@ -140,7 +140,8 @@ let handshake protocol req =
     | _ :: _ -> Error (Refusal.invalid problems)
     | [] ->
         Ok
-          (("sec-websocket-accept", Websocket.accept_key key)
+          (( "sec-websocket-accept",
+             Spindle_http.Private.Websocket.accept_key key )
           ::
           (match Websocket.subprotocol protocol with
           | Some name -> [ ("sec-websocket-protocol", name) ]
@@ -176,7 +177,10 @@ let run_socket ~path ?keep_alive ?max_message protocol handler
                 ]
                @ raised)))
   in
-  match Websocket.run_server ?keep_alive ?max_message protocol c handler with
+  match
+    Spindle_http.Private.Websocket.run_server ?keep_alive ?max_message protocol
+      c handler
+  with
   | Ok () -> log_end "closed"
   | Error `Handler -> log_end "its handler ended with a failure of its own"
   | Error (#Websocket.error as e) -> log_end (Websocket.error_to_string e)

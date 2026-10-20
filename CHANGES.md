@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Breaking: `spindle.http` promises what an application names, and keeps
+  how Spindle reads and writes the wire apart, under
+  `Spindle_http.Private`, as Eio keeps its own under `Eio.Private`:
+  `Head`, `Framing`, `Write` and the WebSocket runner -- `run_server`,
+  `run_client` and `accept_key` -- are there, not covered by the library's
+  version, so how a body is framed or a head written can change in any
+  release. A request's version is `Spindle_http.Version.t`, where it was
+  `Spindle_http.Head.version` (`~version:Spindle_http.Version.Http_1_0` in a
+  test), and an HTTP-date is written with `Spindle_http.Date.to_string`,
+  where it was `Write.date`. `Connection` stays, since
+  `Spindle.Response.takeover` hands it to an application.
+
 - Breaking: a socket's failures are open tags, as a call's and a
   statement's are, so a handler's `let*` runs over `Ws.receive`, `Ws.send`
   and its own work alike: `` `Socket (`Closed c) `` -- the socket's own state,

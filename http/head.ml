@@ -1,4 +1,4 @@
-type version = Http_1_0 | Http_1_1
+type version = Version.t = Http_1_0 | Http_1_1
 type error = Closed | Refused of Status.t * string
 
 let error_to_string = function

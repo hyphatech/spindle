@@ -404,7 +404,7 @@ let websocket ?(now = Ptime.epoch) ?(headers = []) app protocol target f =
           (fun () -> run_end server handle)
           (fun () ->
             run_end client (fun c ->
-                Websocket.run_client
+                Spindle_http.Private.Websocket.run_client
                   ~mask:(fun () -> "\x5a\xa5\x0f\xf0")
                   protocol c f))
       in

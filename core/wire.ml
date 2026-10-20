@@ -57,7 +57,7 @@ let is_bodiless status =
 let with_date req status headers =
   match Status.to_int status with
   | n when n >= 200 && n < 500 ->
-      headers @ [ ("date", Spindle_http.Write.date (Request.now req)) ]
+      headers @ [ ("date", Spindle_http.Date.to_string (Request.now req)) ]
   | _ -> headers
 
 (* RFC 9110 §7.8: only a protocol offered with [Connection: upgrade], and
@@ -65,8 +65,8 @@ let with_date req status headers =
 let upgrade_offered req protocol =
   let fields = Request.headers req in
   match Request.version req with
-  | Spindle_http.Head.Http_1_0 -> false
-  | Spindle_http.Head.Http_1_1 ->
+  | Spindle_http.Version.Http_1_0 -> false
+  | Spindle_http.Version.Http_1_1 ->
       Field.has_element fields "connection" "upgrade"
       && Field.has_element fields "upgrade" protocol
 
@@ -120,8 +120,8 @@ let rec render ?gzip ?keys req r =
       let is_head = match Request.meth req with `HEAD -> true | _ -> false in
       let is_http_1_0 =
         match Request.version req with
-        | Spindle_http.Head.Http_1_0 -> true
-        | Spindle_http.Head.Http_1_1 -> false
+        | Spindle_http.Version.Http_1_0 -> true
+        | Spindle_http.Version.Http_1_1 -> false
       in
       let closing = Response.closes_connection r
       and refused = Response.refused r in

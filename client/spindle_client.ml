@@ -1,9 +1,9 @@
 (* Requests written and responses read by the same spindle_http code the
    server uses, so the framework has one account of where a message ends. *)
 
-module Head = Spindle_http.Head
-module Framing = Spindle_http.Framing
-module Write = Spindle_http.Write
+module Head = Spindle_http.Private.Head
+module Framing = Spindle_http.Private.Framing
+module Write = Spindle_http.Private.Write
 module Field = Spindle_http.Field
 module Status = Spindle_http.Status
 module Trace = Spindle_http.Trace
@@ -1018,7 +1018,7 @@ let check_upgrade ~key protocol (head : Head.Response.t) =
     not
       (Option.equal String.equal
          (Field.find fields "sec-websocket-accept")
-         (Some (Websocket.accept_key key)))
+         (Some (Spindle_http.Private.Websocket.accept_key key)))
   then Error "a 101 whose Sec-WebSocket-Accept is not for this key"
   else if Option.is_some (Field.find fields "sec-websocket-extensions") then
     Error "an extension this client never offered"
@@ -1154,7 +1154,8 @@ let open_websocket t ?timeout ?(headers = []) ?keep_alive ?max_message protocol
       | Ok () ->
           let ended =
             with_socket_writer t ~send_timeout:deadline c (fun writer ->
-                Websocket.run_client ?keep_alive ?max_message
+                Spindle_http.Private.Websocket.run_client ?keep_alive
+                  ?max_message
                   ~mask:(fun () -> Mirage_crypto_rng.generate 4)
                   protocol
                   {

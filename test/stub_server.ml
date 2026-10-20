@@ -5,9 +5,9 @@
    time, or never answer -- a server that hangs is one of the things a test
    stands in. *)
 
-module Head = Spindle_http.Head
-module Framing = Spindle_http.Framing
-module Write = Spindle_http.Write
+module Head = Spindle_http.Private.Head
+module Framing = Spindle_http.Private.Framing
+module Write = Spindle_http.Private.Write
 module Field = Spindle_http.Field
 
 type request = {

@@ -6,7 +6,7 @@
     disagree about where one message ends and the next begins. The one repair
     made is the one the RFC requires of a user agent, in {!Response}. *)
 
-type version = Http_1_0 | Http_1_1
+type version = Version.t = Http_1_0 | Http_1_1
 
 (** Why a request's head was not read. *)
 type error =

@@ -3374,7 +3374,7 @@ let test_a_quoted_keep_alive_timeout_is_read () =
           incr connections;
           let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
           let rec next () =
-            match Spindle_http.Head.Request.read ~max:65536 r with
+            match Spindle_http.Private.Head.Request.read ~max:65536 r with
             | Error _ -> ()
             | Ok _ ->
                 Eio.Flow.copy_string
@@ -4368,7 +4368,7 @@ let test_a_client_calls_through_the_network_it_is_given () =
   let config, authenticator = Tls_front.certificate Name_only in
   let answer flow body =
     let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
-    match Spindle_http.Head.Request.read ~max:65536 r with
+    match Spindle_http.Private.Head.Request.read ~max:65536 r with
     | Error _ -> Alcotest.fail "a request that could not be read"
     | Ok _ ->
         Eio.Flow.copy_string
@@ -4449,7 +4449,7 @@ let test_a_connection_that_cannot_be_watched_is_not_kept () =
         Eio.Fiber.fork ~sw (fun () ->
             let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
             let rec next () =
-              match Spindle_http.Head.Request.read ~max:65536 r with
+              match Spindle_http.Private.Head.Request.read ~max:65536 r with
               | Error _ -> ()
               | Ok _ ->
                   Eio.Flow.copy_string
@@ -4494,7 +4494,7 @@ let test_a_client_sends_the_url_as_it_was_given () =
       let rec accept () =
         let flow, _ = Eio.Net.accept ~sw listening in
         let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
-        (match Spindle_http.Head.Request.read ~max:65536 r with
+        (match Spindle_http.Private.Head.Request.read ~max:65536 r with
         | Error _ -> ()
         | Ok head ->
             targets := !targets @ [ head.target ];
@@ -4583,7 +4583,7 @@ let test_an_error_says_whether_the_request_went_out () =
         (fun answer ->
           let flow, _ = Eio.Net.accept ~sw listening in
           let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
-          (match Spindle_http.Head.Request.read ~max:65536 r with
+          (match Spindle_http.Private.Head.Request.read ~max:65536 r with
           | Error _ -> Alcotest.fail "a request that could not be read"
           | Ok _ -> Eio.Buf_read.skip 2 r);
           Eio.Flow.copy_string answer flow;
@@ -4971,7 +4971,7 @@ let test_an_answer_at_the_deadline_leaves_no_socket_open () =
       ( Eio.Switch.run @@ fun inner ->
         let flow, _ = Eio.Net.accept ~sw:inner socket in
         let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
-        (match Spindle_http.Head.Request.read ~max:65536 r with
+        (match Spindle_http.Private.Head.Request.read ~max:65536 r with
         | Error _ -> Alcotest.fail "the request could not be read"
         | Ok _ -> ());
         Eio.Flow.copy_string
@@ -9152,7 +9152,7 @@ let test_every_status_and_method_http_defines_is_named () =
   List.iter
     (fun (line, target) ->
       let head =
-        Spindle_http.Head.Request.read ~max:1024
+        Spindle_http.Private.Head.Request.read ~max:1024
           (Eio.Buf_read.of_string
              (Printf.sprintf "%s %s HTTP/1.1\r\nHost: t\r\n\r\n" line target))
       in
@@ -9195,11 +9195,14 @@ let test_every_error_has_its_words () =
          Source "the pull";
        ]);
   distinct "Head"
-    (List.map Spindle_http.Head.error_to_string
-       [ Spindle_http.Head.Closed; Refused (`Bad_request, "a folded line") ]);
+    (List.map Spindle_http.Private.Head.error_to_string
+       [
+         Spindle_http.Private.Head.Closed;
+         Refused (`Bad_request, "a folded line");
+       ]);
   distinct "Head.Response"
-    (List.map Spindle_http.Head.Response.error_to_string
-       [ Spindle_http.Head.Response.Closed; Malformed "no status" ]);
+    (List.map Spindle_http.Private.Head.Response.error_to_string
+       [ Spindle_http.Private.Head.Response.Closed; Malformed "no status" ]);
   distinct "Test.websocket_error"
     (List.map Spindle.Test.websocket_error_to_string
        [ Spindle.Test.Refused response; Ended (`Lost "gone") ])

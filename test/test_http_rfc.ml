@@ -19,10 +19,10 @@
    -- is the danger all of this guards against, so disagreement is the
    thing measured. *)
 
-module Head = Spindle_http.Head
-module Framing = Spindle_http.Framing
+module Head = Spindle_http.Private.Head
+module Framing = Spindle_http.Private.Framing
 module Field = Spindle_http.Field
-module Write = Spindle_http.Write
+module Write = Spindle_http.Private.Write
 module Meth = Spindle_http.Meth
 module Status = Spindle_http.Status
 open Spindle.Syntax
@@ -2516,7 +2516,9 @@ let test_a_target_that_could_split_is_never_written () =
 let test_a_date_is_an_imf_fixdate () =
   List.iter
     (fun (ms, date) ->
-      Alcotest.(check string) date date (Write.date (Instants.of_ms ms)))
+      Alcotest.(check string)
+        date date
+        (Spindle_http.Date.to_string (Instants.of_ms ms)))
     [
       (784_111_777_000, example_date);
       (0, "Thu, 01 Jan 1970 00:00:00 GMT");
@@ -4754,7 +4756,7 @@ let test_a_written_date_reads_back_as_its_second =
            ]))
     (fun ms ->
       let second = Ptime.truncate ~frac_s:0 (Instants.of_ms ms) in
-      let written = Write.date (Instants.of_ms ms) in
+      let written = Spindle_http.Date.to_string (Instants.of_ms ms) in
       match Date.parse ~now written with
       | Some read when Ptime.equal read second -> true
       | Some read ->

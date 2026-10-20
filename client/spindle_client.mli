@@ -236,7 +236,7 @@ val websocket :
     never opened or did not end cleanly, and at [error] with what was raised and
     where when [f] raised, which goes on -- and never its query, where a
     credential travels. What [f] returns is
-    {!Spindle_http.Websocket.run_client}'s, and so are [keep_alive] and
+    {!Spindle_http.Private.Websocket.run_client}'s, and so are [keep_alive] and
     [max_message]: [f] may end with a failure of its own beside the socket's --
     a statement's, say -- which closes the socket as [Internal] and is answered
     as it is. *)

@@ -305,8 +305,12 @@ let serve (r : row) delivery =
   let _, frames =
     over delivery r.sends (fun c ->
         match r.carries with
-        | Texts -> Ws.run_server ?max_message:r.max_message texts c echo
-        | Bytes -> Ws.run_server ?max_message:r.max_message bytes c echo)
+        | Texts ->
+            Spindle_http.Private.Websocket.run_server ?max_message:r.max_message
+              texts c echo
+        | Bytes ->
+            Spindle_http.Private.Websocket.run_server ?max_message:r.max_message
+              bytes c echo)
   in
   frames
 
@@ -332,7 +336,7 @@ let test_a_length_is_written_in_the_fewest_bytes () =
       in
       Eio.Buf_write.with_flow (Eio.Flow.buffer_sink out) (fun writer ->
           ignore
-            (Ws.run_server texts
+            (Spindle_http.Private.Websocket.run_server texts
                {
                  Spindle.Response.reader =
                    Eio.Buf_read.of_flow
@@ -358,7 +362,8 @@ let test_a_declared_length_holds_no_memory () =
     let header = frame ~length 2 "" in
     let before = Gc.allocated_bytes () in
     ignore
-      (over_raw Whole header (fun c -> Ws.run_server ~max_message bytes c echo)
+      (over_raw Whole header (fun c ->
+           Spindle_http.Private.Websocket.run_server ~max_message bytes c echo)
         : (unit, Ws.error) result * string);
     Gc.allocated_bytes () -. before
   in
@@ -447,7 +452,9 @@ let client_rows =
 let check_client (r : client_row) delivery =
   let got, frames =
     over delivery r.hears (fun c ->
-        Ws.run_client ~mask:(fun () -> a_mask) texts c r.does)
+        Spindle_http.Private.Websocket.run_client
+          ~mask:(fun () -> a_mask)
+          texts c r.does)
   in
   let name =
     Printf.sprintf "%s %s (%s)" r.c_rfc r.c_says (delivery_name delivery)
@@ -467,7 +474,7 @@ let test_a_close_sends_no_reason_it_cannot_carry () =
     (fun (says, reason, sent) ->
       let _, written =
         over_raw Whole (close ~mask:None 1000) (fun c ->
-            Ws.run_client
+            Spindle_http.Private.Websocket.run_client
               ~mask:(fun () -> a_mask)
               texts c
               (fun ws ->
@@ -487,7 +494,7 @@ let test_a_close_sends_no_reason_it_cannot_carry () =
 let test_a_text_message_that_is_not_utf_8_is_not_sent () =
   let got, written =
     over_raw Whole (close ~mask:None 1000) (fun c ->
-        Ws.run_client
+        Spindle_http.Private.Websocket.run_client
           ~mask:(fun () -> a_mask)
           texts c
           (fun ws ->
@@ -509,7 +516,7 @@ let test_a_mask_of_another_length_writes_nothing () =
     (fun key ->
       let got, written =
         over_raw Whole (close ~mask:None 1000) (fun c ->
-            Ws.run_client
+            Spindle_http.Private.Websocket.run_client
               ~mask:(fun () -> key)
               texts c
               (fun ws -> Ws.send ws "a"))
@@ -604,8 +611,11 @@ let test_a_send_cut_off_mid_frame_ends_the_socket side () =
           }
         in
         match side with
-        | As_server -> Ws.run_server texts c handler
-        | As_client -> Ws.run_client ~mask:(fun () -> a_mask) texts c handler)
+        | As_server -> Spindle_http.Private.Websocket.run_server texts c handler
+        | As_client ->
+            Spindle_http.Private.Websocket.run_client
+              ~mask:(fun () -> a_mask)
+              texts c handler)
   in
   Alcotest.(check (result unit string))
     "the next send answers that the socket is lost"
@@ -657,14 +667,14 @@ type handshake_row = {
   h_rfc : string;
   h_says : string;
   path : string;
-  version : Spindle_http.Head.version;
+  version : Spindle_http.Version.t;
   headers : (string * string) list;
   status : int;
   has : (string * string option) list;
       (** a field and its value, or its absence *)
 }
 
-let handshake ?(path = "/s") ?(version = Spindle_http.Head.Http_1_1) h_rfc
+let handshake ?(path = "/s") ?(version = Spindle_http.Version.Http_1_1) h_rfc
     h_says headers status has =
   { h_rfc; h_says; path; version; headers; status; has }
 
@@ -693,7 +703,7 @@ let handshake_rows =
       (replacing "connection" "keep-alive")
       400 [];
     handshake "4.2.1" "an HTTP/1.0 request is 426"
-      ~version:Spindle_http.Head.Http_1_0 asking 426 [];
+      ~version:Spindle_http.Version.Http_1_0 asking 426 [];
     handshake "4.2.1" "Upgrade and Connection are read whatever their case"
       ( replacing "upgrade" "WebSocket" |> fun h ->
         ("connection", "keep-alive, Upgrade")
@@ -744,8 +754,8 @@ let handshake_rows =
 let request_of (r : handshake_row) =
   let version =
     match r.version with
-    | Spindle_http.Head.Http_1_0 -> "HTTP/1.0"
-    | Spindle_http.Head.Http_1_1 -> "HTTP/1.1"
+    | Spindle_http.Version.Http_1_0 -> "HTTP/1.0"
+    | Spindle_http.Version.Http_1_1 -> "HTTP/1.1"
   in
   String.concat ""
     (Printf.sprintf "GET %s %s\r\n" r.path version
@@ -776,7 +786,7 @@ let check_handshake (r : handshake_row) delivery =
     (fun piece -> Eio.Flow.copy_string piece flow)
     (split delivery (request_of r));
   let reader = Eio.Buf_read.of_flow flow ~max_size:1_048_576 in
-  match Spindle_http.Head.Response.read ~max:65_536 reader with
+  match Spindle_http.Private.Head.Response.read ~max:65_536 reader with
   | Error _ -> Alcotest.failf "%s: an answer that could not be read" name
   | Ok head ->
       Alcotest.(check int)
@@ -914,7 +924,8 @@ let scripted ?timeout delivery answer f =
   in
   (got, head_lines (Buffer.contents script.written))
 
-let upgrade ?(accept = fun key -> Ws.accept_key key) ?(extra = "") key =
+let upgrade ?(accept = fun key -> Spindle_http.Private.Websocket.accept_key key)
+    ?(extra = "") key =
   Printf.sprintf
     "HTTP/1.1 101 Switching Protocols\r\n\
      Upgrade: websocket\r\n\
@@ -1005,7 +1016,7 @@ let client_handshake_rows =
            Connection: Upgrade\r\n\
            Sec-WebSocket-Accept: %s\r\n\
            \r\n"
-          (Ws.accept_key key))
+          (Spindle_http.Private.Websocket.accept_key key))
       "failed: a 101 that does not name websocket";
     row "4.1" "a 101 speaking a protocol nobody asked for fails"
       (upgrade ~extra:"Sec-WebSocket-Protocol: chat\r\n")

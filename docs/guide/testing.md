@@ -44,7 +44,7 @@ let test_echo () =
   `?peer` (default `127.0.0.1`), `?headers` and `?body`.
 - To test what a route sees behind a proxy, pass `~proxied:true`: the peer
   is then a proxy the server trusts, and `~proxy_header` says which
-  forwarding header it writes. `~version:Spindle_http.Head.Http_1_0`
+  forwarding header it writes. `~version:Spindle_http.Version.Http_1_0`
   sends the request as HTTP/1.0.
 - The answer's status and headers are exactly what the server would write,
   cookies included, minus `connection`. A stream is run to its end.

@@ -1,5 +1,5 @@
 (** An HTTP-date read, as RFC 9110 §5.6.7 has a recipient read one: the
-    IMF-fixdate a sender writes ({!Write.date}), and the two obsolete forms a
+    IMF-fixdate a sender writes ({!to_string}), and the two obsolete forms a
     recipient must still accept.
 
     {[
@@ -19,3 +19,9 @@ val parse : now:Ptime.t -> string -> Ptime.t option
     a date that would be more than fifty years ahead of it is the century
     before, as RFC 9110 says. A second of [60], a leap second, is the next
     minute's first. *)
+
+val to_string : Ptime.t -> string
+(** An instant as RFC 9110 §5.6.7's IMF-fixdate --
+    [Sun, 06 Nov 1994 08:49:37 GMT] -- which is the one form of date a sender
+    may write, its fraction of a second dropped: a [Last-Modified], an
+    [Expires]. *)

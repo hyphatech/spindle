@@ -129,3 +129,23 @@ let parse ~now s =
   | 29 -> parse_imf_fixdate s
   | 24 -> parse_asctime s
   | _ -> parse_rfc850 ~now s
+
+(* Into its fixed 29 bytes rather than through Printf, since every answer
+   carries one. *)
+let to_string t =
+  let (year, month, day), ((hh, mm, ss), _) = Ptime.to_date_time t in
+  let b = Bytes.of_string "Thu, 01 Jan 1970 00:00:00 GMT" in
+  let put_name at text = Bytes.blit_string text 0 b at 3 in
+  let put_two_digits at n =
+    Bytes.set b at (Char.chr (48 + (n / 10 mod 10)));
+    Bytes.set b (at + 1) (Char.chr (48 + (n mod 10)))
+  in
+  put_name 0 Calendar.weekdays.(Ptime.weekday_num t);
+  put_two_digits 5 day;
+  put_name 8 Calendar.months.(month - 1);
+  put_two_digits 12 (year / 100);
+  put_two_digits 14 (year mod 100);
+  put_two_digits 17 hh;
+  put_two_digits 20 mm;
+  put_two_digits 23 ss;
+  Bytes.unsafe_to_string b

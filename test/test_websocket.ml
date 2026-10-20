@@ -440,7 +440,7 @@ let test_a_socket_whose_tls_breaks_is_lost env () =
       let flow, _ = Eio.Net.accept ~sw socket in
       let tls = Tls_eio.server_of_flow config flow in
       let r = Eio.Buf_read.of_flow tls ~max_size:65536 in
-      (match Spindle_http.Head.Request.read ~max:65536 r with
+      (match Spindle_http.Private.Head.Request.read ~max:65536 r with
       | Error _ -> Alcotest.fail "the upgrade could not be read"
       | Ok head ->
           let key =
@@ -451,7 +451,9 @@ let test_a_socket_whose_tls_breaks_is_lost env () =
             ("HTTP/1.1 101 Switching Protocols\r\n\
               Upgrade: websocket\r\n\
               Connection: Upgrade\r\n\
-              Sec-WebSocket-Accept: " ^ Ws.accept_key key ^ "\r\n\r\n")
+              Sec-WebSocket-Accept: "
+            ^ Spindle_http.Private.Websocket.accept_key key
+            ^ "\r\n\r\n")
             tls;
           (* The client's first frame: the socket is open. *)
           ignore (Eio.Buf_read.take 1 r : string);
@@ -484,7 +486,7 @@ let test_a_socket_whose_server_stopped_reading_is_lost () =
   Eio.Fiber.fork_daemon ~sw (fun () ->
       let flow, _ = Eio.Net.accept ~sw listening in
       let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
-      (match Spindle_http.Head.Request.read ~max:65536 r with
+      (match Spindle_http.Private.Head.Request.read ~max:65536 r with
       | Error _ -> Alcotest.fail "the upgrade could not be read"
       | Ok head ->
           let key =
@@ -495,7 +497,9 @@ let test_a_socket_whose_server_stopped_reading_is_lost () =
             ("HTTP/1.1 101 Switching Protocols\r\n\
               Upgrade: websocket\r\n\
               Connection: Upgrade\r\n\
-              Sec-WebSocket-Accept: " ^ Ws.accept_key key ^ "\r\n\r\n")
+              Sec-WebSocket-Accept: "
+            ^ Spindle_http.Private.Websocket.accept_key key
+            ^ "\r\n\r\n")
             flow);
       Eio.Fiber.await_cancel ());
   let net = Eio_mock.Net.make "net" in

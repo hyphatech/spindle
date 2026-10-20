@@ -111,8 +111,8 @@ val websocket :
     request that opens no socket is {!Refusal.Code.upgrade_required}, a
     malformed one [invalid] at the header that is wrong, and one from another
     site's page [cross_origin], though it is a [GET]. The handler is
-    {!Spindle_http.Websocket.run_server}'s, with [keep_alive] and [max_message]
-    its own; the socket gets a log line when it ends. *)
+    {!Spindle_http.Private.Websocket.run_server}'s, with [keep_alive] and
+    [max_message] its own; the socket gets a log line when it ends. *)
 
 (** What a route returns, for whatever describes it. *)
 type shape = Returns_repr.shape =

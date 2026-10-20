@@ -20,7 +20,7 @@ type t = {
   query : (string * string) list Lazy.t;
       (** parsed when a query parameter is asked for, which most requests never
           do *)
-  version : Spindle_http.Head.version;
+  version : Spindle_http.Version.t;
   host : string option;  (** as the head named it *)
   headers : (string * string) list;  (** names lower-cased *)
   peer : string;
@@ -58,7 +58,7 @@ let query_of target =
       Spindle_http.Urlencoded.parse query
 
 let make ?id ?(peer = "") ?client_ip ?(proxied = false)
-    ?(proxy_header = X_forwarded_for) ?(version = Spindle_http.Head.Http_1_1)
+    ?(proxy_header = X_forwarded_for) ?(version = Spindle_http.Version.Http_1_1)
     ?host ?(headers = []) ~read_clock meth target =
   let host =
     match host with

@@ -5,10 +5,10 @@
 module Local = Spindle_http.Local
 module Status = Spindle_http.Status
 module Meth = Spindle_http.Meth
-module Head = Spindle_http.Head
-module Framing = Spindle_http.Framing
+module Head = Spindle_http.Private.Head
+module Framing = Spindle_http.Private.Framing
 module Field = Spindle_http.Field
-module Write = Spindle_http.Write
+module Write = Spindle_http.Private.Write
 module Timeout = Eio.Time.Timeout
 module Trace = Spindle_http.Trace
 module L = (val Logs.src_log Log.http : Logs.LOG)
@@ -629,7 +629,8 @@ let refuse_head ~read_clock ~limits ~deadline out status detail =
   L.info (fun m ->
       m "refused a request head: %d %s" (Status.to_int status) detail);
   let date =
-    if Status.to_int status < 500 then [ ("date", Write.date (read_clock ())) ]
+    if Status.to_int status < 500 then
+      [ ("date", Spindle_http.Date.to_string (read_clock ())) ]
     else []
   in
   write_head out.buf status

@@ -47,7 +47,7 @@ val call :
   ?peer:string ->
   ?proxied:bool ->
   ?proxy_header:Request.proxy_header ->
-  ?version:Spindle_http.Head.version ->
+  ?version:Spindle_http.Version.t ->
   ?headers:(string * string) list ->
   ?body:string ->
   App.instance ->

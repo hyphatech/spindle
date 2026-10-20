@@ -98,7 +98,7 @@ let representation_headers v ~headers =
   (("accept-ranges", "bytes") :: etag_header v)
   @ Option.to_list
       (Option.map
-         (fun m -> ("last-modified", Spindle_http.Write.date m))
+         (fun m -> ("last-modified", Spindle_http.Date.to_string m))
          v.modified)
   @ headers
 

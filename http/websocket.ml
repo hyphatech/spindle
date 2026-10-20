@@ -538,12 +538,14 @@ let run ~side ~mask ?(keep_alive = default_keep_alive)
       close_and_wait (Some (Internal, "Something went wrong at our end."));
       Printexc.raise_with_backtrace ex bt
 
-let accept_key = Frame.accept_key
+module Private = struct
+  let accept_key = Frame.accept_key
 
-let run_server ?keep_alive ?max_message p c f =
-  run ~side:Server_side ~mask:None ?keep_alive ?max_message ~incoming:p.client
-    ~outgoing:p.server c f
+  let run_server ?keep_alive ?max_message p c f =
+    run ~side:Server_side ~mask:None ?keep_alive ?max_message ~incoming:p.client
+      ~outgoing:p.server c f
 
-let run_client ?keep_alive ?max_message ~mask p c f =
-  run ~side:Client_side ~mask:(Some mask) ?keep_alive ?max_message
-    ~incoming:p.server ~outgoing:p.client c f
+  let run_client ?keep_alive ?max_message ~mask p c f =
+    run ~side:Client_side ~mask:(Some mask) ?keep_alive ?max_message
+      ~incoming:p.server ~outgoing:p.client c f
+end

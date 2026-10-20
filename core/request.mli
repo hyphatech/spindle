@@ -26,7 +26,7 @@ val make :
   ?client_ip:string ->
   ?proxied:bool ->
   ?proxy_header:proxy_header ->
-  ?version:Spindle_http.Head.version ->
+  ?version:Spindle_http.Version.t ->
   ?host:string ->
   ?headers:(string * string) list ->
   read_clock:(unit -> Ptime.t) ->
@@ -40,7 +40,8 @@ val make :
     peer is a proxy the server was told to trust (false), and [proxy_header]
     which header it writes ([X_forwarded_for]). [version] is the one the request
     was sent in ([Http_1_1]), and [host] the host its head names (see
-    {!Spindle_http.Head.Request.t}) -- its [Host] header, when not given. *)
+    {!Spindle_http.Private.Head.Request.t}) -- its [Host] header, when not
+    given. *)
 
 val id : t -> string
 (** This request's id: what every line logged for it carries, and what the
@@ -48,7 +49,7 @@ val id : t -> string
 
 val meth : t -> Spindle_http.Meth.t
 
-val version : t -> Spindle_http.Head.version
+val version : t -> Spindle_http.Version.t
 (** What the client speaks, which decides what it may be sent: no chunked body,
     no [1xx] and no upgrade for [HTTP/1.0]. *)
 

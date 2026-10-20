@@ -143,4 +143,5 @@ cancelled partway through a send, the socket ends, as
   `{ websocket: { client, server } }`.
 
 To speak another protocol over a connection, see `Spindle.Response.takeover`
-and `Spindle.Websocket.run_server` / `run_client` in the reference.
+in the reference: the connection it hands over is `Spindle_http.Connection.t`,
+as a socket's is.

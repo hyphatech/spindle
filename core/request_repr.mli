@@ -20,7 +20,7 @@ val make :
   ?client_ip:string ->
   ?proxied:bool ->
   ?proxy_header:proxy_header ->
-  ?version:Spindle_http.Head.version ->
+  ?version:Spindle_http.Version.t ->
   ?host:string ->
   ?headers:(string * string) list ->
   read_clock:(unit -> Ptime.t) ->
@@ -42,7 +42,7 @@ val mark_client_gone : t -> unit
     test's, standing in for it. *)
 
 val meth : t -> Spindle_http.Meth.t
-val version : t -> Spindle_http.Head.version
+val version : t -> Spindle_http.Version.t
 val target : t -> string
 val path : t -> string
 val query : t -> string -> string option

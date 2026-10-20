@@ -138,38 +138,39 @@ val close : ?code:close_code -> ?reason:string -> _ t -> unit
     or not UTF-8, which no close can carry (§5.5, §8.1): logged, and the close
     sent without it. *)
 
-(** {1 Running one end}
+(** Running one end: what [Spindle.Returns.websocket] and
+    [Spindle_client.websocket] are built on, over a connection whose handshake
+    is done. Spindle's own, reached as {!Spindle_http.Private.Websocket}, and
+    not covered by the library's version: it may change in any release. *)
+module Private : sig
+  val accept_key : string -> string
+  (** [Sec-WebSocket-Accept] for a [Sec-WebSocket-Key] (§4.2.2). *)
 
-    What [Spindle.Returns.websocket] and [Spindle_client.websocket] are built
-    on, over a connection whose handshake is done. *)
+  val run_server :
+    ?keep_alive:Mtime.Span.t ->
+    ?max_message:int ->
+    ('c, 's) protocol ->
+    Connection.t ->
+    (('c, 's) t -> ('a, ([> error ] as 'e)) result) ->
+    ('a, 'e) result
 
-val accept_key : string -> string
-(** [Sec-WebSocket-Accept] for a [Sec-WebSocket-Key] (§4.2.2). *)
-
-val run_server :
-  ?keep_alive:Mtime.Span.t ->
-  ?max_message:int ->
-  ('c, 's) protocol ->
-  Connection.t ->
-  (('c, 's) t -> ('a, ([> error ] as 'e)) result) ->
-  ('a, 'e) result
-
-val run_client :
-  ?keep_alive:Mtime.Span.t ->
-  ?max_message:int ->
-  mask:(unit -> string) ->
-  ('c, 's) protocol ->
-  Connection.t ->
-  (('s, 'c) t -> ('a, ([> error ] as 'e)) result) ->
-  ('a, 'e) result
-(** [f]'s result, once the socket is closed. How it ended decides the close:
-    [Ok] is [Normal], an [`Undecodable] is [Invalid_data], and a socket already
-    closed or lost has nothing left to close; an [`Unwritable], or any failure
-    of [f]'s own beside the socket's -- a statement's, say -- is [Internal]; a
-    close sent waits a second for the peer's. [f] raising closes it with
-    [Internal], and the raise goes on. A ping goes when nothing has been heard
-    for [keep_alive] (15 s), and a peer silent for twice that is [`Lost]; a
-    message longer than [max_message] (1 MiB) closes it with [Too_big]. [mask]
-    makes each frame's four bytes of masking, which must be unpredictable
-    (§5.3); a mask of another length is our bug: logged, and the send answers
-    [`Lost]. *)
+  val run_client :
+    ?keep_alive:Mtime.Span.t ->
+    ?max_message:int ->
+    mask:(unit -> string) ->
+    ('c, 's) protocol ->
+    Connection.t ->
+    (('s, 'c) t -> ('a, ([> error ] as 'e)) result) ->
+    ('a, 'e) result
+  (** [f]'s result, once the socket is closed. How it ended decides the close:
+      [Ok] is [Normal], an [`Undecodable] is [Invalid_data], and a socket
+      already closed or lost has nothing left to close; an [`Unwritable], or any
+      failure of [f]'s own beside the socket's -- a statement's, say -- is
+      [Internal]; a close sent waits a second for the peer's. [f] raising closes
+      it with [Internal], and the raise goes on. A ping goes when nothing has
+      been heard for [keep_alive] (15 s), and a peer silent for twice that is
+      [`Lost]; a message longer than [max_message] (1 MiB) closes it with
+      [Too_big]. [mask] makes each frame's four bytes of masking, which must be
+      unpredictable (§5.3); a mask of another length is our bug: logged, and the
+      send answers [`Lost]. *)
+end
