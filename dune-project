@@ -112,7 +112,7 @@
   (ocaml-lsp-server
    (and
     :with-dev-setup
-    (>= 1.24.0)))
+    (>= 1.25.0)))
   (ocamlformat
    (and
     :with-dev-setup
