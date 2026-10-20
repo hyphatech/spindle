@@ -2159,31 +2159,25 @@ let multipart_headers =
   [ ("content-type", {|multipart/form-data; boundary="XyZ"|}) ]
 
 let uploads =
+  let rec contents parts b =
+    let* chunk = Spindle.Multipart.read parts in
+    match chunk with
+    | `Data d ->
+        Buffer.add_string b d;
+        contents parts b
+    | `End -> Ok (Buffer.contents b)
+  in
   let rec each parts acc =
-    match Spindle.Multipart.next parts with
-    | Ok None -> Ok (String.concat ";" (List.rev acc))
-    | Ok (Some (part : Spindle.Multipart.part))
-      when String.equal part.name "skip" ->
+    let* part = Spindle.Multipart.next parts in
+    match part with
+    | None -> Ok (String.concat ";" (List.rev acc))
+    | Some (part : Spindle.Multipart.part) when String.equal part.name "skip" ->
         each parts acc
-    | Ok (Some part) -> (
-        let b = Buffer.create 16 in
-        let rec read () =
-          match Spindle.Multipart.read parts with
-          | Ok (`Data d) ->
-              Buffer.add_string b d;
-              read ()
-          | Ok `End -> Ok (Buffer.contents b)
-          | Error e -> Error e
-        in
-        match read () with
-        | Ok c ->
-            each parts
-              ((part.name ^ "="
-               ^ Option.value part.filename ~default:""
-               ^ ":" ^ c)
-              :: acc)
-        | Error e -> Error (Spindle.Multipart.refusal e))
-    | Error e -> Error (Spindle.Multipart.refusal e)
+    | Some part ->
+        let* c = contents parts (Buffer.create 16) in
+        each parts
+          ((part.name ^ "=" ^ Option.value part.filename ~default:"" ^ ":" ^ c)
+          :: acc)
   in
   Spindle.post
     Spindle.Path.(s "uploads")
@@ -8072,14 +8066,13 @@ let test_a_file's_precompressed_sibling_is_served () =
 (* ---------------------------------------------------------------- *)
 (* A body read as it arrives *)
 
-(* Reads the body a part at a time and says how much came, answering a
-   body it could not read as the framework would have. *)
+(* Reads the body a part at a time and says how much came; a body it could
+   not read is already the refusal the framework answers. *)
 let rec tally body ~parts ~bytes =
-  match Spindle.Body.read body with
-  | Ok (`Data s) ->
-      tally body ~parts:(parts + 1) ~bytes:(bytes + String.length s)
-  | Ok `End -> Ok (Printf.sprintf "%d parts, %d bytes" parts bytes)
-  | Error e -> Error (Spindle.Body.refusal e)
+  let* chunk = Spindle.Body.read body in
+  match chunk with
+  | `Data s -> tally body ~parts:(parts + 1) ~bytes:(bytes + String.length s)
+  | `End -> Ok (Printf.sprintf "%d parts, %d bytes" parts bytes)
 
 let upload =
   Spindle.post
@@ -9193,13 +9186,6 @@ let test_every_error_has_its_words () =
   distinct "Body"
     (List.map Spindle.Body.error_to_string
        [ Spindle.Body.Too_large; Unreadable "cut"; Over_budget ]);
-  distinct "Multipart"
-    (List.map Spindle.Multipart.error_to_string
-       [
-         Spindle.Multipart.Malformed "no boundary";
-         Head_too_large;
-         Body Spindle.Body.Too_large;
-       ]);
   distinct "Spindle_http.Multipart"
     (List.map
        (Spindle_http.Multipart.error_to_string Fun.id)
@@ -9216,10 +9202,7 @@ let test_every_error_has_its_words () =
        [ Spindle_http.Head.Response.Closed; Malformed "no status" ]);
   distinct "Test.websocket_error"
     (List.map Spindle.Test.websocket_error_to_string
-       [
-         Spindle.Test.Refused response;
-         Ended (Spindle_http.Websocket.Lost "gone");
-       ])
+       [ Spindle.Test.Refused response; Ended (`Lost "gone") ])
 
 let test_an_app_lists_its_routes () =
   let signed_out = code "signed_out" `Unauthorized in

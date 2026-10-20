@@ -32,11 +32,11 @@ type 'r t =
       protocol : ('c, 's) Websocket.protocol;
       keep_alive : Mtime.Span.t option;
       max_message : int option;
+      ended : 'e -> [ Websocket.error | `Handler ];
+          (** a socket's own failure as it is, and any of the handler's own as
+              one *)
     }
-      -> ( ('c, 's) Websocket.t -> (unit, Websocket.error) result,
-           Refusal.t )
-         result
-         t
+      -> (('c, 's) Websocket.t -> (unit, 'e) result, Refusal.t) result t
 
 type shape =
   | Json : {
@@ -70,7 +70,7 @@ let shape : type r. r t -> shape = function
   | Empty_response statuses -> Empty_response statuses
   | Response -> Response
   | Events { declared; keep_alive = _ } -> Events declared
-  | Websocket { protocol; keep_alive = _; max_message = _ } ->
+  | Websocket { protocol; keep_alive = _; max_message = _; ended = _ } ->
       Websocket protocol
 
 (* On any of the field's lines, since several are one list (RFC 9110 §5.3);
@@ -178,7 +178,8 @@ let run_socket ~path ?keep_alive ?max_message protocol handler
   in
   match Websocket.run_server ?keep_alive ?max_message protocol c handler with
   | Ok () -> log_end "closed"
-  | Error e -> log_end (Websocket.error_to_string e)
+  | Error `Handler -> log_end "its handler ended with a failure of its own"
+  | Error (#Websocket.error as e) -> log_end (Websocket.error_to_string e)
   | exception (Eio.Cancel.Cancelled _ as ex) ->
       log_end "connection closed";
       raise ex
@@ -263,10 +264,11 @@ let respond : type r.
           with_outgoing
             (Response.events ?keep_alive (fun send ->
                  stream (send_checked ~pattern declared send))))
-  | Websocket { protocol; keep_alive; max_message } -> (
+  | Websocket { protocol; keep_alive; max_message; ended } -> (
       match r with
       | Error refusal -> refuse refusal
       | Ok handler ->
+          let handler ws = Result.map_error ended (handler ws) in
           with_outgoing
             (Response.takeover ~protocol:"websocket" ~headers:upgrade
                (run_socket ~path ?keep_alive ?max_message protocol handler)))

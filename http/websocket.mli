@@ -84,35 +84,41 @@ type close_code =
       (** any other a peer may send -- 1005 for a close that named none, 1010,
           1012 to 1014, and 3000 to 4999, the application's own *)
 
+type close = { code : close_code; reason : string }
+(** A close, by either end: its code and reason. *)
+
 type error =
-  | Closed of { code : close_code; reason : string }
-      (** closed, by either end, with its code and reason *)
-  | Lost of string
-      (** the connection ended without a close, or went silent, or stopped
-          taking what was written: in words for the log *)
-  | Unreadable of string
-      (** a message its description could not read, in words for the log; the
-          socket is still open *)
-  | Unwritable of string
-      (** a message its description could not write -- a value its JSON
-          description cannot encode, text that is not UTF-8 (§8.1) -- in words
-          for the log; nothing was sent, and the socket is still open *)
+  [ `Socket of [ `Closed of close ]
+    (** closed, by either end: the socket's own state, under its name *)
+  | `Lost of string
+    (** the connection ended without a close, or went silent, or stopped taking
+        what was written: in words for the log *)
+  | `Undecodable of string
+    (** a message its description could not read, in words for the log; the
+        socket is still open *)
+  | `Unwritable of string
+    (** a message its description could not write -- a value its JSON
+        description cannot encode, text that is not UTF-8 (§8.1) -- in words for
+        the log; nothing was sent, and the socket is still open *) ]
+(** How a socket's work failed, in the words every Hypha library uses, so a
+    handler's [let*] runs over a socket and a statement alike: what a call
+    answers is [[> error]], open to the handler's own. *)
 
-val error_to_string : error -> string
+val error_to_string : [< error ] -> string
 
-val receive : ('i, _) t -> ('i, error) result
+val receive : ('i, _) t -> ('i, [> error ]) result
 (** The next whole message, waiting for it. Once the socket has ended, its
     ending, every time. *)
 
-val send : (_, 'o) t -> 'o -> (unit, error) result
+val send : (_, 'o) t -> 'o -> (unit, [> error ]) result
 (** Answers once the message is written. A peer that takes nothing written for
-    the connection's [send_timeout] makes it [Lost]; one still taking it,
+    the connection's [send_timeout] makes it [`Lost]; one still taking it,
     however slowly, is sent the whole. A value its description cannot write --
-    one JSON cannot encode, text that is not UTF-8 -- is [Unwritable], and
+    one JSON cannot encode, text that is not UTF-8 -- is [`Unwritable], and
     nothing is sent. A send cancelled -- by a timeout, or an [Eio.Fiber.first]
     it lost -- may have written part of its frame, which the peer would read the
-    next frame into, so it ends the socket as [Lost] and the cancellation goes
-    on: every later send answers [Lost], and nothing more is written. *)
+    next frame into, so it ends the socket as [`Lost] and the cancellation goes
+    on: every later send answers [`Lost], and nothing more is written. *)
 
 type 'o encoded
 (** A message encoded once, to be sent to many sockets: what a
@@ -120,17 +126,17 @@ type 'o encoded
 
 val encode : 'o message -> 'o -> 'o encoded
 (** A value its description cannot write makes a message every send of which
-    answers [Unwritable]. *)
+    answers [`Unwritable]. *)
 
-val send_encoded : (_, 'o) t -> 'o encoded -> (unit, error) result
+val send_encoded : (_, 'o) t -> 'o encoded -> (unit, [> error ]) result
 
 val close : ?code:close_code -> ?reason:string -> _ t -> unit
 (** Begins the closing handshake with [code] ([Normal]) and [reason] (none).
-    What follows is read as ever, and {!receive} answers [Closed] once the peer
-    has answered. A code no endpoint may send is our bug: logged, and the socket
-    closed with [Internal]. So is a reason longer than 123 bytes or not UTF-8,
-    which no close can carry (§5.5, §8.1): logged, and the close sent without
-    it. *)
+    What follows is read as ever, and {!receive} answers [`Socket (`Closed _)]
+    once the peer has answered. A code no endpoint may send is our bug: logged,
+    and the socket closed with [Internal]. So is a reason longer than 123 bytes
+    or not UTF-8, which no close can carry (§5.5, §8.1): logged, and the close
+    sent without it. *)
 
 (** {1 Running one end}
 
@@ -145,8 +151,8 @@ val run_server :
   ?max_message:int ->
   ('c, 's) protocol ->
   Connection.t ->
-  (('c, 's) t -> ('a, error) result) ->
-  ('a, error) result
+  (('c, 's) t -> ('a, ([> error ] as 'e)) result) ->
+  ('a, 'e) result
 
 val run_client :
   ?keep_alive:Mtime.Span.t ->
@@ -154,15 +160,16 @@ val run_client :
   mask:(unit -> string) ->
   ('c, 's) protocol ->
   Connection.t ->
-  (('s, 'c) t -> ('a, error) result) ->
-  ('a, error) result
+  (('s, 'c) t -> ('a, ([> error ] as 'e)) result) ->
+  ('a, 'e) result
 (** [f]'s result, once the socket is closed. How it ended decides the close:
-    [Ok] is [Normal], an [Unreadable] is [Invalid_data], an [Unwritable]
-    [Internal], and a socket already closed or lost has nothing left to close; a
+    [Ok] is [Normal], an [`Undecodable] is [Invalid_data], and a socket already
+    closed or lost has nothing left to close; an [`Unwritable], or any failure
+    of [f]'s own beside the socket's -- a statement's, say -- is [Internal]; a
     close sent waits a second for the peer's. [f] raising closes it with
     [Internal], and the raise goes on. A ping goes when nothing has been heard
-    for [keep_alive] (15 s), and a peer silent for twice that is [Lost]; a
+    for [keep_alive] (15 s), and a peer silent for twice that is [`Lost]; a
     message longer than [max_message] (1 MiB) closes it with [Too_big]. [mask]
     makes each frame's four bytes of masking, which must be unpredictable
     (§5.3); a mask of another length is our bug: logged, and the send answers
-    [Lost]. *)
+    [`Lost]. *)

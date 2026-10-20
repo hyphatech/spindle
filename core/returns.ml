@@ -31,6 +31,20 @@ let response : (Response.t, Refusal.t) result t = Response
 let events ?keep_alive declared : (_ Event.stream, Refusal.t) result t =
   Events { declared; keep_alive }
 
+(* What the socket ended with is its own; anything else the handler ended
+   with is one failure of its own, closed as our end's. *)
 let websocket ?keep_alive ?max_message protocol :
-    ((_, _) Websocket.t -> (unit, Websocket.error) result, Refusal.t) result t =
-  Websocket { protocol; keep_alive; max_message }
+    ( (_, _) Websocket.t -> (unit, [> Websocket.error ]) result,
+      Refusal.t )
+    result
+    t =
+  Websocket
+    {
+      protocol;
+      keep_alive;
+      max_message;
+      ended =
+        (function
+        | #Websocket.error as e -> (e :> [ Websocket.error | `Handler ])
+        | _ -> `Handler);
+    }

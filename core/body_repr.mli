@@ -32,6 +32,10 @@ val hold : source -> pattern:string -> held
 val refusal : error -> Refusal.t
 (** [413], [503 busy] or [400], as the body failed. *)
 
+val not_multipart : detail:string -> Refusal.t
+(** A multipart body that is not one: {!Refusal.invalid} at [body], [detail] for
+    the log. *)
+
 val whole : held -> (string, error) result
 (** The body read whole, once however many ask; [Unreadable] after it was read
     as a stream, which left nothing whole. *)

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Breaking: a socket's failures are open tags, as a call's and a
+  statement's are, so a handler's `let*` runs over `Ws.receive`, `Ws.send`
+  and its own work alike: `` `Socket (`Closed c) `` -- the socket's own state,
+  under its name, as `` `Pool `Busy `` is a pool's -- `` `Lost ``,
+  `` `Undecodable `` (was `Unreadable`, a message its description could not
+  read) and `` `Unwritable ``. A handler, the server's and the client's, may
+  end with a failure of its own beside the socket's, which closes it `1011`
+  and is logged; it had to disguise one as a socket's. `Spindle_client`'s
+  `websocket_error` holds the socket's tags where it wrapped them in
+  `` `Websocket ``, so its `` `Lost `` and the socket's are one.
+  `Websocket.close` is the record a close carries.
+
+- Breaking: what a handler reads a body with answers what a handler answers.
+  `Spindle.Body.read`, `Spindle.Multipart.next` and `Spindle.Multipart.read`
+  fail with a `Refusal.t` -- a body too large `413`, one the server has no
+  room for `503 busy`, one that stops arriving `400`, a form that is no
+  multipart `400 invalid` -- as `Spindle.Session`'s calls already do, so a
+  handler goes on through them with `let*` and converts nothing; the code
+  still tells one from another. `Body.refusal`, `Multipart.error`,
+  `Multipart.error_to_string` and `Multipart.refusal` are gone. `Body.error`
+  stays, as what a connection loop's `Body.source` says.
+
 - Breaking: what a server lets a client make it hold or wait for is one
   value, `Spindle.Server.Limits.t`, given as `~limits` to `Spindle.serve`,
   `Server.run` and `Server.serve_on`, where each took thirteen arguments:

@@ -978,14 +978,14 @@ let events t ?timeout ?read_timeout ?(headers = []) ?last_event_id url on_event
 (* A WebSocket *)
 
 type websocket_error =
-  [ error | `Not_upgraded of string response | `Websocket of Websocket.error ]
+  [ error | `Not_upgraded of string response | Websocket.error ]
 
 let websocket_error_to_string : [< websocket_error ] -> string = function
-  | #error as e -> error_to_string e
+  | `Unsent m -> m
   | `Not_upgraded r ->
       Printf.sprintf "answered %d, which opens no socket"
         (Status.to_int r.status)
-  | `Websocket e -> Websocket.error_to_string e
+  | #Websocket.error as e -> Websocket.error_to_string e
 
 (* A caller's own beside one of these would be a second answer. *)
 let handshake_fields =
@@ -1126,11 +1126,11 @@ let open_websocket t ?timeout ?(headers = []) ?keep_alive ?max_message protocol
               raise ex)
     with
     | Ok opened -> Ok opened
-    | Error `Timeout -> Error (timed_out deadline :> websocket_error)
+    | Error `Timeout -> Error (match timed_out deadline with #error as e -> e)
     | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
     | exception ex -> (
         match error_of_exn ex with
-        | Some e -> Error (e :> websocket_error)
+        | Some (#error as e) -> Error e
         | None -> raise ex)
   in
   match opened with
@@ -1167,7 +1167,7 @@ let open_websocket t ?timeout ?(headers = []) ?keep_alive ?max_message protocol
                   f)
           in
           close_connection c;
-          Result.map_error (fun e -> `Websocket e) ended)
+          ended)
 
 (* One line when it ends: a warning when it never opened or did not end
    cleanly, and an error, with what was raised, when its handler raised.
@@ -1203,15 +1203,15 @@ let websocket t ?timeout ?headers ?keep_alive ?max_message protocol url f =
   | Error e ->
       let level =
         match e with
-        | `Websocket
-            (Websocket.Closed
-               { code = Websocket.Normal | Websocket.Going_away; _ }) ->
+        | `Socket (`Closed { Websocket.code = Normal | Going_away; _ }) ->
             Logs.Info
-        | `Unsent _ | `Lost _ | `Not_upgraded _ | `Websocket _ -> Logs.Warning
+        | _ -> Logs.Warning
       in
-      log_end level (websocket_error_to_string e);
-      (* Open, as [opened] makes a call's failure. *)
-      Error (match e with #websocket_error as e -> e)
+      log_end level
+        (match e with
+        | #websocket_error as e -> websocket_error_to_string e
+        | _ -> "its handler ended with a failure of its own");
+      Error e
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
   | exception ex ->
       let bt = Printexc.get_raw_backtrace () in

@@ -238,15 +238,17 @@ to accept another site of your own, list it in `~trusted_origins` instead.
 
 - **`Spindle.body_stream ~max ()`** hands the handler a `Spindle.Body.t`,
   limited to the route's own `max` bytes. Read it a part at a time with
-  `Body.read`. A failure (too large, stopped arriving) is a value you can
-  answer with `Body.refusal`.
+  `Body.read`. A failure (too large, stopped arriving) is already the
+  refusal to answer with, so `let* part = Spindle.Body.read body in` goes on
+  through it, as a session's does.
 - **`~content_types:[ "text/csv" ]`** accepts only those types, each
   `type/subtype`, `type/*` or `type/*+suffix`, compared without case or
   parameters. Any other type is answered `415` before a byte is read, and
   the API's document lists them as the body's types.
 - **`Spindle.multipart ~max ()`** is the same body, split into the parts of
   a `multipart/form-data` upload. `Multipart.next` gives a part's head (its
-  `name`, `filename` and content type), `Multipart.read` its bytes. Nothing
+  `name`, `filename` and content type), `Multipart.read` its bytes. Their
+  failures are refusals too. Nothing
   is written to a temporary file; where a part goes is up to you.
 
 A stream can only be read while the handler runs. A route reads one body,

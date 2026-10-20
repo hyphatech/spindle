@@ -31,6 +31,20 @@ let refusal : error -> Refusal.t = function
   | Request_repr.Over_budget -> Refusal.busy ()
   | Request_repr.Unreadable detail -> Refusal.unreadable ~detail
 
+(* A multipart body cut wrong, read as a form or a part at a time: one
+   answer, at [body], the detail for the log. *)
+let not_multipart ~detail =
+  Refusal.make ~detail
+    ~problems:
+      [
+        {
+          Refusal.at = "body";
+          code = "malformed";
+          message = "This is not a multipart form.";
+        };
+      ]
+    Refusal.Code.invalid "Some of that request is not what it should be."
+
 (* Once, however many dependencies ask. A stream already begun leaves nothing
    whole; [App.make] refuses that, unless a [bind] hides it. *)
 let whole h =

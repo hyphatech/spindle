@@ -71,20 +71,36 @@ let mask_bytes = 4
    the peer's close, or the peer to answer ours. *)
 let close_wait = Mtime.Span.(1 * s)
 
+type close = { code : close_code; reason : string }
+
 type error =
-  | Closed of { code : close_code; reason : string }
+  [ `Socket of [ `Closed of close ]
+  | `Lost of string
+  | `Undecodable of string
+  | `Unwritable of string ]
+
+(* How the socket ended, as it keeps it; what it answers is {!error}, the
+   tags a handler joins with its own. *)
+type ended =
+  | Closed of close
   | Lost of string
-  | Unreadable of string
+  | Undecodable of string
   | Unwritable of string
 
-let error_to_string = function
-  | Closed { code; reason = "" } ->
+let answered : ended -> [> error ] = function
+  | Closed c -> `Socket (`Closed c)
+  | Lost m -> `Lost m
+  | Undecodable m -> `Undecodable m
+  | Unwritable m -> `Unwritable m
+
+let error_to_string : [< error ] -> string = function
+  | `Socket (`Closed { code; reason = "" }) ->
       Printf.sprintf "closed, %d" (code_to_int code)
-  | Closed { code; reason } ->
+  | `Socket (`Closed { code; reason }) ->
       Printf.sprintf "closed, %d: %s" (code_to_int code) reason
-  | Lost m -> "lost: " ^ m
-  | Unreadable m -> "a message that could not be read: " ^ m
-  | Unwritable m -> "a message that could not be written: " ^ m
+  | `Lost m -> "lost: " ^ m
+  | `Undecodable m -> "a message that could not be read: " ^ m
+  | `Unwritable m -> "a message that could not be written: " ^ m
 
 type data = Text_data of string | Binary_data of string
 
@@ -103,8 +119,8 @@ type ('i, 'o) t = {
       (** of capacity 0, so the reader reads no further until the handler takes
           what it read *)
   awaiting_handler : bool Atomic.t;
-  ended : error Eio.Promise.t;
-  resolve_ended : error Eio.Promise.u;
+  ended : ended Eio.Promise.t;
+  resolve_ended : ended Eio.Promise.u;
   close_frame : (close_code * string) option Atomic.t;
       (** the close this end sent or answered; no message may follow it (§5.5.1)
       *)
@@ -172,7 +188,7 @@ let write t opcode payload =
               (Printf.sprintf "a mask of %d bytes, where a frame takes %d"
                  (String.length key) mask_bytes)
           in
-          L.err (fun m -> m "%s" (error_to_string e));
+          L.err (fun m -> m "%s" (error_to_string (answered e)));
           end_with t e;
           Error e
       | mask -> (
@@ -219,7 +235,7 @@ let close ?(code = Normal) ?(reason = "") t =
   if Atomic.compare_and_set t.close_frame None (Some (code, reason)) then (
     ignore (Eio.Promise.try_resolve t.resolve_close_begun () : bool);
     ignore
-      (write t Frame.Close (close_payload code reason) : (unit, error) result))
+      (write t Frame.Close (close_payload code reason) : (unit, ended) result))
 
 type 'o encoded = (Frame.opcode * string, string) result
 
@@ -236,29 +252,31 @@ let encode : type a. a message -> a -> a encoded =
   | Text -> Error "a text message that is not UTF-8"
   | Binary -> Ok (Frame.Binary, v)
 
-let send_encoded t = function
-  | Ok (opcode, payload) -> write t opcode payload
-  | Error m -> Error (Unwritable m)
+let send_encoded t encoded =
+  Result.map_error answered
+    (match encoded with
+    | Ok (opcode, payload) -> write t opcode payload
+    | Error m -> Error (Unwritable m))
 
 let send t v = send_encoded t (encode t.outgoing v)
 
 (* ------------------------------------------------------------------ *)
 (* Receiving *)
 
-let decode_data : type a. a message -> data -> (a, error) result =
+let decode_data : type a. a message -> data -> (a, ended) result =
  fun message data ->
   match (message, data) with
   | Json d, Text_data s ->
       Result.map_error
         (fun problems ->
-          Unreadable
+          Undecodable
             (String.concat "; " (List.map Wiretype.Problem.to_string problems)))
         (Wiretype.decode d s)
   | Text, Text_data s -> Ok s
   | Binary, Binary_data s -> Ok s
   (* Unreachable: the reader refuses a kind the socket does not carry. *)
-  | (Json _ | Text), Binary_data _ -> Error (Unreadable "a binary message")
-  | Binary, Text_data _ -> Error (Unreadable "a text message")
+  | (Json _ | Text), Binary_data _ -> Error (Undecodable "a binary message")
+  | Binary, Text_data _ -> Error (Undecodable "a text message")
 
 (* A kind this end does not take is closed with 1003 (§7.4.1). *)
 let carries_kind : type a. a message -> Frame.opcode -> bool =
@@ -273,6 +291,8 @@ let result_of_received t = function
 
 (* A message received before the socket ended is still read. *)
 let receive t =
+  Result.map_error answered
+  @@
   match Eio.Stream.take_nonblocking t.received with
   | Some r -> result_of_received t r
   | None -> (
@@ -393,7 +413,7 @@ let read_frames t ~side ~max_message ~heard reader =
                let answer =
                  match code with Code 1005 -> "" | c -> close_payload c ""
                in
-               ignore (write t Frame.Close answer : (unit, error) result));
+               ignore (write t Frame.Close answer : (unit, ended) result));
             Closed { code; reason })
     | Frame.Pong | Frame.Text | Frame.Binary | Frame.Continuation ->
         next partial
@@ -482,7 +502,7 @@ let run ~side ~mask ?(keep_alive = default_keep_alive)
     ignore
       (Timeout.run (Timeout.v c.clock close_wait) (fun () ->
            Ok (Eio.Promise.await ended))
-        : (error, [ `Timeout ]) result)
+        : (ended, [ `Timeout ]) result)
   in
   Eio.Switch.run @@ fun sw ->
   (* Daemons, so the handler returning ends them. *)
@@ -500,15 +520,17 @@ let run ~side ~mask ?(keep_alive = default_keep_alive)
   | Ok _ as ok ->
       close_and_wait (Some (Normal, ""));
       ok
-  | Error (Unreadable _) as e ->
+  | Error (`Undecodable _) as e ->
       close_and_wait
         (Some (Invalid_data, "A message this socket could not read."));
       e
-  | Error (Unwritable _) as e ->
-      close_and_wait (Some (Internal, "Something went wrong at our end."));
-      e
-  | Error (Closed _ | Lost _) as e ->
+  | Error (`Socket _ | `Lost _) as e ->
       close_and_wait None;
+      e
+  (* [`Unwritable], and whatever the handler ended with of its own: our end
+     failed, and the peer is told so. *)
+  | Error _ as e ->
+      close_and_wait (Some (Internal, "Something went wrong at our end."));
       e
   | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
   | exception ex ->

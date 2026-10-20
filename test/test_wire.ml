@@ -36,13 +36,13 @@ let echo =
     Spindle.Returns.response
     (Spindle.Dep.map (fun b -> Ok (Spindle.Response.make b)) Spindle.body)
 
-(* Reads its body as it arrives and says how many bytes came, answering a
-   body it could not read as the framework would have. *)
+(* Reads its body as it arrives and says how many bytes came; a body it
+   could not read is already the refusal the framework answers. *)
 let rec tally body bytes =
   match Spindle.Body.read body with
   | Ok (`Data s) -> tally body (bytes + String.length s)
   | Ok `End -> Ok (Spindle.Response.make (string_of_int bytes))
-  | Error e -> Error (Spindle.Body.refusal e)
+  | Error e -> Error e
 
 let upload =
   Spindle.post
@@ -60,7 +60,7 @@ let reads_a_part =
      match Spindle.Body.read body with
      | Ok (`Data s) -> Ok (Spindle.Response.make (String.make 1 s.[0]))
      | Ok `End -> Ok (Spindle.Response.make "")
-     | Error e -> Error (Spindle.Body.refusal e))
+     | Error e -> Error e)
 
 (* Four domains unless told, as a server is run: the framework's own suites
    are where its state is proven safe from several. On [In_memory]'s virtual
@@ -517,7 +517,7 @@ let test_a_client_gone_before_its_continue_is_a_value () =
            Ok (Spindle.Response.make "")
        | Error e ->
            Eio.Promise.resolve saw "an error";
-           Error (Spindle.Body.refusal e)
+           Error e
        | exception ex ->
            Eio.Promise.resolve saw (Printexc.to_string ex);
            raise ex)

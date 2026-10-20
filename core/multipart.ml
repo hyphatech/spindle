@@ -1,6 +1,6 @@
 module M = Spindle_http.Multipart
 
-type t = Body.error M.t
+type t = Refusal.t M.t
 
 type part = M.part = {
   name : string;
@@ -9,32 +9,11 @@ type part = M.part = {
   headers : (string * string) list;
 }
 
-type error = Malformed of string | Head_too_large | Body of Body.error
-
-let of_http_error = function
-  | M.Malformed m -> Malformed m
-  | M.Head_too_large -> Head_too_large
-  | M.Source e -> Body e
-
-let error_to_string = function
-  | Malformed m -> "not a multipart form: " ^ m
-  | Head_too_large -> "a part's head longer than its limit"
-  | Body e -> Body.error_to_string e
-
-let next t = Result.map_error of_http_error (M.next t)
-let read t = Result.map_error of_http_error (M.read t)
-
+(* What the route answers: the body's own failure already is a refusal. *)
 let refusal = function
-  | Malformed detail ->
-      Refusal.make ~detail
-        ~problems:
-          [
-            {
-              Refusal.at = "body";
-              code = "malformed";
-              message = "This is not a multipart form.";
-            };
-          ]
-        Refusal.Code.invalid "Some of that request is not what it should be."
-  | Head_too_large -> Refusal.too_large
-  | Body e -> Body.refusal e
+  | M.Malformed detail -> Body_repr.not_multipart ~detail
+  | M.Head_too_large -> Refusal.too_large
+  | M.Source r -> r
+
+let next t = Result.map_error refusal (M.next t)
+let read t = Result.map_error refusal (M.read t)

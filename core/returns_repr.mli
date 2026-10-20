@@ -32,9 +32,11 @@ type 'r t =
       protocol : ('c, 's) Spindle_http.Websocket.protocol;
       keep_alive : Mtime.Span.t option;
       max_message : int option;
+      ended : 'e -> [ Spindle_http.Websocket.error | `Handler ];
+          (** a socket's own failure as it is, and any of the handler's own as
+              one *)
     }
-      -> ( ('c, 's) Spindle_http.Websocket.t ->
-           (unit, Spindle_http.Websocket.error) result,
+      -> ( ('c, 's) Spindle_http.Websocket.t -> (unit, 'e) result,
            Refusal.t )
          result
          t

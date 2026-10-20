@@ -206,9 +206,10 @@ type websocket_error =
   [ error
   | `Not_upgraded of string response
     (** the server answered, without a [101] *)
-  | `Websocket of Spindle_http.Websocket.error
-    (** how the function's socket ended *) ]
-(** A handshake that could not be made is a call's {!error}. *)
+  | Spindle_http.Websocket.error ]
+(** A handshake that could not be made is a call's {!error}; how the socket
+    ended is {!Spindle_http.Websocket.error}'s, whose [`Lost] is a call's too.
+*)
 
 val websocket_error_to_string : [< websocket_error ] -> string
 
@@ -221,8 +222,8 @@ val websocket :
   ('c, 's) Spindle_http.Websocket.protocol ->
   string ->
   (('s, 'c) Spindle_http.Websocket.t ->
-  ('a, Spindle_http.Websocket.error) result) ->
-  ('a, [> websocket_error ]) result
+  ('a, ([> websocket_error ] as 'e)) result) ->
+  ('a, 'e) result
 (** [websocket t protocol url f] opens a socket to a [ws://] or [wss://] URL and
     runs [f] on it: the connection is [f]'s alone, never kept and never lent,
     opened for it and closed after it. [timeout] (the client's) bounds the
@@ -236,7 +237,9 @@ val websocket :
     where when [f] raised, which goes on -- and never its query, where a
     credential travels. What [f] returns is
     {!Spindle_http.Websocket.run_client}'s, and so are [keep_alive] and
-    [max_message]. *)
+    [max_message]: [f] may end with a failure of its own beside the socket's --
+    a statement's, say -- which closes the socket as [Internal] and is answered
+    as it is. *)
 
 (** {1 Spans, sent to a collector} *)
 

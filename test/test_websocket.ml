@@ -31,6 +31,9 @@ let echo ws =
 let forbidden =
   Spindle.Refusal.Code.make "forbidden" ~status:`Forbidden ~doc:"Not for you."
 
+(* A store that is busy: work of a handler's own, beside its socket's. *)
+let store _ : (unit, [> `Pool of [ `Busy ] ]) result = Error (`Pool `Busy)
+
 let routes =
   [
     Spindle.get
@@ -48,6 +51,15 @@ let routes =
       (Spindle.Returns.websocket chat)
       (let+ () = Spindle.Dep.return () in
        Ok (fun _ -> raise (Boom "a bug")));
+    Spindle.get
+      Spindle.Path.(s "stores")
+      (Spindle.Returns.websocket chat)
+      (let+ () = Spindle.Dep.return () in
+       Ok
+         (fun ws ->
+           let* msg = Ws.receive ws in
+           let* () = store msg in
+           Ws.send ws msg));
   ]
 
 let app = Spindle.Test.app routes
@@ -98,6 +110,34 @@ let test_a_handler_that_raises_is_closed_with_1011 () =
   in
   check_outcome "closed as our bug"
     (Error "closed, 1011: Something went wrong at our end.") (outcome got)
+
+(* A handler may end with a failure of its own beside the socket's, joined
+   under one [let*]: it closes the socket as our end's, and its line says
+   so by kind. *)
+let test_a_handlers_own_failure_is_closed_with_1011 () =
+  let lines = ref [] in
+  Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
+    ~out:(fun l -> lines := l :: !lines)
+    ();
+  let got =
+    Spindle.Test.websocket app chat "/stores" (fun ws ->
+        let* () = Ws.send ws { text = "hi" } in
+        let* back = Ws.receive ws in
+        Ok back.text)
+  in
+  check_outcome "closed as our end's"
+    (Error "closed, 1011: Something went wrong at our end.") (outcome got);
+  let has sub l =
+    let n = String.length sub in
+    let rec at i =
+      i + n <= String.length l
+      && (String.equal (String.sub l i n) sub || at (i + 1))
+    in
+    at 0
+  in
+  Alcotest.(check bool)
+    "and said so" true
+    (List.exists (has "its handler ended with a failure of its own") !lines)
 
 (* The raise is our bug, so the socket's line says so at error, with what
    was raised and where, as a stream's or a background job's does -- by its
@@ -235,7 +275,33 @@ let test_a_sockets_failure_joins_the_callers env () =
     "a URL with no host is unsent" true
     (match echoed () with
     | Error (`Unsent _) -> true
-    | Error (`Lost _ | `Not_upgraded _ | `Websocket _ | `Empty) | Ok _ -> false)
+    | Error
+        ( `Lost _ | `Not_upgraded _ | `Socket _ | `Undecodable _ | `Unwritable _
+        | `Empty )
+    | Ok _ ->
+        false)
+
+(* A client's function may end with a failure of its own too, answered as
+   it is. *)
+let test_a_client_answers_its_functions_own_failure env () =
+  Eio.Switch.run @@ fun sw ->
+  let port = serve ~sw env routes in
+  let got =
+    Spindle_client.websocket (client ~sw env ()) chat
+      (Printf.sprintf "ws://127.0.0.1:%d/echo" port) (fun ws ->
+        let* () = Ws.send ws { text = "hi" } in
+        let* _ = Ws.receive ws in
+        Error `Mine)
+  in
+  Alcotest.(check bool)
+    "its own" true
+    (match got with
+    | Error `Mine -> true
+    | Error
+        ( `Unsent _ | `Lost _ | `Not_upgraded _ | `Socket _ | `Undecodable _
+        | `Unwritable _ )
+    | Ok () ->
+        false)
 
 (* A program's client, for as long as its function runs, taken from the
    environment as a server's routes are. *)
@@ -398,7 +464,7 @@ let test_a_socket_whose_tls_breaks_is_lost env () =
         let* back = Ws.receive ws in
         Ok back.text)
   with
-  | Error (`Websocket (Ws.Lost _)) -> ()
+  | Error (`Lost _) -> ()
   | got ->
       Alcotest.failf "lost, not %s"
         (match called got with Ok s -> "answered " ^ s | Error m -> m)
@@ -445,7 +511,7 @@ let test_a_socket_whose_server_stopped_reading_is_lost () =
       chat "ws://t/flood"
       (fun ws -> Ws.send ws { text = String.make 200_000 'x' })
   with
-  | Error (`Websocket (Ws.Lost _)) -> ()
+  | Error (`Lost _) -> ()
   | got ->
       Alcotest.failf "lost, not %s"
         (match called got with Ok () -> "sent" | Error m -> m)
@@ -814,6 +880,8 @@ let () =
             test_a_refusal_comes_before_the_upgrade;
           Alcotest.test_case "a handler that raises is closed with 1011" `Quick
             test_a_handler_that_raises_is_closed_with_1011;
+          Alcotest.test_case "a handler's own failure is closed with 1011"
+            `Quick test_a_handlers_own_failure_is_closed_with_1011;
           Alcotest.test_case "a handler that raises is logged as an error"
             `Quick test_a_handler_that_raises_is_logged_as_an_error;
           Alcotest.test_case "another site's page cannot open one" `Quick
@@ -825,6 +893,9 @@ let () =
         [
           Alcotest.test_case "the client calls the server" `Quick
             (test_the_client_calls_the_server env);
+          Alcotest.test_case "a client answers its function's own failure"
+            `Quick
+            (test_a_client_answers_its_functions_own_failure env);
           Alcotest.test_case "a socket's failure joins the caller's" `Quick
             (test_a_sockets_failure_joins_the_callers env);
           Alcotest.test_case "a client runs as long as its function" `Quick

@@ -12,7 +12,11 @@ type source = Body_repr.source = {
   part : max:int -> ([ `Data of string | `End ], error) result;
 }
 
+(* The body's own failure is kept as the loop said it; the route is handed
+   what it answers. *)
 let read (t : t) =
+  Result.map_error Body_repr.refusal
+  @@
   if t.held.handler_returned then (
     L.warn (fun m ->
         m "%s read its body after its answer had gone, which read nothing"
@@ -31,8 +35,6 @@ let read (t : t) =
         | Error e ->
             t.failed <- Some e;
             Error e)
-
-let refusal = Body_repr.refusal
 
 let error_to_string = function
   | Too_large -> "a body longer than its limit"

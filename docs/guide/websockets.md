@@ -16,9 +16,12 @@ end gets a socket typed from its own side.
 - `Spindle.Returns.websocket protocol` makes the route a socket. Its
   dependency answers `Ok handler`, or a refusal before the upgrade.
 - The handler calls `Ws.receive` and `Ws.send` and returns a `result`. A
-  `let*` loop stops at the first error: `Closed` (with its code and reason),
-  `Lost`, `Unreadable`, or `Unwritable` for a message that cannot be sent --
-  JSON its description cannot encode, or text that is not UTF-8.
+  `let*` loop stops at the first error: `` `Socket (`Closed c) `` (with its
+  code and reason), `` `Lost ``, `` `Undecodable `` for a message its
+  description could not read, or `` `Unwritable `` for one that cannot be
+  sent -- JSON its description cannot encode, or text that is not UTF-8.
+  They are open tags, so the loop goes on through your own work too: `let*
+  () = Pool.exec pool save msg in` needs no conversion.
 
 A plain request to the route is refused with `426`, as below. So is an
 upgrade from another site's page (`403 cross_origin`; see
@@ -51,7 +54,8 @@ heard: goodbye
 URL, runs `f` on the socket and closes it when `f` returns. It answers `f`'s
 result, or a call's `` `Unsent `` or `` `Lost `` (the handshake could not be
 made), `` `Not_upgraded `` (the server answered without a `101`, with that
-answer) or `` `Websocket `` (how the socket ended). `~timeout` bounds the
+answer), how the socket ended -- its tags, above, the client's `` `Lost ``
+and the socket's being one -- or a failure of `f`'s own. `~timeout` bounds the
 handshake and each write.
 
 Both programs declare the same protocol. When the two ends are separate
@@ -64,24 +68,25 @@ How the handler's loop ended is the close code:
 | The handler | Close code |
 |---|---|
 | returns `Ok` | 1000 |
-| got a message its description could not read | 1007 |
-| had a message its description could not write | 1011 |
+| got a message its description could not read (`` `Undecodable ``) | 1007 |
+| had a message its description could not write (`` `Unwritable ``) | 1011 |
+| ends with a failure of its own -- a statement's, say -- logged | 1011 |
 | raised (logged as a bug) | 1011 |
-| returns `Error (Closed _)` or `Error (Lost _)` | none: the socket has already ended |
+| returns `` `Socket (`Closed _) `` or `` `Lost `` | none: the socket has already ended |
 
 To close with another code, call `Ws.close ~code ~reason ws` and return.
 Nothing raises into your handler: a socket whose peer has gone answers its
 next `receive` or `send` with an error. A `send` you cut off -- under
 `Eio.Time.Timeout.run`, or in an `Eio.Fiber.first` it lost -- may have
 written part of its frame, so it ends the socket: the cancellation goes on,
-and every later `send` answers `Lost`.
+and every later `send` answers `` `Lost ``.
 
 The framework handles the rest of the protocol for you:
 
 - ping and pong: a ping after `~keep_alive` (15 s) of silence, and a
-  peer silent for twice that is `Lost`;
+  peer silent for twice that is `` `Lost ``;
 - a peer that takes nothing written for the server's `send_timeout`
-  (30 s) is `Lost`, and one still reading, however slowly, is sent the
+  (30 s) is `` `Lost ``, and one still reading, however slowly, is sent the
   whole message;
 - a message over `~max_message` (1 MiB) closes the socket with 1009, and one
   of a kind the socket does not carry with 1003;

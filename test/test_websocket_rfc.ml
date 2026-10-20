@@ -492,7 +492,7 @@ let test_a_text_message_that_is_not_utf_8_is_not_sent () =
           texts c
           (fun ws ->
             match Ws.send ws "caf\xe9" with
-            | Error (Ws.Unwritable _) -> Ok "unwritable"
+            | Error (`Unwritable _) -> Ok "unwritable"
             | Error e -> Error e
             | Ok () -> Ok "sent"))
   in
@@ -937,7 +937,7 @@ let outcome = function
         r.body
   | Error (#Spindle_client.error as e) ->
       "failed: " ^ Spindle_client.error_to_string e
-  | Error (`Websocket e) -> "ended: " ^ Ws.error_to_string e
+  | Error (#Ws.error as e) -> "ended: " ^ Ws.error_to_string e
 
 let test_a_client_asks_as_the_rfc_says () =
   let got, heard = scripted Whole opening (fun open_ -> open_ texts receive) in

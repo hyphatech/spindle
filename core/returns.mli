@@ -100,13 +100,15 @@ val websocket :
   ?max_message:int ->
   ('c, 's) Spindle_http.Websocket.protocol ->
   ( ('c, 's) Spindle_http.Websocket.t ->
-    (unit, Spindle_http.Websocket.error) result,
+    (unit, [> Spindle_http.Websocket.error ]) result,
     Refusal.t )
   result
   t
 (** A WebSocket speaking [protocol]: the endpoint answers [Ok handler], or a
-    refusal before the upgrade. The handshake is checked before the endpoint
-    runs: a request that opens no socket is {!Refusal.Code.upgrade_required}, a
+    refusal before the upgrade. The handler may end with a failure of its own
+    beside the socket's -- a statement's, say -- which closes the socket as
+    [Internal], logged. The handshake is checked before the endpoint runs: a
+    request that opens no socket is {!Refusal.Code.upgrade_required}, a
     malformed one [invalid] at the header that is wrong, and one from another
     site's page [cross_origin], though it is a [GET]. The handler is
     {!Spindle_http.Websocket.run_server}'s, with [keep_alive] and [max_message]

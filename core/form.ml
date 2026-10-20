@@ -63,7 +63,7 @@ let split_parts ~boundary body =
   in
   Result.map_error
     (function
-      | M.Malformed detail -> Multipart.refusal (Multipart.Malformed detail)
+      | M.Malformed detail -> Body_repr.not_multipart ~detail
       | M.Head_too_large -> Refusal.too_large
       | M.Source (_ : nothing) -> .)
     (collect [])

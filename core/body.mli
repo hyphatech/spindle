@@ -3,19 +3,20 @@
 
     {[
     let rec save file body =
-      match Spindle.Body.read body with
-      | Ok (`Data part) ->
+      let* part = Spindle.Body.read body in
+      match part with
+      | `Data part ->
           Out_channel.output_string file part;
           save file body
-      | Ok `End -> Ok ()
-      | Error e -> Error (Spindle.Body.refusal e)
+      | `End -> Ok ()
     ]}
 
-    {b Every failure is a value.} A body past the route's limit, one the server
-    has no room for, and one that stops arriving or breaks its framing are each
-    an [Error] from {!read}, the route's to answer -- with {!refusal}, or a
-    refusal of its own. Nothing is raised to the route and nothing it raises is
-    caught.
+    {b Every failure is the route's answer.} A body past the route's limit is
+    {!Refusal.too_large}, one the server has no room for {!Refusal.busy}, and
+    one that stops arriving or breaks its framing {!Refusal.unreadable}: an
+    [Error] from {!read} that the handler's [let*] goes on through, as a
+    session's is ({!Session}). Its code tells one from another. Nothing is
+    raised to the route and nothing it raises is caught.
 
     {b The body is the handler's while it runs.} A read after the handler has
     returned -- from a stream's producer, a fibre it left behind -- is [`End],
@@ -26,7 +27,7 @@
 
 type t = Body_repr.t
 
-(** Why a body could not be read. *)
+(** Why a body could not be read, as a connection loop says it ({!source}). *)
 type error = Request_repr.body_error =
   | Too_large  (** longer than the route's limit *)
   | Unreadable of string
@@ -37,13 +38,9 @@ type error = Request_repr.body_error =
 
 val error_to_string : error -> string
 
-val read : t -> ([ `Data of string | `End ], error) result
+val read : t -> ([ `Data of string | `End ], Refusal.t) result
 (** The next part of the body as it arrived, at most 64 KiB, or its end. An
     error is the body's last word: every read after it answers the same. *)
-
-val refusal : error -> Refusal.t
-(** What the framework answers for a body it read whole and could not:
-    {!Refusal.too_large}, {!Refusal.busy} or {!Refusal.unreadable}. *)
 
 type source = Body_repr.source = {
   whole : unit -> (string, error) result;
