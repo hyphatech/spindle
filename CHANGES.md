@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.9.0 (2026-10-20)
 
 - Breaking: `Spindle.Dep.of_body` takes `?content_types`, as
   `Spindle.body_stream` does, where it took `~need:Dep.body`:
