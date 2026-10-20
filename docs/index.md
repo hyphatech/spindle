@@ -40,15 +40,15 @@ opam install spindle
 
     ---
 
-    Routes are values, inputs are typed, errors are values. Code that reads
-    like OCaml, because it is.
+    Expressive and composable, doing the heavy lifting in just a few lines
+    of readable code.
 
 -   :lucide-zap:{ .lg .middle } __Performant__
 
     ---
 
-    Multicore by design: your handlers run on every core in parallel, with
-    nothing to configure.
+    Multicore by design, with domains putting every core to work serving
+    connections in parallel.
 
     [Multicore :octicons-arrow-right-24:](guide/domains.md){ .md-button }
 
@@ -56,15 +56,15 @@ opam install spindle
 
     ---
 
-    Built on OCaml 5 effects. Straight-line handlers: no promises, no
-    monads, no callbacks.
+    OCaml 5 effects give every connection its own fiber and keep handlers in
+    plain direct style.
 
--   :lucide-book-open:{ .lg .middle } __OpenAPI docs via Scalar, out of the box__
+-   :lucide-book-open:{ .lg .middle } __OpenAPI docs via Scalar__
 
     ---
 
-    Interactive docs at `/docs`, generated from your routes and never out
-    of date.
+    Interactive docs at `/docs`, generated from the routes and never out of
+    date.
 
     [OpenAPI :octicons-arrow-right-24:](tutorial/openapi.md){ .md-button }
 
@@ -72,7 +72,8 @@ opam install spindle
 
     ---
 
-    Zod or Melange schemas, derived from your OCaml types.
+    Zod or Melange schemas generated from the routes, keeping client and
+    server aligned.
 
     [Client schemas :octicons-arrow-right-24:](tutorial/client-schemas.md){ .md-button }
 
@@ -80,32 +81,32 @@ opam install spindle
 
     ---
 
-    JSON derived from your types and validated on the way in, with every
-    mistake reported at once.
+    JSON contracts derived from OCaml types, bounds and docs included.
 
     [Request bodies :octicons-arrow-right-24:](tutorial/bodies.md){ .md-button }
 
--   :lucide-shield-check:{ .lg .middle } __RFC-strict__
+-   :lucide-shield-check:{ .lg .middle } __HTTP from the ground up__
 
     ---
 
-    Every HTTP requirement it meets is backed by a test. Secure defaults,
-    bounded waits, clean shutdowns.
+    Built for speed and safety, and extensively tested against RFC
+    standards.
 
--   :lucide-database:{ .lg .middle } __Postgres included__
+-   :lucide-blocks:{ .lg .middle } __Dependencies and Resources__
 
     ---
 
-    Typed queries, a pool and transactions, on a driver written in OCaml.
+    Extend any route with injectable logic and resources that compose and
+    swap easily.
 
-    [Database :octicons-arrow-right-24:](tutorial/database.md){ .md-button }
+    [Dependencies :octicons-arrow-right-24:](tutorial/dependencies.md){ .md-button }
 
 -   :lucide-boxes:{ .lg .middle } __Batteries included__
 
     ---
 
-    WebSockets, live updates, sessions, logging, traces, metrics, and
-    tests that need no server.
+    WebSockets, SSE, sessions, rate limits, logs, traces and OpenTelemetry
+    metrics.
 
     [Guides :octicons-arrow-right-24:](guide/pages.md){ .md-button }
 
