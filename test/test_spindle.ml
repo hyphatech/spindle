@@ -4192,7 +4192,7 @@ let test_probes_and_the_reference_are_guarded () =
         (Spindle.Test.call probes ~headers:staff `GET path).status)
     [ "/livez"; "/readyz" ];
   let reference =
-    Spindle.Test.app (hello :: Spindle.Openapi.docs ~guard [ hello ])
+    Spindle.Test.app (hello :: Spindle.Openapi.routes ~guard [ hello ])
   in
   List.iter
     (fun path ->

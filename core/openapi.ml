@@ -514,7 +514,7 @@ let start =
 |}
 
 (* The document describes the routes it is given, not these. *)
-let routes ?(at = Path.s "docs") ?document:(document_at = Path.s "openapi.json")
+let make ?(at = Path.s "docs") ?document:(document_at = Path.s "openapi.json")
     ?(title = "API") ?version ?(guard = Dep.return ()) routes =
   let ( let* ) = Result.bind in
   let url p = Result.map_error (fun m -> [ m ]) (Path.url p []) in
@@ -552,10 +552,10 @@ let routes ?(at = Path.s "docs") ?document:(document_at = Path.s "openapi.json")
         (served_file "text/javascript; charset=utf-8" start);
     ]
 
-(* What [routes] refuses is a constant in source, so it raises, as
+(* What [make] refuses is a constant in source, so it raises, as
    [Spindle.serve] does: the program ends before it listens, saying why. *)
-let docs ?at ?document ?title ?version ?guard described =
-  match routes ?at ?document ?title ?version ?guard described with
-  | Ok docs -> docs
+let routes ?at ?document ?title ?version ?guard described =
+  match make ?at ?document ?title ?version ?guard described with
+  | Ok served -> served
   | Error problems ->
-      invalid_arg ("Spindle.Openapi.docs: " ^ String.concat "; " problems)
+      invalid_arg ("Spindle.Openapi.routes: " ^ String.concat "; " problems)

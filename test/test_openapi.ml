@@ -808,7 +808,7 @@ let test_nothing_is_said_as_its_status () =
    the reference asks no other host for anything. *)
 let test_docs_are_served_from_here () =
   let a =
-    Spindle.Test.app (add :: Spindle.Openapi.docs ~title:"Orders" [ add ])
+    Spindle.Test.app (add :: Spindle.Openapi.routes ~title:"Orders" [ add ])
   in
   let get path = Spindle.Test.call a `GET path in
   let doc = get "/openapi.json" in
@@ -838,7 +838,7 @@ let test_docs_can_be_moved () =
   let a =
     Spindle.Test.app
       (add
-      :: Spindle.Openapi.docs
+      :: Spindle.Openapi.routes
            ~at:Spindle.Path.(s "reference")
            ~document:Spindle.Path.(s "api.json")
            [ add ])
@@ -862,13 +862,15 @@ let test_docs_can_be_moved () =
 (* A page at a parameter is no one place, and it is written in source. *)
 let test_a_mistake_in_the_docs_raises () =
   match
-    Spindle.Openapi.docs ~at:Spindle.Path.(s "docs" / string "version") [ add ]
+    Spindle.Openapi.routes
+      ~at:Spindle.Path.(s "docs" / string "version")
+      [ add ]
   with
   | _ -> Alcotest.fail "docs at a parameter were served"
   | exception Invalid_argument m ->
       Alcotest.(check bool)
         "saying whose" true
-        (contains ~sub:"Spindle.Openapi.docs" m)
+        (contains ~sub:"Spindle.Openapi.routes" m)
 
 type ticks
 

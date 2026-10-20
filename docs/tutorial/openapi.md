@@ -7,7 +7,7 @@ document never drifts from them.
 
 ## Interactive docs with Scalar
 
-`Spindle.Openapi.docs` serves an OpenAPI document of the routes you give
+`Spindle.Openapi.routes` serves an OpenAPI document of the routes you give
 it at `/openapi.json`, and Scalar's interactive reference over it at `/docs`:
 
 ```ocaml
@@ -33,18 +33,18 @@ what it means.*
 
 - The page's script is compiled into the library and served by your server,
   so it works offline.
-- Only the routes you pass are described: `api @ site @ Spindle.Openapi.docs
+- Only the routes you pass are described: `api @ site @ Spindle.Openapi.routes
   api` keeps a static site out of the document.
 - `~at` and `~document` move the page and the document.
 - Both are public unless you guard them, as `/metrics` is. `~guard` is a
   `unit Dep.t` run first, whose refusal is the answer:
-  `Spindle.Openapi.docs ~guard:staff_only api`.
+  `Spindle.Openapi.routes ~guard:staff_only api`.
 - A mistake in the descriptions -- two different types under one name,
   two paths that make one `operationId`, one path under two parameter
   names, or one operation whose routes answer in different ways or read
   different bodies -- raises before the server listens, and so does an
   `~at` or a `~document` with a parameter in it, which is no one place. For
-  routes built at run time, `Spindle.Openapi.routes` answers a `result`
+  routes built at run time, `Spindle.Openapi.make` answers a `result`
   instead.
 
 ??? example "The whole app"

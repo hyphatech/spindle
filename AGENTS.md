@@ -79,7 +79,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   `Spindle.Test.app`, for a route table `App.make` refuses -- and `Test.app`
   for a `Static.directory` or a `Files.directory`, which a test has no
   filesystem to read, or for resources `App.start` refuses --, and
-  `Spindle.Openapi.docs`, for whatever `Spindle.Openapi.routes` refuses;
+  `Spindle.Openapi.routes`, for whatever `Spindle.Openapi.make` refuses;
   and `Spindle.Test.call`, `Spindle.Test.events` and
   `Spindle.Test.websocket`, which refuse an undeclared code, a status its
   route does not list, or a resource `Test.app` was not given -- and

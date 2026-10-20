@@ -72,7 +72,7 @@ let routes =
 let () =
   Spindle.Log.setup ();
   Eio_main.run @@ fun env ->
-  Spindle.serve env (routes @ Spindle.Openapi.docs routes)
+  Spindle.serve env (routes @ Spindle.Openapi.routes routes)
 ```
 
 ```console

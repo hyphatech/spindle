@@ -1,5 +1,5 @@
 (** An application's routes as an OpenAPI 3.2 document, and [/docs] to read it
-    by ({!docs} serves both).
+    by ({!val-routes} serves both).
 
     Everything is read from {!Spindle.App.routes} and the routes' descriptions:
     requests from the decoding direction, answers from the encoding one, each
@@ -27,7 +27,7 @@ val report : App.t -> string list
     be any JSON ([Wiretype.Value.json]). Empty is a document that says
     everything. *)
 
-val routes :
+val make :
   ?at:Path.path ->
   ?document:Path.path ->
   ?title:string ->
@@ -44,10 +44,10 @@ val routes :
     not show it says who may with [guard], a dependency run first, whose refusal
     is the answer, as {!Metrics.routes}' is. [Error] names routes
     {!Spindle.App.make} refuses, what {!document} answers [Error] for, and a
-    path with a parameter, which is no one place. {!docs} is this for routes
-    written in source. *)
+    path with a parameter, which is no one place. {!val-routes} is this for
+    routes written in source. *)
 
-val docs :
+val routes :
   ?at:Path.path ->
   ?document:Path.path ->
   ?title:string ->
@@ -55,18 +55,18 @@ val docs :
   ?guard:unit Dep.t ->
   Route.t list ->
   Route.t list
-(** [docs routes]: {!val-routes}, as routes to serve beside the ones they
-    describe:
+(** [routes described]: {!make}, as routes to serve beside the ones they
+    describe, as {!Health.routes} and {!Metrics.routes} are:
 
     {[
-    Spindle.serve env (routes @ Spindle.Openapi.docs ~title:"Orders" routes)
+    Spindle.serve env (routes @ Spindle.Openapi.routes ~title:"Orders" routes)
     ]}
 
     What is described is what is passed, so a site served beside the API stays
-    out of its document: [api @ site @ docs api].
+    out of its document: [api @ site @ routes api].
 
-    Raises [Invalid_argument] where {!val-routes} answers [Error] -- routes
+    Raises [Invalid_argument] where {!make} answers [Error] -- routes
     {!Spindle.App.make} refuses, two descriptions under one kind, two routes of
     one operation id or of one path under two names, one operation answering two
     ways, a path with a parameter -- each written in source. A program that
-    builds its routes at run time uses {!val-routes}. *)
+    builds its routes at run time uses {!make}. *)

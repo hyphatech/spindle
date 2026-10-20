@@ -57,7 +57,7 @@ $ curl localhost:8080/fahrenheit
 
 - `Query.required` refuses a missing parameter; `Query.optional` hands over
   an `option`, and `Query.list` every value given.
-- `Openapi.docs routes` serves the API's own document beside it: the
+- `Openapi.routes routes` serves the API's own document beside it: the
   [OpenAPI](openapi.md) page.
 
 ## Custom dependencies

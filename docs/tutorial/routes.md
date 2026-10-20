@@ -145,7 +145,7 @@ reported.
   its name. Routes like these, that differ only by the parameter's type,
   must give it the same name. The OpenAPI document describes them as one
   operation, so they must also answer the same way and read the same body;
-  otherwise `Spindle.Openapi.docs` refuses them.
+  otherwise `Spindle.Openapi.routes` refuses them.
 - **A path no route names** is `404`, or your own answer with
   `Spindle.serve env ~not_found:page routes`. `page` is written as a
   route's handler is, with no method or path, and answers a response:

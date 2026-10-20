@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Breaking: `Spindle.Openapi.routes` is the routes that serve the API's
+  document and reference, a plain list, as `Health.routes` and
+  `Metrics.routes` are, raising for routes written wrong in source: it was
+  `Openapi.docs`. The one that answers a `result`, for routes built at run
+  time, is `Openapi.make`, as `App.make` is: it was `Openapi.routes`, so a
+  name meant one thing in one module and another in the next.
+
 - Breaking: `App.make`, `Spindle.serve` and `Test.app` take `~refuses`, where
   they took `~codes`: the codes the middleware may refuse with, named as a
   route's and a dependency's are, so one word declares them everywhere.
@@ -105,7 +112,7 @@
   runs over a call and its own failures, as `Spindle_client.error` says; they
   were closed, and such a `let*` did not compile.
 
-- `Spindle.Health.routes`, `Spindle.Openapi.docs` and `Spindle.Openapi.routes`
+- `Spindle.Health.routes`, `Spindle.Openapi.routes` and `Spindle.Openapi.make`
   take `?guard`, as `Spindle.Metrics.routes` does: a `unit Dep.t` run first,
   whose refusal is the answer, so the probes and the API's reference can be
   kept from whoever must not read them, where only the metrics could.
