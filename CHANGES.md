@@ -1,5 +1,32 @@
 # Changes
 
+## Unreleased
+
+- Breaking: `Spindle.Server.run` answers `(unit, Server.listen_error)
+  result`, `Error` where it cannot listen -- a port another program holds,
+  one the system does not permit, an address that is not this machine's, a
+  name the resolver does not know, a port outside 0 to 65535 -- naming the
+  host, the port and the address that failed, with
+  `Server.listen_error_to_string` to say so. It raised the system's error,
+  `Unix_error(EADDRINUSE, "bind", "")`, naming none of them.
+
+- `Spindle.serve` that cannot listen says where and why in one line --
+  `cannot listen on localhost:8080: another program holds port 8080 on
+  127.0.0.1` -- and exits with status 1, as it does when its application
+  cannot start; it ended with an uncaught exception and status 2. A program
+  that set no log up gets either line on stderr, where it got nothing.
+
+- Fixed: a wildcard host whose IPv4 port another program held served on
+  IPv6 alone, saying it served IPv4 too, and IPv4's clients reached the
+  other program. The IPv6 socket now takes IPv6 alone, and a port held on
+  either family is refused.
+
+- Fixed: a port above 65535 was served on the port the system wrapped it
+  to, said to be the one asked for. It is refused.
+
+- A server that cannot bind every address its host names closes those it
+  bound, leaving nothing listening.
+
 ## 0.9.0 (2026-10-20)
 
 - Breaking: `Spindle.Dep.of_body` takes `?content_types`, as

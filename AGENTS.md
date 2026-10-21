@@ -87,9 +87,11 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   core client postgres cli` finds one this list does not name.
 - **Spindle prints and exits in these places alone.** `Spindle.serve`
   prints the address it listens on unless given `?ready`, and exits with
-  status 1 when its application cannot start, as
+  status 1 when its application cannot start or it cannot listen, as
   `Spindle_postgres.Pool.run` does when its pool cannot open, since a
-  server missing what it needs is stopped where an orchestrator sees it;
+  server missing what it needs is stopped where an orchestrator sees it --
+  saying why in the log, or on stderr where the program set no log up,
+  since Logs drops every line until it is;
   `Spindle.Log`'s default sink writes its lines to stderr; and
   `spindle-cli`, a command line, prints its answer and its errors and
   exits with its status. Symptom: `rg -n -w

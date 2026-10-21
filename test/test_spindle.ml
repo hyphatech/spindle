@@ -5877,15 +5877,18 @@ let served_on ~sw ~net ~env ~domains host =
   let port = free_port ~net in
   let told, tell = Eio.Promise.create () in
   Eio.Fiber.fork_daemon ~sw (fun () ->
-      Spindle.Server.run ~sw ~net
-        ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-        ~domains
-        ~mono_clock:(Eio.Stdenv.mono_clock env)
-        ~read_clock:(fun () -> Ptime.epoch)
-        ~port ?host
-        ~ready:(fun where -> Eio.Promise.resolve tell where)
-        (Spindle.Test.app [ hello ]);
-      `Stop_daemon);
+      match
+        Spindle.Server.run ~sw ~net
+          ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+          ~domains
+          ~mono_clock:(Eio.Stdenv.mono_clock env)
+          ~read_clock:(fun () -> Ptime.epoch)
+          ~port ?host
+          ~ready:(fun where -> Eio.Promise.resolve tell where)
+          (Spindle.Test.app [ hello ])
+      with
+      | Ok () -> `Stop_daemon
+      | Error e -> Alcotest.fail (Spindle.Server.listen_error_to_string e));
   (port, Eio.Promise.await told)
 
 (* Nothing named is both loopback addresses, whatever the resolver would
@@ -5940,39 +5943,191 @@ let test_a_wildcard_listens_on_every_interface domains () =
         (answers ~net Eio.Net.Ipaddr.V6.loopback port))
     [ "0.0.0.0"; "::" ]
 
+(* What [run] answers on [port] at [host] when it cannot listen there; it
+   listening at all fails the test. *)
+let refused_to_listen ~sw ~env ?host port =
+  match
+    Spindle.Server.run ~sw ~net:(Eio.Stdenv.net env)
+      ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+      ~domains:1
+      ~mono_clock:(Eio.Stdenv.mono_clock env)
+      ~read_clock:(fun () -> Ptime.epoch)
+      ~port ?host
+      ~ready:(fun where -> Alcotest.failf "listening on %s" where)
+      (Spindle.Test.app [ hello ])
+  with
+  | Ok () -> Alcotest.fail "the server returned"
+  | Error e -> e
+
+(* Another program's socket on [addr], at a port nobody holds, or [None]
+   where this host has no such address -- IPv6, say. *)
+let held ~sw ~net addr =
+  let port = free_port ~net in
+  match
+    Eio.Net.listen net ~sw ~backlog:1 ~reuse_addr:true (`Tcp (addr, port))
+  with
+  | exception (Eio.Io _ | Unix.Unix_error _) -> None
+  | _ -> Some port
+
+let check_refused ~what (expected : Spindle.Server.listen_error) e =
+  check_string what
+    (Spindle.Server.listen_error_to_string expected)
+    (Spindle.Server.listen_error_to_string e)
+
+(* A port another program holds is said to be, naming the address it holds
+   it on. *)
+let test_a_port_held_is_refused () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  match held ~sw ~net Eio.Net.Ipaddr.V4.loopback with
+  | None -> Alcotest.fail "nobody could hold 127.0.0.1"
+  | Some port ->
+      check_refused ~what:"in use"
+        { host = "127.0.0.1"; port; failure = In_use "127.0.0.1" }
+        (refused_to_listen ~sw ~env ~host:"127.0.0.1" port)
+
 (* A port held on one loopback address is held: localhost is both or
    neither, never IPv4 alone beside whoever holds [::1] -- whom a browser,
-   asking for [::1] first, would reach instead. *)
+   asking for [::1] first, would reach instead. What it had bound is let go,
+   so nothing is left listening on IPv4 either. *)
 let test_localhost_held_on_one_loopback_is_refused () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let net = Eio.Stdenv.net env in
-  let port = free_port ~net in
-  match
-    Eio.Net.listen net ~sw ~backlog:1 ~reuse_addr:true
-      (`Tcp (Eio.Net.Ipaddr.V6.loopback, port))
-  with
-  | exception (Eio.Io _ | Unix.Unix_error _) ->
+  match held ~sw ~net Eio.Net.Ipaddr.V6.loopback with
+  | None ->
       (* No IPv6 here, so nobody can hold [::1]. *)
       Alcotest.skip ()
-  | _ -> (
-      match
-        Spindle.Server.run ~sw ~net
-          ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-          ~domains:1
-          ~mono_clock:(Eio.Stdenv.mono_clock env)
-          ~read_clock:(fun () -> Ptime.epoch)
-          ~port
-          ~ready:(fun where ->
-            Alcotest.failf "listening on %s, beside whoever holds [::1]" where)
-          (Spindle.Test.app [ hello ])
-      with
-      | () -> Alcotest.fail "the server returned"
-      | exception
-          ( Unix.Unix_error (Unix.EADDRINUSE, _, _)
-          | Eio.Io (Eio.Exn.X (Eio_unix.Unix_error (Unix.EADDRINUSE, _, _)), _)
-            ) ->
-          ())
+  | Some port ->
+      check_refused ~what:"in use on [::1]"
+        { host = "localhost"; port; failure = In_use "::1" }
+        (refused_to_listen ~sw ~env port);
+      Alcotest.(check bool)
+        "nothing left on IPv4" false
+        (answers ~net Eio.Net.Ipaddr.V4.loopback port)
+
+(* A wildcard whose IPv4 half another program holds is refused, never
+   served on IPv6 alone as if IPv6 took IPv4 too: IPv4's clients would reach
+   the other program. *)
+let test_a_wildcard_held_on_ipv4_is_refused () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  List.iter
+    (fun host ->
+      match held ~sw ~net Eio.Net.Ipaddr.V4.any with
+      | None -> Alcotest.fail "nobody could hold 0.0.0.0"
+      | Some port ->
+          check_refused ~what:host
+            { host; port; failure = In_use "0.0.0.0" }
+            (refused_to_listen ~sw ~env ~host port);
+          Alcotest.(check bool)
+            (host ^ ", nothing left on IPv6")
+            false
+            (answers ~net Eio.Net.Ipaddr.V6.loopback port))
+    [ "0.0.0.0"; "::" ]
+
+(* A port is 0 to 65535: one past either end is no port, never another one
+   the system wrapped it round to. *)
+let test_a_port_out_of_range_is_refused () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  List.iter
+    (fun port ->
+      check_refused ~what:(string_of_int port)
+        { host = "localhost"; port; failure = No_such_port }
+        (refused_to_listen ~sw ~env port))
+    [ 65536; 70000; -1 ]
+
+(* A name nothing resolves is said to be, as is an address this machine
+   has no interface for -- 192.0.2.1 is documentation's (RFC 5737). *)
+let test_a_host_not_found_is_refused () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let port = free_port ~net:(Eio.Stdenv.net env) in
+  List.iter
+    (fun host ->
+      check_refused ~what:host
+        { host; port; failure = Unknown_host }
+        (refused_to_listen ~sw ~env ~host port))
+    [ "no-such-host.invalid"; "" ];
+  check_refused ~what:"not local"
+    { host = "192.0.2.1"; port; failure = Not_local "192.0.2.1" }
+    (refused_to_listen ~sw ~env ~host:"192.0.2.1" port)
+
+(* Each failure is one line saying where it was told to listen and why it
+   could not, an IPv6 address in brackets as a URL writes one. *)
+let test_a_listen_error_says_where_and_why () =
+  List.iter
+    (fun (expected, (e : Spindle.Server.listen_error)) ->
+      check_string expected expected (Spindle.Server.listen_error_to_string e))
+    [
+      ( "cannot listen on localhost:8080: another program holds port 8080 on ::1",
+        { host = "localhost"; port = 8080; failure = In_use "::1" } );
+      ( "cannot listen on [::]:80: this program may not have port 80 on ::, \
+         which below 1024 commonly needs privileges",
+        { host = "::"; port = 80; failure = Not_permitted "::" } );
+      ( "cannot listen on 192.0.2.1:8080: 192.0.2.1 is no address of this \
+         machine",
+        { host = "192.0.2.1"; port = 8080; failure = Not_local "192.0.2.1" } );
+      ( "cannot listen on db.internal:8080: the resolver knows no address for \
+         db.internal",
+        { host = "db.internal"; port = 8080; failure = Unknown_host } );
+      ( "cannot listen on localhost:70000: a port is 0 to 65535",
+        { host = "localhost"; port = 70000; failure = No_such_port } );
+      ( "cannot listen on localhost:8080: binding 127.0.0.1 failed: Too many \
+         open files",
+        {
+          host = "localhost";
+          port = 8080;
+          failure =
+            Failed { address = "127.0.0.1"; reason = "Too many open files" };
+        } );
+    ]
+
+(* [Spindle.serve] as a program runs it, with no log set up: a port another
+   program holds is one line on stderr, and status 1. *)
+let test_serve_says_why_it_cannot_listen () =
+  let other = Unix.socket ~cloexec:true Unix.PF_INET Unix.SOCK_STREAM 0 in
+  Fun.protect ~finally:(fun () -> Unix.close other) @@ fun () ->
+  Unix.setsockopt other Unix.SO_REUSEADDR true;
+  Unix.bind other (Unix.ADDR_INET (Unix.inet_addr_loopback, 0));
+  Unix.listen other 1;
+  let port =
+    match Unix.getsockname other with
+    | Unix.ADDR_INET (_, p) -> p
+    | Unix.ADDR_UNIX _ -> Alcotest.fail "expected a TCP socket"
+  in
+  let err_file = Filename.temp_file "serve" ".err" in
+  let status =
+    let err = Unix.openfile err_file [ Unix.O_WRONLY; Unix.O_TRUNC ] 0o600 in
+    let pid =
+      Unix.create_process "./serve_app.exe"
+        [| "serve_app.exe"; string_of_int port |]
+        Unix.stdin Unix.stdout err
+    in
+    Unix.close err;
+    (* A signal to this process interrupts the wait, which is then waited
+       again. *)
+    let rec wait () =
+      match Unix.waitpid [] pid with
+      | _, Unix.WEXITED n -> n
+      | _, (Unix.WSIGNALED n | Unix.WSTOPPED n) ->
+          Alcotest.failf "stopped by signal %d" n
+      | exception Unix.Unix_error (Unix.EINTR, _, _) -> wait ()
+    in
+    wait ()
+  in
+  let said = In_channel.with_open_bin err_file In_channel.input_all in
+  Sys.remove err_file;
+  check_string "said"
+    (Printf.sprintf
+       "cannot listen on 127.0.0.1:%d: another program holds port %d on \
+        127.0.0.1\n"
+       port port)
+    said;
+  Alcotest.(check int) "status" 1 status
 
 (* A limit out of range is refused before anything is bound or announced:
    with the port held by someone else, the limit is still what is said. *)
@@ -5996,15 +6151,12 @@ let test_run_checks_its_limits_before_it_binds () =
       ~ready:(fun where -> Alcotest.failf "ready on %s" where)
       (Spindle.Test.app [ hello ])
   with
-  | () -> Alcotest.fail "the server returned"
+  | Ok () -> Alcotest.fail "the server returned"
   | exception Invalid_argument m ->
       Alcotest.(check bool)
         "naming the limit" true
         (contains ~sub:"max_connections" m)
-  | exception
-      ( Unix.Unix_error (Unix.EADDRINUSE, _, _)
-      | Eio.Io (Eio.Exn.X (Eio_unix.Unix_error (Unix.EADDRINUSE, _, _)), _) ) ->
-      Alcotest.fail "bound before its limits were checked"
+  | Error _ -> Alcotest.fail "bound before its limits were checked"
 
 (* An address is exactly what is listened on. *)
 let test_an_address_is_exactly_that_one domains () =
@@ -10279,6 +10431,18 @@ let () =
             (test_an_address_is_exactly_that_one 1);
           Alcotest.test_case "localhost held on one loopback is refused" `Quick
             test_localhost_held_on_one_loopback_is_refused;
+          Alcotest.test_case "a port held is refused" `Quick
+            test_a_port_held_is_refused;
+          Alcotest.test_case "a wildcard held on IPv4 is refused" `Quick
+            test_a_wildcard_held_on_ipv4_is_refused;
+          Alcotest.test_case "a port out of range is refused" `Quick
+            test_a_port_out_of_range_is_refused;
+          Alcotest.test_case "a host not found is refused" `Quick
+            test_a_host_not_found_is_refused;
+          Alcotest.test_case "a listen error says where and why" `Quick
+            test_a_listen_error_says_where_and_why;
+          Alcotest.test_case "serve says why it cannot listen" `Quick
+            test_serve_says_why_it_cannot_listen;
           Alcotest.test_case "localhost is localhost in any case" `Quick
             test_localhost_is_localhost_in_any_case;
           Alcotest.test_case "a stream ends when its client goes" `Quick

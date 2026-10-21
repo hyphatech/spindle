@@ -1322,85 +1322,155 @@ let serve_on ~mono_clock ~read_clock ~domain_mgr ?domains ?limits
     ~mono_clock ~read_clock ~domain_mgr ?stop ?on_stop ?trace ?metrics sockets
     app
 
+type listen_error = { host : string; port : int; failure : listen_failure }
+
+and listen_failure =
+  | In_use of string
+  | Not_permitted of string
+  | Not_local of string
+  | Unknown_host
+  | No_such_port
+  | Failed of { address : string; reason : string }
+
+let listen_error_to_string { host; port; failure } =
+  let authority =
+    if String.contains host ':' then Printf.sprintf "[%s]:%d" host port
+    else Printf.sprintf "%s:%d" host port
+  in
+  let why =
+    match failure with
+    | In_use address ->
+        Printf.sprintf "another program holds port %d on %s" port address
+    | Not_permitted address ->
+        Printf.sprintf
+          "this program may not have port %d on %s, which below 1024 commonly \
+           needs privileges"
+          port address
+    | Not_local address -> address ^ " is no address of this machine"
+    | Unknown_host -> "the resolver knows no address for " ^ host
+    | No_such_port -> "a port is 0 to 65535"
+    | Failed { address; reason } ->
+        Printf.sprintf "binding %s failed: %s" address reason
+  in
+  Printf.sprintf "cannot listen on %s: %s" authority why
+
 let run ~sw ~net ~mono_clock:clock ~read_clock ~domain_mgr ?domains ~port
     ?(host = "localhost") ?(limits = Limits.default) ?trusted_proxies
     ?proxy_header ?stop ?on_stop ?(ready = ignore) ?trace ?metrics app =
   let settings = settings ?domains ~limits ?trusted_proxies ?proxy_header ()
   and backlog = limits.backlog in
-  let bind addr =
-    Eio.Net.listen net ~sw ~backlog ~reuse_addr:true (`Tcp (addr, port))
-  in
-  (* Whether a bind failed with one of [codes]: raised as it is by the posix
-     backend, wrapped in Eio's error by io_uring's. *)
-  let failed_with codes = function
-    | Unix.Unix_error (code, _, _)
-    | Eio.Io (Eio.Exn.X (Eio_unix.Unix_error (code, _, _)), _) ->
-        List.mem code codes
-    | _ -> false
-  in
-  (* A host without IPv6 says so as the family or address being unavailable.
-     Any other failure -- a port someone else holds on that family above all
-     -- is the server's to report, never a family to do without. *)
-  let bind_if_supported addr =
-    match bind addr with
-    | s -> Some s
-    | exception ex
-      when failed_with
-             [ Unix.EAFNOSUPPORT; Unix.EADDRNOTAVAIL; Unix.EPROTONOSUPPORT ]
-             ex ->
-        None
-  in
   let address_to_string = Format.asprintf "%a" Eio.Net.Ipaddr.pp in
+  let is_v6 = Eio.Net.Ipaddr.fold ~v4:(fun _ -> false) ~v6:(fun _ -> true) in
+  (* Made here rather than by [Eio.Net.listen], which sets no option before
+     it binds: an IPv6 socket takes IPv6 alone, since on most hosts it would
+     take IPv4's port too, and another program holding that port could not
+     then be told from it. *)
+  let bind addr =
+    let sockaddr = Eio_unix.Net.sockaddr_to_unix (`Tcp (addr, port)) in
+    let domain = Unix.domain_of_sockaddr sockaddr in
+    match Unix.socket ~cloexec:true domain Unix.SOCK_STREAM 0 with
+    | exception Unix.Unix_error (code, _, _) -> Error code
+    | fd -> (
+        match
+          Unix.setsockopt fd Unix.SO_REUSEADDR true;
+          if is_v6 addr then Unix.setsockopt fd Unix.IPV6_ONLY true;
+          Unix.bind fd sockaddr;
+          Unix.listen fd backlog
+        with
+        | () ->
+            Ok
+              (Eio_unix.Net.import_socket_listening ~sw ~close_unix:true fd
+                :> Eio_unix.Net.listening_socket_ty Eio.Resource.t)
+        | exception Unix.Unix_error (code, _, _) ->
+            Unix.close fd;
+            Error code)
+  in
+  let failed_on addr code =
+    let address = address_to_string addr in
+    match code with
+    | Unix.EADDRINUSE -> In_use address
+    | Unix.EACCES | Unix.EPERM -> Not_permitted address
+    | Unix.EADDRNOTAVAIL -> Not_local address
+    | code -> Failed { address; reason = Unix.error_message code }
+  in
+  (* Every address or none. One marked optional is done without where the
+     host has no IPv6 -- the family or the address unavailable -- and any
+     other failure closes what was bound, so a server refused leaves nothing
+     listening. *)
+  let rec bind_all bound = function
+    | [] -> Ok (List.rev bound)
+    | (addr, optional) :: rest -> (
+        match bind addr with
+        | Ok socket -> bind_all ((addr, socket) :: bound) rest
+        | Error (Unix.EAFNOSUPPORT | Unix.EADDRNOTAVAIL | Unix.EPROTONOSUPPORT)
+          when optional ->
+            bind_all bound rest
+        | Error code ->
+            List.iter (fun (_, socket) -> Eio.Resource.close socket) bound;
+            Error (failed_on addr code))
+  in
   let raw_bytes (a : Eio.Net.Ipaddr.v4v6) = (a :> string) in
   let is_wildcard a =
     String.equal (raw_bytes a) (raw_bytes Eio.Net.Ipaddr.V4.any)
     || String.equal (raw_bytes a) (raw_bytes Eio.Net.Ipaddr.V6.any)
   in
   let resolve_host () =
-    List.fold_left
-      (fun acc -> function
-        | `Tcp (a, _)
-          when not
-                 (List.exists
-                    (fun b -> String.equal (raw_bytes a) (raw_bytes b))
-                    acc) ->
-            a :: acc
-        | `Tcp _ | `Unix _ -> acc)
-      []
-      (Eio.Net.getaddrinfo_stream net host)
-    |> List.rev
+    match Eio.Net.getaddrinfo_stream net host with
+    | exception Eio.Io (Eio.Net.E (Address_lookup_failed _), _) -> []
+    | found ->
+        List.fold_left
+          (fun acc -> function
+            | `Tcp (a, _)
+              when not
+                     (List.exists
+                        (fun b -> String.equal (raw_bytes a) (raw_bytes b))
+                        acc) ->
+                a :: acc
+            | `Tcp _ | `Unix _ -> acc)
+          [] found
+        |> List.rev
   in
   (* [localhost] is both loopback addresses whatever the resolver says: a
      browser asks for [::1] first, and a hosts file may name only one. It is
      a host's name, so in any case (RFC 4343). A wildcard is every interface
      of both families, since a container's port is forwarded over either. *)
-  let sockets, bound_to =
-    if String.equal (String.lowercase_ascii host) "localhost" then
-      let v4 = bind Eio.Net.Ipaddr.V4.loopback in
-      match bind_if_supported Eio.Net.Ipaddr.V6.loopback with
-      | Some v6 -> ([ v4; v6 ], "127.0.0.1 and [::1]")
-      | None -> ([ v4 ], "127.0.0.1")
+  let wildcard, to_bind =
+    if port < 0 || port > 65535 then (false, Error No_such_port)
+    else if String.equal (String.lowercase_ascii host) "localhost" then
+      ( false,
+        Ok
+          [
+            (Eio.Net.Ipaddr.V4.loopback, false);
+            (Eio.Net.Ipaddr.V6.loopback, true);
+          ] )
     else
-      let addrs = resolve_host () in
-      if List.exists is_wildcard addrs then
-        match bind_if_supported Eio.Net.Ipaddr.V6.any with
-        | None ->
-            ( [ bind Eio.Net.Ipaddr.V4.any ],
-              "every interface: 0.0.0.0, with no IPv6 here" )
-        | Some v6 -> (
-            (* On a dual-stack host the IPv6 wildcard takes IPv4 too, and
-               binding IPv4 then fails as in use. *)
-            match bind Eio.Net.Ipaddr.V4.any with
-            | v4 -> ([ v6; v4 ], "every interface: [::] and 0.0.0.0")
-            | exception ex when failed_with [ Unix.EADDRINUSE ] ex ->
-                ([ v6 ], "every interface: [::], which takes IPv4 too"))
-      else
-        ( List.map bind addrs,
-          String.concat " and " (List.map address_to_string addrs) )
+      match resolve_host () with
+      | [] -> (false, Error Unknown_host)
+      | addrs when List.exists is_wildcard addrs ->
+          ( true,
+            Ok [ (Eio.Net.Ipaddr.V6.any, true); (Eio.Net.Ipaddr.V4.any, false) ]
+          )
+      | addrs -> (false, Ok (List.map (fun a -> (a, false)) addrs))
   in
-  ready bound_to;
-  serve settings ~mono_clock:clock ~read_clock ~domain_mgr ?stop ?on_stop ?trace
-    ?metrics sockets app
+  match Result.bind to_bind (bind_all []) with
+  | Error failure -> Error { host; port; failure }
+  | Ok bound ->
+      let addrs = List.map fst bound in
+      let named =
+        String.concat " and "
+          (List.map
+             (fun a ->
+               if is_v6 a then "[" ^ address_to_string a ^ "]"
+               else address_to_string a)
+             addrs)
+      in
+      ready
+        (if not wildcard then named
+         else if List.exists is_v6 addrs then "every interface: " ^ named
+         else "every interface: " ^ named ^ ", with no IPv6 here");
+      serve settings ~mono_clock:clock ~read_clock ~domain_mgr ?stop ?on_stop
+        ?trace ?metrics (List.map snd bound) app;
+      Ok ()
 
 let stop_on_signals ~sw () =
   let stopped, stop = Eio.Promise.create () in

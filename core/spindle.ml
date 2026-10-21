@@ -229,16 +229,21 @@ let serve ?(port = 8080) ?host ?domains ?resources ?middleware ?refuses
     | Ok app -> app
     | Error m -> invalid_arg ("Spindle.serve: " ^ m)
   in
-  (* The exit status is what an orchestrator sees; the reason is logged. *)
+  (* The exit status is what an orchestrator sees, and the reason is logged --
+     or written to stderr where the program set no log up, since Logs drops
+     every line until a reporter is set. *)
+  let stop_because why =
+    if Logs.reporter () == Logs.nop_reporter then prerr_endline why
+    else L.err (fun f -> f "%s" why);
+    exit 1
+  in
   let instance =
     match
       App.start ?resources ?keys app ~fs:(Eio.Stdenv.fs env)
         ~mono_clock:(Eio.Stdenv.mono_clock env)
     with
     | Ok instance -> instance
-    | Error m ->
-        L.err (fun f -> f "cannot start: %s" m);
-        exit 1
+    | Error m -> stop_because ("cannot start: " ^ m)
   in
   Eio.Switch.run @@ fun sw ->
   let read_clock =
@@ -258,9 +263,13 @@ let serve ?(port = 8080) ?host ?domains ?resources ?middleware ?refuses
     Option.value ready ~default:(fun where ->
         Printf.printf "Listening on http://%s (%s)\n%!" authority where)
   in
-  Server.run ~sw ~net:(Eio.Stdenv.net env)
-    ~mono_clock:(Eio.Stdenv.mono_clock env)
-    ~read_clock
-    ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-    ?domains ~port ?host ?limits ?trusted_proxies ?proxy_header ~stop ?on_stop
-    ~ready ?trace ?metrics instance
+  match
+    Server.run ~sw ~net:(Eio.Stdenv.net env)
+      ~mono_clock:(Eio.Stdenv.mono_clock env)
+      ~read_clock
+      ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+      ?domains ~port ?host ?limits ?trusted_proxies ?proxy_header ~stop ?on_stop
+      ~ready ?trace ?metrics instance
+  with
+  | Ok () -> ()
+  | Error e -> stop_because (Server.listen_error_to_string e)

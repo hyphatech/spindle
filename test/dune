@@ -1,6 +1,7 @@
 ; Spindle's suites, and the Postgres kit's against SPINDLE_TEST_PG. Another
 ; server a test stands in is stub_server.ml; a database of a case's own is
-; db_target.ml; a server on virtual time, and connections to it in memory,
+; db_target.ml; a program that only serves, run as a process, is
+; serve_app.ml; a server on virtual time, and connections to it in memory,
 ; is in_memory.ml; a certificate, and TLS before a server, is tls_front.ml;
 ; an instant a row gives in milliseconds is instants.ml.
 
@@ -17,7 +18,7 @@
   test_spindle_postgres
   test_cli)
  (package spindle-postgres)
- (modules :standard \ cli_app test_docs)
+ (modules :standard \ cli_app serve_app test_docs)
  (libraries
   spindle
   spindle.http
@@ -61,12 +62,19 @@
   ; RFC 9651's published tests, pinned, which test_structured runs whole.
   (source_tree structured-field-tests)
   ; The command line test_cli runs as a process.
-  cli_app.exe))
+  cli_app.exe
+  ; Spindle.serve, which test_spindle runs as a process.
+  serve_app.exe))
 
 (executable
  (name cli_app)
  (modules cli_app)
  (libraries spindle spindle-cli))
+
+(executable
+ (name serve_app)
+ (modules serve_app)
+ (libraries spindle eio_main))
 
 ; Every example the build makes is on a page of the documentation site.
 

@@ -172,12 +172,14 @@ val serve :
     or a {!Files.directory} -- is read before it listens too ({!App.start}),
     from [env]'s filesystem, and the [resources] they read are checked: a
     directory that cannot be read, or a resource a route reads that [resources]
-    does not hold, ends the program: an error in the log saying why, and exit
-    code 1, since a server missing what it was written to serve is not the one
-    that was written. A program that builds its routes at run time makes its app
-    with {!App.make}, starts it with {!App.start} on [env]'s monotonic clock,
-    which times its limits ({!Rate}), and serves the instance that answers with
-    {!Server.run}. *)
+    does not hold, ends the program, as does a [host] and [port] it cannot
+    listen on ({!Server.listen_error}): one line saying why -- in the log, or on
+    stderr where the program set none up -- and exit code 1, since a server
+    missing what it was written to serve is not the one that was written. A
+    program that builds its routes at run time makes its app with {!App.make},
+    starts it with {!App.start} on [env]'s monotonic clock, which times its
+    limits ({!Rate}), and serves the instance that answers with {!Server.run}.
+*)
 
 val of_clock : _ Eio.Time.clock -> Ptime.t
 (** The clock's time now, {!Spindle_http.Instant.of_clock}: what [read_clock]

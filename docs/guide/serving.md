@@ -17,17 +17,23 @@ By default it serves on `localhost:8080`, on every CPU core, stops cleanly
 on SIGTERM or SIGINT, and prints where it listens. Every setting is an
 optional argument, and the limits on clients are one of them, `~limits`.
 
-Three mistakes stop the server before it listens:
+Two kinds of mistake stop the server before it listens:
 
 - A route table that cannot be right -- two routes answering one URL, say
   -- raises `Invalid_argument`, naming the route. So does a limit out of
   its range, where `Limits.make` is called.
 - A `Static.directory` or a `Files.directory` that cannot be read, a
-  resource a route reads that `~resources` does not hold, or a signed or
-  encrypted cookie a route reads with no `~keys`, logs an error saying why,
-  and the program exits with status 1.
-- A port already in use, or a `~host` name the resolver does not know,
-  raises Eio's I/O error.
+  resource a route reads that `~resources` does not hold, a signed or
+  encrypted cookie a route reads with no `~keys`, or a host and port it
+  cannot listen on, is one line saying why -- in the log, or on stderr
+  where the program set none up -- and the program exits with status 1:
+
+```
+cannot listen on localhost:8080: another program holds port 8080 on 127.0.0.1
+```
+
+A port is bound on every address the host names or on none, so a server
+never starts on IPv6 alone beside another program holding the port on IPv4.
 
 ## Where it listens
 

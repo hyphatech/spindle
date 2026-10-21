@@ -49,6 +49,26 @@ module Limits : sig
   (** [make ()]. *)
 end
 
+type listen_error = { host : string; port : int; failure : listen_failure }
+(** Why {!run} could not listen where it was told, with the [host] and [port] it
+    was told. *)
+
+and listen_failure =
+  | In_use of string  (** another program holds the port on this address *)
+  | Not_permitted of string
+      (** the system lets this program have no such port on this address -- one
+          below 1024, commonly, without privileges *)
+  | Not_local of string  (** an address none of this machine's interfaces has *)
+  | Unknown_host  (** a name the resolver knows no address for *)
+  | No_such_port  (** a port outside 0 to 65535 *)
+  | Failed of { address : string; reason : string }
+      (** binding the address failed otherwise, for the system's [reason] *)
+
+val listen_error_to_string : listen_error -> string
+(** One line saying where and why:
+    [cannot listen on localhost:8080: another program holds port 8080 on ::1].
+*)
+
 val run :
   sw:Eio.Switch.t ->
   net:_ Eio.Net.t ->
@@ -67,7 +87,7 @@ val run :
   ?trace:Spindle_http.Trace.exporter ->
   ?metrics:Metrics.t ->
   App.instance ->
-  unit
+  (unit, listen_error) result
 (** Serves on [host] and [port], as a name or an address: [localhost] (the
     default), an address such as ["10.0.0.5"] or ["::1"], a wildcard, or a name
     the resolver knows, every address of which is bound. [ready] is told what is
@@ -77,11 +97,14 @@ val run :
     the resolver says: clients commonly prefer the IPv6 answer, so an IPv4-only
     socket is a browser's bare network error while [curl] still works. A
     wildcard, ["0.0.0.0"] or ["::"], is every interface of both families -- what
-    a container, a pod or a hosting platform needs -- and binds the IPv6
-    wildcard, which on most hosts takes IPv4 as well, with the IPv4 wildcard
-    beside it where it does not. A host with no IPv6 is served on IPv4 alone. A
-    name the resolver knows nothing of raises Eio's I/O error before anything
-    listens, as a port in use does.
+    a container, a pod or a hosting platform needs -- bound as two sockets, the
+    IPv6 one taking IPv6 alone, so a port another program holds on either is
+    held. A host with no IPv6 is served on IPv4 alone.
+
+    Every address is bound or none is: one that cannot be -- a port another
+    program holds, a name the resolver does not know, a port out of range -- is
+    [Error], before [ready] is told anything and with nothing left listening.
+    Otherwise [run] serves until it stops, and is [Ok ()].
 
     [localhost] is the default so that listening beyond this machine is written
     down where the server starts, and a laptop never serves the network it
@@ -183,9 +206,9 @@ val run :
     stream of known length ({!Response.val-stream}'s [length]) until its last
     byte, one of no length only until its head, since [on_stop] is what ends it
     -- and each answer says [Connection: close], and then whatever is left, on
-    every domain, is cancelled and [run] returns. The drain counts requests, not
-    connections, so a proxy's idle connections do not hold it open. See
-    {!stop_on_signals}.
+    every domain, is cancelled and [run] returns [Ok ()]. The drain counts
+    requests, not connections, so a proxy's idle connections do not hold it
+    open. See {!stop_on_signals}.
 
     Every request gets an id, answered in [x-request-id] and carried by every
     line logged while it is handled, and one [info] line when it is answered.
