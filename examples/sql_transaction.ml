@@ -2,23 +2,17 @@
    PUT /names/{name} claims a name, 201 the first time and 200 every time
    after, with when it was first claimed.
 
-     docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:18-alpine
+     rowtype-migrate create --url sqlite:names.db
+     rowtype-migrate up --dir examples/migrations --url sqlite:names.db
      dune exec examples/sql_transaction.exe
      curl -i -X PUT localhost:8080/names/ada     201
      curl -i -X PUT localhost:8080/names/ada     200 *)
 
 open Spindle.Syntax
 module S = Rowtype
-module Pg = Rowtype_postgres
-
-let database = "postgres://postgres:postgres@localhost:5432/postgres"
+module Sq = Rowtype_sqlite
 
 type claim = { name : string; claimed_at : Ptime.t } [@@deriving wiretype]
-
-let create_names =
-  S.exec ~params:S.unit
-    "create table if not exists names (name text primary key, claimed_at \
-     timestamptz not null)"
 
 (* The database says whether this request made the row: an insert that meets
    one already there changes nothing, and counts none. *)
@@ -35,16 +29,16 @@ let when_claimed =
 (* One transaction, so the name is claimed and read in one go: [Ok] commits
    both statements and a failure rolls both back. *)
 let claim pool name ~now =
-  Spindle_postgres.Pool.transaction pool (fun db ->
-      let* made = Pg.run db insert_name (name, now) in
-      let* claimed_at = Pg.run db when_claimed name in
+  Spindle_sqlite.Pool.transaction ~behaviour:Immediate pool (fun db ->
+      let* made = Sq.run db insert_name (name, now) in
+      let* claimed_at = Sq.run db when_claimed name in
       Ok ((if made = 1 then `Created else `OK), { name; claimed_at }))
-  |> Result.map_error Spindle_postgres.refusal
+  |> Result.map_error Spindle_sqlite.refusal
 (* --8<-- [end:claim] *)
 
 let name = Spindle.Path.string "name"
 
-let db : Spindle_postgres.Pool.t Spindle.Dep.t =
+let db : Spindle_sqlite.Pool.t Spindle.Dep.t =
   Spindle.Dep.of_resource "database"
 
 (* Every branch returns the status it reached, and the route lists each with
@@ -63,17 +57,10 @@ let routes =
        claim pool name ~now);
   ]
 
+(* The table is the migration's, made before the server starts: a server
+   that made it would race every other instance of itself to. *)
 let () =
   Spindle.Log.setup ();
   Eio_main.run @@ fun env ->
-  Spindle_postgres.Pool.run env database @@ fun pool ->
-  (* --8<-- [start:log] *)
-  match Spindle_postgres.Pool.exec pool create_names () with
-  | Ok () ->
-      Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes
-  | Error e ->
-      Logs.err (fun m ->
-          m "could not create the table: %s"
-            (Spindle_postgres.error_to_string e));
-      exit 1
-(* --8<-- [end:log] *)
+  Spindle_sqlite.Pool.run env "names.db" @@ fun pool ->
+  Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes

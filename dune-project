@@ -153,9 +153,9 @@
   (spindle
    (= :version))
   (rowtype
-   (and (>= 0.8.0) (< 0.9.0)))
+   (and (>= 0.9.0) (< 0.10.0)))
   (rowtype-postgres
-   (and (>= 0.8.0) (< 0.9.0)))
+   (and (>= 0.9.0) (< 0.10.0)))
   (ptime
    (>= 1.2.0))
   (mtime
@@ -245,6 +245,40 @@
    (and
     :with-test
     (>= 1.2.0)))))
+
+(package
+ (name spindle-sqlite)
+ (synopsis "SQLite for a Spindle server: a pool in WAL mode and its probe, sessions, and a failure's refusal")
+ (depends
+  (ocaml
+   (>= 5.5))
+  (spindle
+   (= :version))
+  (rowtype
+   (and (>= 0.9.0) (< 0.10.0)))
+  (rowtype-sqlite
+   (and (>= 0.9.0) (< 0.10.0)))
+  (ptime
+   (>= 1.2.0))
+  (mtime
+   (>= 2.1.0))
+  (eio
+   (>= 1.6))
+  (logs
+   (>= 0.10.0))
+  (alcotest
+   (and
+    :with-test
+    (>= 1.9.1)))
+  (eio_main
+   (and
+    :with-test
+    (>= 1.6)))
+  (wiretype
+   (and
+    :with-test
+    (>= 0.6.0)
+    (< 0.7.0)))))
 
 (package
  (name spindle-cli)

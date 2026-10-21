@@ -18,7 +18,7 @@
   test_spindle_postgres
   test_cli)
  (package spindle-postgres)
- (modules :standard \ cli_app serve_app test_docs)
+ (modules :standard \ cli_app serve_app test_docs test_spindle_sqlite)
  (libraries
   spindle
   spindle.http
@@ -64,7 +64,10 @@
   ; The command line test_cli runs as a process.
   cli_app.exe
   ; Spindle.serve, which test_spindle runs as a process.
-  serve_app.exe))
+  serve_app.exe
+  ; The sessions table's migration, which test_spindle_postgres holds to its
+  ; schema.
+  (glob_files ../postgres/migrations/*.sql)))
 
 (executable
  (name cli_app)
@@ -86,3 +89,25 @@
  (deps
   ../examples/dune
   (glob_files_rec ../docs/*.md)))
+
+; The SQLite kit, against files of each case's own, which needs no server.
+
+(test
+ (name test_spindle_sqlite)
+ (package spindle-sqlite)
+ (modules test_spindle_sqlite)
+ (deps
+  (glob_files ../sqlite/migrations/*.sql))
+ (libraries
+  spindle
+  spindle.http
+  spindle-sqlite
+  rowtype
+  rowtype-sqlite
+  wiretype
+  logs
+  eio
+  eio_main
+  mtime
+  ptime
+  alcotest))

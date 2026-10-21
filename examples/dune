@@ -27,14 +27,17 @@
   websocket_client
   sql_query
   sql_transaction
+  sql_postgres
   multidomain)
  (libraries
   spindle
   spindle.client
   spindle-cli
   spindle-postgres
+  spindle-sqlite
   rowtype
   rowtype-postgres
+  rowtype-sqlite
   eio
   eio_main
   wiretype

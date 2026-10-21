@@ -9,8 +9,8 @@ let metrics = Spindle.Metrics.create ()
 
 let () =
   Eio_main.run @@ fun env ->
-  Spindle_postgres.Pool.run env database @@ fun pool ->
-  Spindle_postgres.Pool.measure pool metrics;
+  Spindle_sqlite.Pool.run env "app.db" @@ fun pool ->
+  Spindle_sqlite.Pool.measure pool metrics;
   Spindle.serve env ~metrics
     ~resources:[ Spindle.Dep.resource db pool ]
     (routes @ Spindle.Metrics.routes metrics)
@@ -40,10 +40,10 @@ With `~metrics`, the server counts, under OpenTelemetry's names:
 - `spindle.server.open_connections`;
 - `spindle.server.body_budget.used`, the bytes of request bodies held.
 
-`Spindle_postgres.Pool.measure` adds the pool's
-`db.client.connection.count` (by state, `idle` or `used`) and
+`Spindle_sqlite.Pool.measure`, and `Spindle_postgres.Pool.measure`, adds
+the pool's `db.client.connection.count` (by state, `idle` or `used`) and
 `db.client.connection.pending_requests`, labelled
-`db.client.connection.pool.name`: `postgres`, unless you pass
+`db.client.connection.pool.name`: `sqlite` or `postgres`, unless you pass
 `Pool.measure ~name`. Two pools measured on one registry need two names.
 
 Prometheus sees each name with dots as underscores, its unit after and a

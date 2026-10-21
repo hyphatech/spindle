@@ -116,7 +116,7 @@ Spindle.put Path.(s "users" / user_id)
    match upsert pool id body with
    | Ok (`Made u) -> Ok (`Created, u)
    | Ok (`Replaced u) -> Ok (`OK, u)
-   | Error e -> Error (Spindle_postgres.refusal e))
+   | Error e -> Error (Spindle_sqlite.refusal e))
 ```
 
 `Returns.empty_response ~statuses` is the same with no body: the handler

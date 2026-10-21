@@ -239,7 +239,7 @@ where the program starts. Name it with `Dep.of_resource`, read it like any
 other dependency, and supply it when the server starts:
 
 ```ocaml
-let db : Spindle_postgres.Pool.t Spindle.Dep.t = Spindle.Dep.of_resource "database"
+let db : Spindle_sqlite.Pool.t Spindle.Dep.t = Spindle.Dep.of_resource "database"
 
 (let+ pool = db and+ id = Spindle.param order_id in ...)
 

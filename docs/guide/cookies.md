@@ -145,22 +145,23 @@ Each answers a `result` whose `Error` is a refusal: a store that fails is a
   more than a batch. Several servers on one database share the work.
 - **Where it is kept** is `~store`, a dependency like any other.
   `Session.memory ()` lives in one process and ends with it.
-  `Spindle_postgres.Session.store db ~table` keeps sessions in your
-  database, read through the pool's
+  `Spindle_sqlite.Session.store db`, or `Spindle_postgres.Session.store
+  db`, keeps sessions in your database, read through the pool's
   [resource](../tutorial/dependencies.md#resources):
 
     ```ocaml
     let session =
       Spindle.Session.create
-        ~store:(Spindle_postgres.Session.store db ~table:"sessions")
+        ~store:(Spindle_sqlite.Session.store db)
         ~idle:Mtime.Span.(14 * day)
         ~absolute:Mtime.Span.(90 * day)
         visit_json
     ```
 
-    The table must exist first: create it in a migration of your own from
-    the SQL that `Spindle_postgres.Session.schema ~table` gives
-    ([pool settings](../tutorial/database.md#pool-settings)).
+    Its table, `spindle_sessions`, is a migration the package installs,
+    applied with `rowtype-migrate up --source spindle-sqlite` (or
+    `spindle-postgres`) before the server starts ([SQLite](sqlite.md#sessions),
+    [Postgres](postgres.md#sessions)).
 
 ## The client's IP address
 

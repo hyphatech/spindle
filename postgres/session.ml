@@ -1,5 +1,7 @@
 module S = Rowtype
 
+let default_table = "spindle_sessions"
+
 (* Written into each statement, so it must be one plain identifier, and is
    written quoted, since one may be a word SQL reserves: [user], [order]. It
    holds no quote to double, and is lowercase, so quoted it names the table
@@ -90,7 +92,7 @@ let statements_for ~table =
            t t);
   }
 
-let statements ~table =
+let statements ?(table = default_table) () =
   let s = statements_for ~table in
   S.[ Any s.find; Any s.save; Any s.delete; Any s.sweep ]
 
@@ -98,7 +100,7 @@ let error_to_string e = Rowtype_postgres.error_to_string e
 
 (* The table is checked, and its statements written, once where the store
    is made: a request is handed the store over the pool it reads. *)
-let store db ~table =
+let store ?(table = default_table) db =
   let s = statements_for ~table in
   Spindle.Dep.map
     (fun pool ->

@@ -7,7 +7,7 @@ supplied as a [resource](../tutorial/dependencies.md#resources):
 ```ocaml
 let () =
   Eio_main.run @@ fun env ->
-  Spindle_postgres.Pool.run env database @@ fun pool ->
+  Spindle_sqlite.Pool.run env "app.db" @@ fun pool ->
   Spindle.serve env ~port:3000
     ~limits:(Spindle.Server.Limits.make ~max_connections:1024 ())
     ~resources:[ Spindle.Dep.resource db pool ] routes

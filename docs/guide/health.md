@@ -10,11 +10,11 @@ balancer probes:
   probes only one path here.
 
 ```ocaml
-let routes = app_routes @ Spindle.Health.routes [ Spindle_postgres.Pool.check db ]
+let routes = app_routes @ Spindle.Health.routes [ Spindle_sqlite.Pool.check db ]
 
 let () =
   Eio_main.run @@ fun env ->
-  Spindle_postgres.Pool.run env database @@ fun pool ->
+  Spindle_sqlite.Pool.run env "app.db" @@ fun pool ->
   Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes
 ```
 
@@ -23,6 +23,7 @@ let () =
 routes like the rest, made before the pool is. It borrows a connection and
 runs `select 1`. A pool whose
 connections are all busy passes without waiting; a closed one fails.
+`Spindle_postgres.Pool.check db` is the same for Postgres.
 
 ## Custom checks
 

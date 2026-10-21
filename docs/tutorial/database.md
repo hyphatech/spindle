@@ -3,13 +3,20 @@
 Read rows into typed values, write several rows that all land or none, and
 answer sensibly when the database is slow or busy. Statements are
 [`rowtype`](https://github.com/hyphatech/rowtype)'s: each is a value holding
-its SQL and the types of its parameters and rows, run through a pure-OCaml
-Postgres driver with nothing to link.
+its SQL and the types of its parameters and rows, and the same statement
+runs on SQLite or on Postgres.
 
-Install the package, which brings `rowtype` and `rowtype-postgres` with it:
+This tutorial uses **SQLite**, a database in one file, which needs no server
+to start. Everything here works the same on Postgres with `Spindle_postgres`
+in place of `Spindle_sqlite`; [SQLite](../guide/sqlite.md) and
+[Postgres](../guide/postgres.md) each have a guide of their own, with their
+settings and when to choose them.
+
+Install the package, which brings `rowtype` and `rowtype-sqlite` with it,
+and `rowtype-migrate`, the command that makes the tables:
 
 ```sh
-opam install spindle-postgres
+opam install spindle-sqlite rowtype-migrate
 ```
 
 Add the libraries to your `bin/dune`. The preprocessor is the one from
@@ -18,23 +25,46 @@ Add the libraries to your `bin/dune`. The preprocessor is the one from
 ```lisp
 (executable
  (name main)
- (libraries spindle spindle-postgres rowtype rowtype-postgres eio_main)
+ (libraries spindle spindle-sqlite rowtype rowtype-sqlite eio_main)
  (preprocess (pps ppx_wiretype)))
 ```
 
-To try the examples, start a throwaway Postgres in Docker. It listens on
-port 5432, with the user and password `postgres`, and is deleted when you
-stop it:
+## Making the tables
 
-```sh
-docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:18-alpine
+A table is made by a migration: a SQL file in `migrations/`, applied by
+`rowtype-migrate` before the server starts, and never by the server, since
+every instance of it would race to. `new` names one for you:
+
+```console
+$ rowtype-migrate new create_names
+migrations/20261021000000_create_names.sql
 ```
+
+```sql
+--8<-- "migrations/20261021000000_create_names.sql"
+```
+
+`create` makes the database, here a file, and `up` applies every migration
+it has not recorded, each in a transaction of its own:
+
+```console
+$ rowtype-migrate create --url sqlite:names.db
+$ rowtype-migrate up --url sqlite:names.db
+$ rowtype-migrate status --url sqlite:names.db
+applied  20261021000000_create_names
+```
+
+A migration is forward only, and one that has run is never edited: the
+next change is the next file. `rowtype-migrate` refuses a database whose
+record disagrees with the files, naming the migration, before it changes
+anything; its [README](https://github.com/hyphatech/rowtype#migrations) says
+the rest.
 
 ## Connecting and querying
 
 A statement is a value: its SQL, the type of its parameters and the type of
 each row. `Pool.exec` runs it on a connection borrowed from the pool, and
-`Spindle_postgres.refusal` turns a database failure into an answer (see
+`Spindle_sqlite.refusal` turns a database failure into an answer (see
 [Database errors](#database-errors)):
 
 ```ocaml
@@ -49,12 +79,10 @@ so the routes are a plain value that exists before any database does:
 --8<-- "sql_query.ml:routes"
 ```
 
-Make the pool where the program starts, from a connection string, and
+Make the pool where the program starts, from the database's file, and
 supply it to the server with `~resources`:
 
 ```ocaml
-let database = "postgres://postgres:postgres@localhost:5432/postgres"
-
 --8<-- "sql_query.ml:pool"
 ```
 
@@ -64,20 +92,19 @@ own pool, or none for a route that reads none
 ([Testing](../guide/testing.md)), and the [command
 line](client-schemas.md) describes the routes with no database at all.
 
-Run it from the repository's root, then ask for `/`:
+Run it from the repository's root, with the database made from
+`examples/migrations`, then ask for `/names`:
 
 ```console
+$ rowtype-migrate create --url sqlite:names.db
+$ rowtype-migrate up --dir examples/migrations --url sqlite:names.db
 $ dune exec examples/sql_query.exe
-$ curl localhost:8080/
-["postgres","template0","template1"]
+$ curl localhost:8080/names
+[]
 ```
 
-`Pool.run` opens every connection before the server listens. If the
-database is not there, the program logs why and exits with status 1:
-
-```
-{"timestamp":"2026-10-16T09:24:46.621Z","level":"error","logger.name":"spindle-postgres","message":"the pool could not be opened: Eio.Io Net Connection_failure Refused Unix_error (Connection refused, \"connect\", \"\")"}
-```
+`Pool.run` opens every connection before the server listens. If the file
+cannot be opened, the program logs why and exits with status 1.
 
 ??? example "The whole app"
 
@@ -126,6 +153,9 @@ HTTP/1.1 200 OK
 `Pool.transaction` borrows a connection and runs your function in one
 transaction: `Ok` commits, `Error` rolls back. `let*` here is
 `Result.bind`, from `open Spindle.Syntax` with `let+` and `and+`.
+`~behaviour:Immediate` takes SQLite's write lock as the transaction begins,
+which a transaction that reads and then writes wants: begun the default
+way, its write could find that another wrote since it read.
 
 ??? example "The whole app"
 
@@ -133,99 +163,45 @@ transaction: `Ok` commits, `Error` rolls back. `let*` here is
     --8<-- "sql_transaction.ml"
     ```
 
-## Pool settings
-
-`Spindle_postgres.Pool` is rowtype's pool with server-friendly bounds:
-
-- `Pool.exec pool statement params` -- one statement, as rowtype's `run`
-  runs it, for a read that is the whole of the work. (`Pool.run` is the
-  program's pool, above.)
-- `Pool.transaction pool (fun db -> ...)` -- one transaction; takes
-  `~isolation`, `~retries` and `~keep`. A transaction is never run again
-  unless you ask: at `~isolation:Serializable`, pass `~retries:3` to run it
-  again when Postgres reports a conflict with a concurrent one
-  (`` `Not_serializable ``). The work runs again in full, so keep anything
-  that is not a statement out of it.
-- `Pool.use pool (fun db -> ...)` -- a borrowed connection for several
-  statements outside a transaction.
-- `Pool.check db` -- the pool as a readiness check ([Health
-  checks](../guide/health.md)); `Pool.stats` and `Pool.measure` for
-  [metrics](../guide/metrics.md).
-- `Pool.create ~sw ~net ~mono_clock target` -- the same pool answering a
-  `result`, for a program that can go on without its database. `target` is a
-  `Rowtype_postgres.Conninfo.t`, read from a connection string by
-  `Conninfo.of_string`; `Pool.run` takes the string and reads it once.
-
-Every connection is bounded, so one bad query cannot hold a connection and
-its locks for ever:
-
-| Option | Default | |
-|---|---|---|
-| `~statement_timeout` | 10 s | a statement running longer is ended by Postgres |
-| `~idle_in_transaction_timeout` | 30 s | so is a transaction left open and idle |
-| `~size` | 8 | connections, all opened at start-up |
-| `~wait` | 5 s | a borrow waiting longer is `` `Pool `Busy ``, a `503` |
-| `~parameters` | none | Postgres settings for each connection, such as `[ ("application_name", "shop") ]`; yours win over the framework's |
-
-`~size` is a count. The three durations are `Mtime.Span.t`s, written
-`Mtime.Span.(2 * s)`. Connecting waits
-10 s for each address unless the connection string says `connect_timeout`
-(`Conninfo.with_connect_timeout`). Postgres is given
-the two bounds in whole milliseconds, rounded up, so a span under a
-millisecond is still a bound; a span of zero lifts one, as Postgres's `0`
-does.
-
-`~statement_cache:0` is for a pooler in front of Postgres that cannot carry
-named statements.
-
-**[Sessions](../guide/cookies.md#sessions) in the database** are
-`Spindle_postgres.Session.store db ~table`, over a table you create in a
-migration from `Session.schema ~table`, read through `db` as every route
-reads the pool:
-`Spindle.Session.create ~store:(Spindle_postgres.Session.store db ~table:"sessions") ...`. Migrations are
-[`rowtype-migrate`](https://github.com/hyphatech/rowtype)'s, run before the
-server starts.
-
 ## Database errors
 
-A failure is a variant, and `Spindle_postgres.refusal` turns any you do not
-handle into a status, with the detail in the log:
+A failure is a variant, and `refusal` turns any you do not handle into a
+status, with the detail in the log:
 
-- `` `Pool `Busy `` (no connection within the wait), `` `Unsent `` (the
-  database could not be reached, so nothing was done), `` `Pool `Closed ``
-  (the pool is closed, answered at once) and `` `Not_serializable ``
-  (a concurrent transaction won, past its retries): `503 busy` with
-  `Retry-After: 1`, since asking again may succeed. The two `` `Pool ``
-  states and `` `Unsent `` are logged as warnings, not errors: a server
-  under load, shutting down or cut off from its database is not a broken
-  one.
-- Everything else -- `` `Conflict ``, `` `Lost ``, `` `Not_committed ``,
-  `` `Db ``, a closed connection, ... -- `500 internal`.
+- `` `Pool `Busy `` (no connection within the wait), `` `Pool `Closed ``
+  (the pool is closed, answered at once) and `` `Not_serializable `` (a lock
+  another held past the wait, or a concurrent transaction that won, past
+  its retries): `503 busy` with `Retry-After: 1`, since asking again may
+  succeed. The two `` `Pool `` states are logged as warnings, not errors: a
+  server under load or shutting down is not a broken one.
+- Everything else -- `` `Conflict ``, `` `Not_committed ``, `` `Db ``, a
+  closed connection, ... -- `500 internal`.
 
-Where a failure is logged rather than answered,
-`Spindle_postgres.error_to_string` describes it in words, without any
-parameter's value. Here the program cannot create its table, so it logs
-why and exits:
+Where a failure is logged rather than answered, `error_to_string` describes
+it in words, without any parameter's value:
 
 ```ocaml
---8<-- "sql_transaction.ml:log"
+match Spindle_sqlite.Pool.exec pool claimed () with
+| Ok names -> ...
+| Error e ->
+    Logs.err (fun m -> m "could not list: %s" (Spindle_sqlite.error_to_string e))
 ```
 
 Handle the ones you expect first. A unique-constraint violation is a
-`` `Conflict `` with the constraint's name, whether a statement found it or
-a constraint declared `DEFERRABLE` refused the transaction's `COMMIT`:
+`` `Conflict `` naming what it refused -- on SQLite the columns,
+`users.email`; on Postgres the constraint, `users_email_key`:
 
 ```ocaml
 let sign_up pool ~name ~email =
-  Spindle_postgres.Pool.transaction pool (fun db ->
-      let* id = Pg.run db add_user (name, email) in
-      let* () = Pg.run db log_event (id, "signed_up") in
+  Spindle_sqlite.Pool.transaction pool (fun db ->
+      let* id = Sq.run db add_user (name, email) in
+      let* () = Sq.run db log_event (id, "signed_up") in
       Ok id)
   |> function
   | Ok id -> Ok id
-  | Error (`Conflict (Some "users_email_key")) ->
+  | Error (`Conflict (Some "users.email")) ->
       Error (Spindle.Refusal.make email_taken "That address is taken.")
-  | Error e -> Error (Spindle_postgres.refusal e)
+  | Error e -> Error (Spindle_sqlite.refusal e)
 ```
 
 `email_taken` is a refusal code of your own. Make it once, and list it in
@@ -244,12 +220,12 @@ an ordinary variant, wrap the work's errors once:
 ```ocaml
 let transaction pool ~failed work =
   match
-    Spindle_postgres.Pool.transaction pool (fun db ->
+    Spindle_sqlite.Pool.transaction pool (fun db ->
         Result.map_error (fun e -> `Work e) (work db))
   with
   | Ok v -> Ok v
   | Error (`Work e) -> Error e
-  | Error ((`Pool _ | #Rowtype_postgres.Transaction.failure) as f) ->
+  | Error ((`Pool _ | #Rowtype_sqlite.Transaction.failure) as f) ->
       Error (failed f)
 ```
 
@@ -268,15 +244,15 @@ let add_item =
      and+ id = Spindle.param order_id
      and+ item = Spindle.json item_json in
      match
-       Spindle_postgres.Pool.transaction pool (fun db ->
-           let* () = Pg.run db reserve (id, item.sku) in
-           let* () = Pg.run db insert_item (id, item.sku, item.quantity) in
+       Spindle_sqlite.Pool.transaction ~behaviour:Immediate pool (fun db ->
+           let* () = Sq.run db reserve (id, item.sku) in
+           let* () = Sq.run db insert_item (id, item.sku, item.quantity) in
            Ok item)
      with
      | Ok item ->
          notify id item; (* only once the work is committed *)
          Ok item
-     | Error e -> Error (Spindle_postgres.refusal e))
+     | Error e -> Error (Spindle_sqlite.refusal e))
 ```
 
 - **Read inside, not before.** A dependency hands over a credential (a cookie,
@@ -285,3 +261,15 @@ let add_item =
 - **What is not the database comes after.** A publish, a stream or a call to
   another server goes after the transaction returns, so it runs only once
   the work is kept.
+
+## Sessions in the database
+
+[Sessions](../guide/cookies.md#sessions) kept in the database are
+`Spindle_sqlite.Session.store db`, read through `db` as every route reads
+the pool. Its table is a migration the package installs: name the package
+with `--source`, and `up` applies its migrations before yours, as a history
+of their own:
+
+```console
+$ rowtype-migrate up --source spindle-sqlite --url sqlite:names.db
+```

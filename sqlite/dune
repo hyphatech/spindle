@@ -1,0 +1,18 @@
+; SQLite for a Spindle server, over rowtype's SQLite backend: a pool of one
+; file in WAL mode and its probe, sessions, and a failure's refusal.
+
+(library
+ (name spindle_sqlite)
+ (public_name spindle-sqlite)
+ (private_modules source traced)
+ (libraries rowtype rowtype-sqlite ptime mtime spindle eio logs))
+
+; The sessions table's migration, installed in share/spindle-sqlite/migrations,
+; where rowtype-migrate's --source spindle-sqlite finds it.
+
+(install
+ (section share)
+ (package spindle-sqlite)
+ (files
+  (glob_files
+   (migrations/*.sql with_prefix migrations))))

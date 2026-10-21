@@ -22,7 +22,7 @@ The Eio-native web framework for modern OCaml.
 - **Typed end to end**: JSON derived from your types, every input validated.
 - **Interactive docs**: OpenAPI docs via Scalar at `/docs`, generated from your routes.
 - **Front end in sync**: Zod or Melange schemas, derived from your OCaml types.
-- **Batteries included**: Postgres, WebSockets, SSE, sessions, logging, traces and metrics.
+- **Batteries included**: SQLite and Postgres, WebSockets, SSE, sessions, logging, traces and metrics.
 
 ## Install
 

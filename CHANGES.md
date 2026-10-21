@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- `spindle-sqlite`, a server's SQLite over rowtype's SQLite backend, as
+  `spindle-postgres` is a server's Postgres: `Spindle_sqlite.Pool.run env
+  "app.db"`, its file put in WAL mode as it opens so a read never waits on
+  a write, `use`, `exec` and `transaction ~behaviour`, `check` and
+  `measure`, `Session.store`, and `refusal`, which answers a lock held past
+  its wait `503 busy`. Each statement is a span named `sqlite`.
+
+- The sessions table is a migration each package installs:
+  `rowtype-migrate up --source spindle-sqlite` (or `spindle-postgres`)
+  makes `spindle_sessions`, which `Session.store db` reads unless given
+  `~table`. `Session.store`'s `~table` is optional, and
+  `Session.statements` takes `?table` and `()`.
+
+- `spindle-postgres` takes rowtype 0.9, up to its next minor release, where
+  it took 0.8, so `rowtype-migrate` 0.9 installs beside it; Postgres's
+  migrations there are `Rowtype_migrate_postgres`'s, in
+  `rowtype-migrate.postgres`.
+
+- The database tutorial runs on SQLite, which needs no server, and makes
+  its tables with `rowtype-migrate` before the server starts, where its
+  example made one as it started; the SQLite and Postgres guides say each
+  one's settings and when to choose it.
+
 - `Spindle.Server.run` answers `(unit, Server.listen_error) result`, where
   it answered `unit`: `Error` where it cannot listen -- a port another
   program holds, one the system does not permit, an address that is not

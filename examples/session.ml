@@ -14,7 +14,7 @@ open Spindle.Syntax
 type visit = { user : string } [@@deriving wiretype]
 
 (* Kept in this process's memory, and in the database with
-   Spindle_postgres.Session.store. *)
+   Spindle_sqlite.Session.store or Spindle_postgres.Session.store. *)
 let session =
   Spindle.Session.create
     ~store:(Spindle.Dep.return (Spindle.Session.memory ()))

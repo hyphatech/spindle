@@ -74,7 +74,8 @@ their tutorials install them when you get there:
 | Package | Libraries | What for |
 |---|---|---|
 | `spindle` | `spindle`, `spindle.http`, `spindle.client` | The framework, HTTP itself, and a client for calling other servers |
-| `spindle-postgres` | `spindle-postgres` | [Database](tutorial/database.md) |
+| `spindle-sqlite` | `spindle-sqlite` | [Database](tutorial/database.md), on SQLite ([guide](guide/sqlite.md)) |
+| `spindle-postgres` | `spindle-postgres` | [Database](tutorial/database.md), on Postgres ([guide](guide/postgres.md)) |
 | `spindle-cli` | `spindle-cli` | [Client schemas](tutorial/client-schemas.md#setting-up-the-command-line) |
 
 ## Check it worked

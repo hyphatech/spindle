@@ -6,3 +6,14 @@
  (public_name spindle-postgres)
  (private_modules bounds source traced)
  (libraries rowtype rowtype-postgres ptime mtime spindle eio logs))
+
+; The sessions table's migration, installed in
+; share/spindle-postgres/migrations, where rowtype-migrate's --source
+; spindle-postgres finds it.
+
+(install
+ (section share)
+ (package spindle-postgres)
+ (files
+  (glob_files
+   (migrations/*.sql with_prefix migrations))))

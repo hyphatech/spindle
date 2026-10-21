@@ -30,14 +30,17 @@ http/       spindle.http: HTTP as both ends speak it -- heads, bodies,
 core/       spindle: routes, dependencies, answers, refusals, cookies,
             logging, streams, WebSockets, the routes described as OpenAPI
 client/     spindle.client: calling another server, on http/ alone
-postgres/   spindle-postgres: a server's Postgres, over rowtype's backend
+postgres/   spindle-postgres: a server's Postgres, over rowtype's backend,
+            and its sessions table's migration
+sqlite/     spindle-sqlite: a server's SQLite, over rowtype's backend, and
+            its sessions table's migration
 cli/        spindle-cli: the API, described on the command line
 docs/       the documentation site, every program included from examples/
 overrides/  the site's theme overrides: the header's mark, as an icon
 examples/   the programs the site shows, each built and run
 test/       the suites: the framework, HTTP and WebSocket rows by RFC
-            section, the wire, the Postgres kit, and test_docs, every
-            example on a page
+            section, the wire, the Postgres and SQLite kits, and test_docs,
+            every example on a page
 ```
 
 Each module's contract is its `.mli`. Read the `.mli` before changing a
@@ -63,8 +66,9 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   constant written in source, so a program that starts never meets one:
   `Spindle.Cookie.named`, `signed`, `encrypted` and
   `Spindle.Session.create` (for the name), `Spindle.Cookie.make` and
-  `clear` (for a path), `Spindle_postgres.Session`'s (for a table's name
-  that is no identifier, since it is written into each statement),
+  `clear` (for a path), `Spindle_postgres.Session`'s and
+  `Spindle_sqlite.Session`'s (for a table's name that is no identifier,
+  since it is written into each statement),
   `Spindle.Metrics`'s registrations (for a name, a label or buckets
   Prometheus cannot read, or a name registered twice),
   `Spindle.Broadcast.create` (for a depth below one), `Spindle.Compress.make`
@@ -84,28 +88,30 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   `Test.events` an event past its reader's limit -- in a test and nowhere
   else. Nothing else raises
   across a library boundary. Symptom: `rg -n -w invalid_arg -g '*.ml' http
-  core client postgres cli` finds one this list does not name.
+  core client postgres sqlite cli` finds one this list does not name.
 - **Spindle prints and exits in these places alone.** `Spindle.serve`
   prints the address it listens on unless given `?ready`, and exits with
   status 1 when its application cannot start or it cannot listen, as
-  `Spindle_postgres.Pool.run` does when its pool cannot open, since a
-  server missing what it needs is stopped where an orchestrator sees it --
+  `Spindle_postgres.Pool.run` and `Spindle_sqlite.Pool.run` do when a pool
+  cannot open, since a server missing what it needs is stopped where an orchestrator sees it --
   saying why in the log, or on stderr where the program set no log up,
   since Logs drops every line until it is;
   `Spindle.Log`'s default sink writes its lines to stderr; and
   `spindle-cli`, a command line, prints its answer and its errors and
   exits with its status. Symptom: `rg -n -w
   'exit|stderr|print_string|print_endline|prerr_endline|Printf\.printf'
-  -g '*.ml' http core client postgres cli` finds one in a place this list
-  does not name.
+  -g '*.ml' http core client postgres sqlite cli` finds one in a place this
+  list does not name.
 - **Spindle reads and writes HTTP itself, names no driver, and its client
   links no framework.** No library links another HTTP implementation or
-  names one; `spindle-postgres` reaches Postgres through rowtype's backend
-  alone, so a second driver is a second backend and no change here; and
+  names one; `spindle-postgres` and `spindle-sqlite` reach their database
+  through rowtype's backends alone, so a second driver is a second backend
+  and no change here; and
   `spindle.client` links `spindle.http` and never `spindle`, so a program
   that calls other servers compiles no framework. Symptom: `rg -n -i -w
-  'cohttp\w*|httpun\w*|httpaf\w*|h1|h2|piaf|paf|ezcurl|postgres.eio' -g
-  '*.{ml,mli}' -g dune http core client postgres cli` finds a name, or
+  'cohttp\w*|httpun\w*|httpaf\w*|h1|h2|piaf|paf|ezcurl|postgres.eio|sqlite3'
+  -g '*.{ml,mli}' -g dune http core client postgres sqlite cli` finds a
+  name, or
   `rg -n '^ *spindle$' client/dune` finds the framework.
 - **A route is one value, and a dependency hands over an input.** A method
   and a path are declared together (`Spindle.post Path.(...)`), so a route no
@@ -142,9 +148,9 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   its access line's fields, a call's where it went and never its query, a
   statement's its text, and such a raise is told by its kind and its stack,
   since its message is whatever its raiser wrote; an I/O error caught by
-  name keeps its words, which hold no data. A
-  span's name is a route, a method or `postgresql`, never a path or a string
-  a caller chose, since a name per URL is a series per URL in every
+  name keeps its words, which hold no data. A span's name is a route, a
+  method, `postgresql` or `sqlite`, never a path or a string a caller
+  chose, since a name per URL is a series per URL in every
   collector. Test: a token in a collector, or a card number in a log line;
   `test_spindle` sends one in a header and a query and searches every
   attribute of the trace, and raises one from a handler, a stream and a
@@ -186,7 +192,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   of one value is how a proxy and a server come to disagree. Symptom: a
   `String.index_opt v ';'` on a header, or `rg -n
   'Uri\.(query|get_query_param)\b' -g '*.ml' http core client postgres
-  cli` finds a call.
+  sqlite cli` finds a call.
 - **A WebSocket rule is a row.** A requirement of RFC 6455 that Spindle
   meets, as a server or as a client, has a row in `test_websocket_rfc`,
   named by its section and read whole, a byte at a time and at splits a
@@ -250,7 +256,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
 
 ## Changes and releases
 
-Its packages are `spindle`, `spindle-postgres` and `spindle-cli`. A
+Its packages are `spindle`, `spindle-postgres`, `spindle-sqlite` and
+`spindle-cli`. A
 user-visible change updates the page of the documentation site that
 describes it, not the README. Two variants are closed, from 1.0:
 `Spindle_http.Status.t` and `Spindle_http.Meth.t` name every status and

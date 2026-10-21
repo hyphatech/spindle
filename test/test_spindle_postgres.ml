@@ -395,9 +395,9 @@ let db : Spindle_postgres.Pool.t Spindle.Dep.t =
 
 (* The store over [table] as a route reads it, through the pool's resource:
    kept from one request, its calls run on [pool] after it as during. *)
-let store_of pool ~table =
+let store_of pool ?table () =
   let open Spindle.Syntax in
-  let read = Spindle_postgres.Session.store db ~table and kept = ref None in
+  let read = Spindle_postgres.Session.store ?table db and kept = ref None in
   let app =
     Spindle.Test.app
       ~resources:[ Spindle.Dep.resource db pool ]
@@ -887,7 +887,7 @@ let test_a_deferred_conflict_answers_as_a_statement's_does () =
 let test_a_stores_busy_pool_reads_as_the_pools_words () =
   Db_target.with_postgres (fun target ->
       let pool = pool ~wait:Mtime.Span.(50 * ms) target in
-      let store = store_of pool ~table:"sessions" in
+      let store = store_of pool ~table:"sessions" () in
       let answer =
         Spindle_postgres.Pool.use pool (fun _ -> Ok (store.find "d1"))
       in
@@ -913,12 +913,12 @@ let test_sessions_are_kept_in_a_table () =
             (Pg.exec_raw db (Spindle_postgres.Session.schema ~table:"sessions"));
           (match
              Pg.verify db
-               (Spindle_postgres.Session.statements ~table:"sessions")
+               (Spindle_postgres.Session.statements ~table:"sessions" ())
            with
           | Ok () -> ()
           | Error (`Disagreements ms) -> Alcotest.fail (String.concat "; " ms)
           | Error (#S.error as e) -> Alcotest.fail (S.error_to_string e));
-          let store = store_of (pool target) ~table:"sessions" in
+          let store = store_of (pool target) ~table:"sessions" () in
           let entry expires =
             {
               Spindle.Session.data = {|"kim"|};
@@ -1012,6 +1012,43 @@ let test_sessions_read_the_pool_as_a_resource () =
         "found in the table" "kim" (Spindle.Test.Browser.call b `GET "/me").body;
       Spindle_postgres.Pool.close pool)
 
+let migration =
+  "../postgres/migrations/20261021000000_create_spindle_sessions.sql"
+
+(* The migration the package installs is written from the schema, held to
+   it, and makes the table a store reads by default. *)
+let test_the_installed_migration_is_the_schema () =
+  let text = In_channel.with_open_bin migration In_channel.input_all in
+  Alcotest.(check bool)
+    "it ends in the schema of the default table" true
+    (String.ends_with
+       ~suffix:
+         (Spindle_postgres.Session.schema
+            ~table:Spindle_postgres.Session.default_table)
+       text);
+  Db_target.with_postgres (fun target ->
+      let c = Db_target.connect target in
+      Fun.protect
+        ~finally:(fun () -> Pg.close c)
+        (fun () ->
+          ok (Pg.exec_raw c text);
+          match Pg.verify c (Spindle_postgres.Session.statements ()) with
+          | Ok () -> ()
+          | Error (`Disagreements ms) -> Alcotest.fail (String.concat "; " ms)
+          | Error (#S.error as e) -> Alcotest.fail (S.error_to_string e));
+      let store = store_of (pool target) () in
+      match
+        store.save "d1"
+          {
+            Spindle.Session.data = {|"kim"|};
+            created = Instants.of_ms 1_000;
+            seen = Instants.of_ms 2_000;
+            expires = Instants.of_ms 10_000;
+          }
+      with
+      | Ok () -> ()
+      | Error m -> Alcotest.fail m)
+
 (* A table's name is a constant written in source, so one that is no name
    is refused where the store is made, as the program starts, never as a
    request's 500. *)
@@ -1032,12 +1069,12 @@ let test_a_reserved_word_is_a_table's_name () =
         (fun () ->
           ok (Pg.exec_raw db (Spindle_postgres.Session.schema ~table:"user"));
           (match
-             Pg.verify db (Spindle_postgres.Session.statements ~table:"user")
+             Pg.verify db (Spindle_postgres.Session.statements ~table:"user" ())
            with
           | Ok () -> ()
           | Error (`Disagreements ms) -> Alcotest.fail (String.concat "; " ms)
           | Error (#S.error as e) -> Alcotest.fail (S.error_to_string e));
-          let store = store_of (pool target) ~table:"user" in
+          let store = store_of (pool target) ~table:"user" () in
           let got = function Ok v -> v | Error m -> Alcotest.fail m in
           got
             (store.save "d1"
@@ -1066,7 +1103,7 @@ let test_the_longest_name_is_a_table's_name () =
               let table = String.make n 's' in
               ok (Pg.exec_raw db (Spindle_postgres.Session.schema ~table));
               match
-                Pg.verify db (Spindle_postgres.Session.statements ~table)
+                Pg.verify db (Spindle_postgres.Session.statements ~table ())
               with
               | Ok () -> ()
               | Error (`Disagreements ms) ->
@@ -1140,6 +1177,8 @@ let () =
         ] );
       ( "sessions",
         [
+          Alcotest.test_case "the installed migration is the schema" `Quick
+            test_the_installed_migration_is_the_schema;
           Alcotest.test_case "sessions are kept in a table" `Quick
             test_sessions_are_kept_in_a_table;
           Alcotest.test_case "sessions read the pool as a resource" `Quick
