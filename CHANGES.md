@@ -2,11 +2,11 @@
 
 ## Unreleased
 
-- Breaking: `Spindle.Server.run` answers `(unit, Server.listen_error)
-  result`, `Error` where it cannot listen -- a port another program holds,
-  one the system does not permit, an address that is not this machine's, a
-  name the resolver does not know, a port outside 0 to 65535 -- naming the
-  host, the port and the address that failed, with
+- `Spindle.Server.run` answers `(unit, Server.listen_error) result`, where
+  it answered `unit`: `Error` where it cannot listen -- a port another
+  program holds, one the system does not permit, an address that is not
+  this machine's, a name the resolver does not know, a port outside 0 to
+  65535 -- naming the host, the port and the address that failed, with
   `Server.listen_error_to_string` to say so. It raised the system's error,
   `Unix_error(EADDRINUSE, "bind", "")`, naming none of them.
 
