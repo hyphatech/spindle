@@ -132,7 +132,7 @@ the `Authorization` header:
   need it.
 - The dependency hands over the token, not the account. Looking the account
   up is a read, and belongs in the handler, next to the work it authorises
-  ([why](database.md#why-a-transaction-is-not-a-dependency)).
+  ([why](database.md#6-open-the-transaction-in-the-handler)).
 
 ??? example "The whole app: a bearer token, and two routes that need it"
 
@@ -260,4 +260,4 @@ Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes
   dependency has: the value supplied is the value read.
 
 [Database](database.md) shows the whole shape, and [why a transaction is
-not a dependency](database.md#why-a-transaction-is-not-a-dependency).
+not a dependency](database.md#6-open-the-transaction-in-the-handler).

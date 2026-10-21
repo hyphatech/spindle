@@ -1,26 +1,23 @@
 # Database
 
 Read rows into typed values, write several rows that all land or none, and
-answer sensibly when the database is slow or busy. Statements are
-[`rowtype`](https://github.com/hyphatech/rowtype)'s: each is a value holding
-its SQL and the types of its parameters and rows, and the same statement
-runs on SQLite or on Postgres.
+answer sensibly when the database is busy. Statements are
+[`rowtype`](https://github.com/hyphatech/rowtype)'s: a value holding its SQL
+and the types of its parameters and rows.
 
-This tutorial uses **SQLite**, a database in one file, which needs no server
-to start. Everything here works the same on Postgres with `Spindle_postgres`
-in place of `Spindle_sqlite`; [SQLite](../guide/sqlite.md) and
-[Postgres](../guide/postgres.md) each have a guide of their own, with their
-settings and when to choose them.
+This page uses SQLite, a database in one file, so there is no server to
+start. On Postgres every step is the same with `Spindle_postgres` in place
+of `Spindle_sqlite`. [Databases](../guide/databases.md) lists each one's
+settings.
 
-Install the package, which brings `rowtype` and `rowtype-sqlite` with it,
-and `rowtype-migrate`, the command that makes the tables:
+## 1. Install
 
 ```sh
 opam install spindle-sqlite rowtype-migrate
 ```
 
-Add the libraries to your `bin/dune`. The preprocessor is the one from
-[your first app](first-app.md), for `[@@deriving wiretype]`:
+`spindle-sqlite` brings `rowtype` and `rowtype-sqlite`. `rowtype-migrate` is
+the command that makes your tables. Add the libraries to `bin/dune`:
 
 ```lisp
 (executable
@@ -29,11 +26,9 @@ Add the libraries to your `bin/dune`. The preprocessor is the one from
  (preprocess (pps ppx_wiretype)))
 ```
 
-## Making the tables
+## 2. Make the table
 
-A table is made by a migration: a SQL file in `migrations/`, applied by
-`rowtype-migrate` before the server starts, and never by the server, since
-every instance of it would race to. `new` names one for you:
+A table is made by a migration, a SQL file in `migrations/`:
 
 ```console
 $ rowtype-migrate new create_names
@@ -44,56 +39,48 @@ migrations/20261021000000_create_names.sql
 --8<-- "migrations/20261021000000_create_names.sql"
 ```
 
-`create` makes the database, here a file, and `up` applies every migration
-it has not recorded, each in a transaction of its own:
+Make the database and apply the migration:
 
 ```console
 $ rowtype-migrate create --url sqlite:names.db
 $ rowtype-migrate up --url sqlite:names.db
-$ rowtype-migrate status --url sqlite:names.db
-applied  20261021000000_create_names
 ```
 
-A migration is forward only, and one that has run is never edited: the
-next change is the next file. `rowtype-migrate` refuses a database whose
-record disagrees with the files, naming the migration, before it changes
-anything; its [README](https://github.com/hyphatech/rowtype#migrations) says
-the rest.
+Run `up` before the server starts, never from the server: every instance
+of it would race to apply the same file. The
+[rowtype README](https://github.com/hyphatech/rowtype#migrations) covers the
+rest of the command.
 
-## Connecting and querying
+## 3. Read rows
 
-A statement is a value: its SQL, the type of its parameters and the type of
-each row. `Pool.exec` runs it on a connection borrowed from the pool, and
-`Spindle_sqlite.refusal` turns a database failure into an answer (see
-[Database errors](#database-errors)):
+A statement says its SQL, its parameters and the type of each row.
+`Pool.exec` runs it on a connection borrowed from the pool, and
+`Spindle_sqlite.refusal` turns a failure into an answer:
 
 ```ocaml
 --8<-- "sql_query.ml:query"
 ```
 
-The routes read the pool as a dependency, `db`, made once with
-`Dep.of_resource`. It is a resource: the application's, not the request's,
-so the routes are a plain value that exists before any database does:
+A route reads the pool as a dependency, `db`, made once with
+`Dep.of_resource`. The routes are then a plain value that exists before any
+database does:
 
 ```ocaml
 --8<-- "sql_query.ml:routes"
 ```
 
-Make the pool where the program starts, from the database's file, and
-supply it to the server with `~resources`:
+The program makes the pool from the database's file and hands it to the
+server with `~resources`:
 
 ```ocaml
 --8<-- "sql_query.ml:pool"
 ```
 
-A route that reads a resource the server was not given stops the program
-before it listens, naming the route and the resource. A test supplies its
-own pool, or none for a route that reads none
-([Testing](../guide/testing.md)), and the [command
-line](client-schemas.md) describes the routes with no database at all.
+`Pool.run` opens every connection before the server listens. A file that
+cannot be opened stops the program, saying why. A route that reads a
+resource the server was not given stops it too, naming both.
 
-Run it from the repository's root, with the database made from
-`examples/migrations`, then ask for `/names`:
+Run it from the repository's root:
 
 ```console
 $ rowtype-migrate create --url sqlite:names.db
@@ -103,16 +90,13 @@ $ curl localhost:8080/names
 []
 ```
 
-`Pool.run` opens every connection before the server listens. If the file
-cannot be opened, the program logs why and exits with status 1.
-
 ??? example "The whole app"
 
     ```ocaml
     --8<-- "sql_query.ml"
     ```
 
-## Transactions
+## 4. Write in a transaction
 
 Claiming a name is an insert and a read in one transaction. The answer is
 `201` the first time and `200` every time after:
@@ -121,11 +105,13 @@ Claiming a name is an insert and a read in one transaction. The answer is
 --8<-- "sql_transaction.ml:claim"
 ```
 
-The handler returns the status together with the value,
-`` (`Created, claim) `` or `` (`OK, claim) ``. A route whose status is chosen
-at run time says so with `Returns.json_response`, listing each status it may
-answer and when (see [Request bodies, responses and
-errors](bodies.md)):
+`Pool.transaction` borrows a connection and runs the function in one
+transaction. `Ok` commits and `Error` rolls back. `~behaviour:Immediate`
+takes SQLite's write lock as the transaction begins, which a transaction
+that reads and then writes needs.
+
+The handler returns the status beside the value, so the route lists both
+with `Returns.json_response`:
 
 ```ocaml
 Spindle.Returns.json_response claim_json
@@ -140,22 +126,13 @@ Spindle.Returns.json_response claim_json
 $ curl -i -X PUT localhost:8080/names/ada
 HTTP/1.1 201 Created
 ...
-
 {"name":"ada","claimed_at":"2026-10-08T09:24:46.621Z"}
 
 $ curl -i -X PUT localhost:8080/names/ada
 HTTP/1.1 200 OK
 ...
-
 {"name":"ada","claimed_at":"2026-10-08T09:24:46.621Z"}
 ```
-
-`Pool.transaction` borrows a connection and runs your function in one
-transaction: `Ok` commits, `Error` rolls back. `let*` here is
-`Result.bind`, from `open Spindle.Syntax` with `let+` and `and+`.
-`~behaviour:Immediate` takes SQLite's write lock as the transaction begins,
-which a transaction that reads and then writes wants: begun the default
-way, its write could find that another wrote since it read.
 
 ??? example "The whole app"
 
@@ -163,49 +140,34 @@ way, its write could find that another wrote since it read.
     --8<-- "sql_transaction.ml"
     ```
 
-## Database errors
+## 5. Answer failures
 
-A failure is a variant, and `refusal` turns any you do not handle into a
-status, with the detail in the log:
+`refusal` turns any failure you do not handle into a status, and logs the
+detail:
 
-- `` `Pool `Busy `` (no connection within the wait), `` `Pool `Closed ``
-  (the pool is closed, answered at once) and `` `Not_serializable `` (a lock
-  another held past the wait, or a concurrent transaction that won, past
-  its retries): `503 busy` with `Retry-After: 1`, since asking again may
-  succeed. The two `` `Pool `` states are logged as warnings, not errors: a
-  server under load or shutting down is not a broken one.
-- Everything else -- `` `Conflict ``, `` `Not_committed ``, `` `Db ``, a
-  closed connection, ... -- `500 internal`.
+| Failure | Answer |
+|---|---|
+| `` `Pool `Busy ``, no connection free within the wait | `503`, logged as a warning |
+| `` `Pool `Closed ``, the server is shutting down | `503`, logged as a warning |
+| `` `Not_serializable ``, a lock held past the wait | `503` |
+| anything else | `500` |
 
-Where a failure is logged rather than answered, `error_to_string` describes
-it in words, without any parameter's value:
+A `503` carries `Retry-After: 1`, since asking again may succeed.
 
-```ocaml
-match Spindle_sqlite.Pool.exec pool claimed () with
-| Ok names -> ...
-| Error e ->
-    Logs.err (fun m -> m "could not list: %s" (Spindle_sqlite.error_to_string e))
-```
-
-Handle the ones you expect first. A unique-constraint violation is a
-`` `Conflict `` naming what it refused -- on SQLite the columns,
-`users.email`; on Postgres the constraint, `users_email_key`:
+Handle the failures you expect before `refusal`. A unique key refused is a
+`` `Conflict `` naming the columns, `users.email` on SQLite, or the
+constraint, `users_email_key` on Postgres:
 
 ```ocaml
-let sign_up pool ~name ~email =
-  Spindle_sqlite.Pool.transaction pool (fun db ->
-      let* id = Sq.run db add_user (name, email) in
-      let* () = Sq.run db log_event (id, "signed_up") in
-      Ok id)
-  |> function
-  | Ok id -> Ok id
-  | Error (`Conflict (Some "users.email")) ->
-      Error (Spindle.Refusal.make email_taken "That address is taken.")
-  | Error e -> Error (Spindle_sqlite.refusal e)
+match Spindle_sqlite.Pool.exec pool add_user (name, email) with
+| Ok id -> Ok id
+| Error (`Conflict (Some "users.email")) ->
+    Error (Spindle.Refusal.make email_taken "That address is taken.")
+| Error e -> Error (Spindle_sqlite.refusal e)
 ```
 
-`email_taken` is a refusal code of your own. Make it once, and list it in
-the route's `~refuses` so the route's documentation shows it:
+`email_taken` is a refusal code of your own, listed in the route's
+`~refuses` so its documentation shows it:
 
 ```ocaml
 let email_taken =
@@ -213,9 +175,15 @@ let email_taken =
     ~doc:"An account already uses this email address."
 ```
 
-The transaction's failures
-join your work's error type as polymorphic variants; if your own errors are
-an ordinary variant, wrap the work's errors once:
+To log a failure rather than answer it, `error_to_string` gives its words,
+never a parameter's value:
+
+```ocaml
+Logs.err (fun m -> m "could not list: %s" (Spindle_sqlite.error_to_string e))
+```
+
+If your own errors are an ordinary variant, wrap the work's errors once,
+and the transaction's own failures stay apart from them:
 
 ```ocaml
 let transaction pool ~failed work =
@@ -229,11 +197,11 @@ let transaction pool ~failed work =
       Error (failed f)
 ```
 
-## Why a transaction is not a dependency
+## 6. Open the transaction in the handler
 
-A transaction holds its rows locked while it is open. So let the
-dependencies run first -- the body read, the cookies parsed -- and open the
-transaction inside the handler, around the database work alone:
+A transaction holds its rows locked while it is open. Let the dependencies
+run first, the body read and the cookies parsed, and open the transaction
+inside the handler, around the database work alone:
 
 ```ocaml
 let add_item =
@@ -255,20 +223,18 @@ let add_item =
      | Error e -> Error (Spindle_sqlite.refusal e))
 ```
 
-- **Read inside, not before.** A dependency hands over a credential (a cookie,
-  a token), never a resolved user: a row read before the transaction and
-  written inside it is a race.
+- **Read inside, not before.** A dependency hands over a credential, a
+  cookie or a token, never a resolved user: a row read before the
+  transaction and written inside it is a race.
 - **What is not the database comes after.** A publish, a stream or a call to
   another server goes after the transaction returns, so it runs only once
   the work is kept.
 
-## Sessions in the database
+## 7. Keep sessions in the database
 
-[Sessions](../guide/cookies.md#sessions) kept in the database are
-`Spindle_sqlite.Session.store db`, read through `db` as every route reads
-the pool. Its table is a migration the package installs: name the package
-with `--source`, and `up` applies its migrations before yours, as a history
-of their own:
+`Spindle_sqlite.Session.store db` keeps [sessions](../guide/cookies.md#sessions)
+in the table `spindle_sessions`. The package ships the migration that makes
+it, and `--source` applies it before yours:
 
 ```console
 $ rowtype-migrate up --source spindle-sqlite --url sqlite:names.db

@@ -31,8 +31,7 @@ nav = [
   ] },
   { "Guides" = [
     { "HTML pages and templates" = "guide/pages.md" },
-    { "SQLite" = "guide/sqlite.md" },
-    { "Postgres" = "guide/postgres.md" },
+    { "Databases" = "guide/databases.md" },
     { "Cookies, sessions and CORS" = "guide/cookies.md" },
     { "Middleware" = "guide/middleware.md" },
     { "Server-Sent Events (SSE)" = "guide/sse.md" },

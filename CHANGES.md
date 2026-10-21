@@ -20,10 +20,10 @@
   migrations there are `Rowtype_migrate_postgres`'s, in
   `rowtype-migrate.postgres`.
 
-- The database tutorial runs on SQLite, which needs no server, and makes
-  its tables with `rowtype-migrate` before the server starts, where its
-  example made one as it started; the SQLite and Postgres guides say each
-  one's settings and when to choose it.
+- The database tutorial runs on SQLite, which needs no server, in
+  numbered steps, and makes its tables with `rowtype-migrate` before the
+  server starts, where its example made one as it started. The Databases
+  guide shows how SQLite and Postgres are each wired and set.
 
 - `Spindle.Server.run` answers `(unit, Server.listen_error) result`, where
   it answered `unit`: `Error` where it cannot listen -- a port another

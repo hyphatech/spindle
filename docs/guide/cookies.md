@@ -160,8 +160,7 @@ Each answers a `result` whose `Error` is a refusal: a store that fails is a
 
     Its table, `spindle_sessions`, is a migration the package installs,
     applied with `rowtype-migrate up --source spindle-sqlite` (or
-    `spindle-postgres`) before the server starts ([SQLite](sqlite.md#sessions),
-    [Postgres](postgres.md#sessions)).
+    `spindle-postgres`) before the server starts ([Databases](databases.md)).
 
 ## The client's IP address
 
