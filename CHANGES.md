@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.10.0 (2026-10-21)
 
 - `spindle-sqlite`, a server's SQLite over rowtype's SQLite backend, as
   `spindle-postgres` is a server's Postgres: `Spindle_sqlite.Pool.run env
