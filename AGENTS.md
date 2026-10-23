@@ -2,9 +2,9 @@
 
 Spindle is an OCaml library of Hypha Stack, and keeps PRDs: a web
 framework for OCaml 5 and Eio: typed routes, dependencies and answers,
-and HTTP/1.1 read and written by itself. This file is for anyone changing it, human or agent. Users start
-at [README.md](README.md) and the documentation site,
-[docs/](docs/src/content/docs/index.mdx).
+and HTTP/1.1 read and written by itself. This file is for anyone changing
+it, human or agent. Users start at [README.md](README.md) and the
+documentation site, [docs/](docs/src/content/docs/index.mdx).
 
 ## Commands
 
