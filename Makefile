@@ -10,7 +10,7 @@ DOCS_PORT ?= 4321
 REFERENCE = spindle spindle-cli spindle-postgres spindle-sqlite odoc.support
 
 .DEFAULT_GOAL := help
-.PHONY: help setup build test lint fmt doc docs docs-serve reference db db-down
+.PHONY: help setup build test lint fmt docs docs-serve reference db db-down
 
 help: ## list targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -39,9 +39,6 @@ lint: ## check formatting, docs, the release build and the opam files
 fmt: ## format the code
 	$(OPAM) dune fmt
 
-doc: ## build the API docs into _build/default/_doc/_html
-	$(OPAM) dune build @doc
-
 # The site is Astro's, on Starlight in Hypha's theme. Bun's dependencies are
 # installed again whenever the lockfile or the manifest changes, so no build
 # runs against what an older checkout installed.
@@ -57,7 +54,9 @@ docs: reference docs/node_modules ## build the documentation site into site/
 docs-serve: docs ## serve the built documentation site on DOCS_PORT, search included
 	cd docs && bun --bun astro preview --open --port $(DOCS_PORT)
 
-reference: doc
+# odoc's reference from the .mli files, copied in for the site to serve.
+reference:
+	$(OPAM) dune build @doc
 	rm -rf docs/public/reference
 	mkdir -p docs/public/reference
 	cd _build/default/_doc/_html && cp -R $(REFERENCE) $(CURDIR)/docs/public/reference/
