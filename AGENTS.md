@@ -1,8 +1,8 @@
 # AGENTS.md
 
-Spindle is an OCaml library of Hypha Stack, a web framework for OCaml 5 and
-Eio: typed routes, dependencies and answers, and HTTP/1.1 read and written
-by itself. This file is for anyone changing it, human or agent. Users start
+Spindle is an OCaml library of Hypha Stack, and keeps PRDs: a web
+framework for OCaml 5 and Eio: typed routes, dependencies and answers,
+and HTTP/1.1 read and written by itself. This file is for anyone changing it, human or agent. Users start
 at [README.md](README.md) and the documentation site,
 [docs/](docs/src/content/docs/index.mdx).
 
@@ -43,6 +43,8 @@ examples/   the programs the site shows, each built and run
 test/       the suites: the framework, HTTP and WebSocket rows by RFC
             section, the wire, the Postgres and SQLite kits, and test_docs,
             every example on a page
+prds/       the PRDs of work being decided and built, by PRD.md, and its
+            README.md: which document owns each fact once the work lands
 ```
 
 Each module's contract is its `.mli`. Read the `.mli` before changing a
