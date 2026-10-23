@@ -5,9 +5,7 @@ PG_TEST_PORT ?= 5438
 PG_TEST_URL  ?= postgres://spindle:spindle@localhost:$(PG_TEST_PORT)/spindle
 export PG_TEST_PORT
 
-# The documentation site's builder, run through uvx so nothing is installed.
-ZENSICAL  = 0.0.67
-DOCS_PORT ?= 8000
+DOCS_PORT ?= 4321
 # The reference is odoc's, for Spindle's own packages and nothing under them.
 REFERENCE = spindle spindle-cli spindle-postgres spindle-sqlite odoc.support
 
@@ -20,6 +18,7 @@ help: ## list targets
 
 setup: ## create the switch and install dependencies
 	@docker compose version >/dev/null 2>&1 || echo "The Postgres suites need docker compose."
+	@command -v bun >/dev/null 2>&1 || echo "The documentation site needs Bun 1.3 or later."
 	@opam switch list --short | grep -qx $(SWITCH) || opam switch create $(SWITCH) --empty -y
 	opam repo add hypha https://github.com/hyphatech/opam-repository.git --switch=$(SWITCH) --rank=1
 	opam install . --switch=$(SWITCH) --deps-only --with-test --with-dev-setup -y
@@ -43,17 +42,24 @@ fmt: ## format the code
 doc: ## build the API docs into _build/default/_doc/_html
 	$(OPAM) dune build @doc
 
-docs: reference ## build the documentation site into site/
-	uvx zensical@$(ZENSICAL) build --strict
+# The site is Astro's, on Starlight in Hypha's theme. Bun's dependencies are
+# installed again whenever the lockfile or the manifest changes, so no build
+# runs against what an older checkout installed.
+docs/node_modules: docs/package.json docs/bun.lock
+	cd docs && bun install --frozen-lockfile
+	@touch docs/node_modules
 
-docs-serve: reference ## serve the documentation site on DOCS_PORT, rebuilt as pages change
-	uvx zensical@$(ZENSICAL) serve --open --dev-addr localhost:$(DOCS_PORT)
+docs: reference docs/node_modules ## build the documentation site into site/
+	cd docs && bun --bun astro build
+
+docs-serve: reference docs/node_modules ## serve the documentation site on DOCS_PORT, rebuilt as pages change
+	cd docs && bun --bun astro dev --open --port $(DOCS_PORT)
 
 reference: doc
-	rm -rf docs/reference
-	mkdir -p docs/reference
-	cd _build/default/_doc/_html && cp -R $(REFERENCE) $(CURDIR)/docs/reference/
-	chmod -R u+w docs/reference
+	rm -rf docs/public/reference
+	mkdir -p docs/public/reference
+	cd _build/default/_doc/_html && cp -R $(REFERENCE) $(CURDIR)/docs/public/reference/
+	chmod -R u+w docs/public/reference
 
 db: ## start the test database
 	docker compose up -d --wait db

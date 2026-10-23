@@ -1,7 +1,7 @@
 <h1>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
-    <img src="docs/assets/logo-light.svg" alt="Spindle" width="320">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/src/assets/logo-dark.svg">
+    <img src="docs/src/assets/logo-light.svg" alt="Spindle" width="320">
   </picture>
 </h1>
 
@@ -85,7 +85,7 @@ write: an OpenAPI 3.2 document generated from your routes, served by
 [Scalar](https://scalar.com). Every route, its schema with the bounds from
 your types, every error it may answer, and a button to try it.
 
-![POST /split in the interactive docs at /docs](docs/assets/scalar.png)
+![POST /split in the interactive docs at /docs](docs/src/assets/scalar.png)
 
 ## Contributing
 

@@ -88,7 +88,7 @@
  (libraries alcotest)
  (deps
   ../examples/dune
-  (glob_files_rec ../docs/*.md)))
+  (glob_files_rec ../docs/src/content/*.{md,mdx})))
 
 ; The SQLite kit, against files of each case's own, which needs no server.
 

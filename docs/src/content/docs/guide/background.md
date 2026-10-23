@@ -1,0 +1,72 @@
+---
+title: Background jobs
+---
+
+Some work should not hold up the answer: sending an email, or checking on
+something later. `Spindle.Background` runs work now, on its own fiber;
+`Spindle.Alarm` runs it after a delay.
+
+```ocaml
+open Spindle.Syntax
+
+let background : Spindle.Background.t Spindle.Dep.t =
+  Spindle.Dep.of_resource "background"
+
+let alarms : Spindle.Alarm.t Spindle.Dep.t = Spindle.Dep.of_resource "alarms"
+
+let sign_up =
+  Spindle.post
+    Spindle.Path.(s "sign-up")
+    (Spindle.Returns.empty ~status:`Created ())
+    (let+ background = background
+     and+ alarms = alarms
+     and+ email = Spindle.body in
+     Spindle.Background.fork background ~what:"welcome email" (fun () ->
+         send_welcome_email email);
+     Spindle.Alarm.set alarms ~key:("reminder:" ^ email) ~after:Mtime.Span.day
+       ~what:"reminder" (fun () -> send_reminder email);
+     Ok ())
+
+let () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let jobs = Spindle.Background.create ~sw in
+  let later =
+    Spindle.Alarm.create ~background:jobs
+      ~mono_clock:(Eio.Stdenv.mono_clock env) ()
+  in
+  Spindle.serve env
+    ~resources:
+      [ Spindle.Dep.resource background jobs; Spindle.Dep.resource alarms later ]
+    [ sign_up ]
+```
+
+Both are made where the program starts and handed to the server as
+[resources](/spindle/tutorial/dependencies/#resources), so the route reads them
+like any other input.
+
+## Running a job now
+
+- Create one with `Background.create ~sw` at startup, then call
+  `Background.fork t ~what f` from anywhere. It returns at once.
+- If `f` raises, the exception is **logged, never raised**, as an `error` on
+  `spindle.background` naming `what` and the request that forked it. A bug in
+  a job never takes the server down.
+- The fiber is a daemon: it does not keep the process from shutting down.
+- It runs on the domain that forked it.
+
+## Running a job later
+
+- `Alarm.create ~background ~mono_clock ()`, then
+  `Alarm.set t ~key ~after ~what f`: run `f` once the span `after` has gone
+  by, plus the alarm's slack (`Alarm.create ?slack`, 50 ms by default).
+- To wake up at an instant -- a deadline kept as a `Ptime.t` -- pass the
+  wait until it: `~after:(Spindle.until ~now deadline)`, with `now` read in
+  the handler by `let+ now = Spindle.now`. The wait is zero once the deadline
+  has passed, so a late alarm fires at once.
+- One wake-up per key: setting a key again replaces the earlier one, and
+  `Alarm.cancel t ~key` drops it.
+- Timing uses the monotonic clock, so changing the system time moves nothing.
+- An alarm decides *when* to look, not what is true then: when it fires, read
+  the time and what is due afresh. Alarms live in memory, so a restart
+  forgets them.

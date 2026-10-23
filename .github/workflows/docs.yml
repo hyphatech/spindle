@@ -1,5 +1,5 @@
 # The documentation site on GitHub Pages, rebuilt on every push to main:
-# odoc's reference from the .mli files, then Zensical's pages around it.
+# odoc's reference from the .mli files, then Starlight's pages around it.
 name: docs
 
 on:
@@ -31,13 +31,9 @@ jobs:
             hypha: https://github.com/hyphatech/opam-repository.git
             default: https://opam.ocaml.org
       - run: opam install . --deps-only --with-dev-setup -y
+      - uses: oven-sh/setup-bun@v2
       # Use setup-ocaml's switch instead of the Makefile's.
-      - run: make reference OPAM="opam exec --"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.x
-      - run: pip install zensical==0.0.67
-      - run: zensical build --strict
+      - run: make docs OPAM="opam exec --"
       - uses: actions/upload-pages-artifact@v4
         with:
           path: site

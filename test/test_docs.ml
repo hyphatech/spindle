@@ -1,6 +1,6 @@
 (* An example is built so a page cannot show code that does not compile, and
    one no page includes is code nobody reads: every name examples/dune
-   builds is included somewhere under docs/. *)
+   builds is included by some page of the site. *)
 
 let read path = In_channel.with_open_bin path In_channel.input_all
 
@@ -35,10 +35,11 @@ let every_example_is_on_a_page () =
     |> List.concat_map (fun f ->
         let path = Filename.concat dir f in
         if Sys.is_directory path then pages path
-        else if Filename.check_suffix f ".md" then [ read path ]
+        else if Filename.check_suffix f ".md" || Filename.check_suffix f ".mdx"
+        then [ read path ]
         else [])
   in
-  let docs = String.concat "\n" (pages "../docs") in
+  let docs = String.concat "\n" (pages "../docs/src/content") in
   Alcotest.(check bool)
     "examples/dune names its programs" true
     (List.length built > 1);

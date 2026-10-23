@@ -4,7 +4,7 @@ Spindle is an OCaml library of Hypha Stack, a web framework for OCaml 5 and
 Eio: typed routes, dependencies and answers, and HTTP/1.1 read and written
 by itself. This file is for anyone changing it, human or agent. Users start
 at [README.md](README.md) and the documentation site,
-[docs/](docs/index.md).
+[docs/](docs/src/content/docs/index.mdx).
 
 ## Commands
 
@@ -16,11 +16,12 @@ make fmt     # format in place
 make docs    # the documentation site into site/, as Pages publishes it; docs-serve to preview
 ```
 
-`make test` needs `docker compose`. Without `SPINDLE_TEST_PG` the suites
-that need a server are skipped, and the test output says so. CI runs `make
-lint` and `make test`, against the same compose Postgres, on OCaml 5.5, and
-`make test` again on the oldest versions the opam files allow. `docs.yml`
-publishes the site to GitHub Pages on every push to `main`.
+`make test` needs `docker compose`, and `make docs` Bun 1.3 or later.
+Without `SPINDLE_TEST_PG` the suites that need a server are skipped, and
+the test output says so. CI runs `make lint` and `make test`, against the
+same compose Postgres, on OCaml 5.5, and `make test` again on the oldest
+versions the opam files allow. `docs.yml` publishes the site to GitHub
+Pages on every push to `main`.
 
 ## Layout
 
@@ -35,8 +36,9 @@ postgres/   spindle-postgres: a server's Postgres, over rowtype's backend,
 sqlite/     spindle-sqlite: a server's SQLite, over rowtype's backend, and
             its sessions table's migration
 cli/        spindle-cli: the API, described on the command line
-docs/       the documentation site, every program included from examples/
-overrides/  the site's theme overrides: the header's mark, as an icon
+docs/       the documentation site, a Starlight site in Hypha's look, from
+            starlight-theme-hypha: its pages in src/content/docs/, every
+            program included from examples/ by snippets.mjs
 examples/   the programs the site shows, each built and run
 test/       the suites: the framework, HTTP and WebSocket rows by RFC
             section, the wire, the Postgres and SQLite kits, and test_docs,
@@ -52,7 +54,7 @@ module.
 |---|---|
 | A module's contract | its `.mli`, in odoc markup |
 | What a contributor must not break | *Rules that must hold* below: an instruction, its reason in a clause and how you find out you broke it |
-| How to use it | the documentation site, [docs/](docs/index.md), every program included from `examples/` |
+| How to use it | the documentation site, [docs/](docs/src/content/docs/index.mdx), every program included from `examples/` |
 | Why it changed | the commit message |
 
 Code cites no document.
