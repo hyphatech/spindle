@@ -2,59 +2,70 @@
 title: Spindle
 description: The Eio-native web framework for modern OCaml.
 template: splash
-hero:
-  title: The Eio-native web framework for modern OCaml.
-  tagline: Fast, ergonomic and RFC-strict. Simple to start, ready for production.
-  actions:
-    - { text: Get started, link: /spindle/install/, variant: primary, icon: right-arrow }
-    - { text: Reference, link: /spindle/reference/, variant: secondary }
 ---
 
-import { Card, CardGrid } from "@astrojs/starlight/components";
+import Landing from "starlight-theme-hypha/components/Landing.astro";
+import Features from "starlight-theme-hypha/components/Features.astro";
+import Feature from "starlight-theme-hypha/components/Feature.astro";
+import logo from "../../assets/logo-dark.svg";
+
+<Landing
+  title="The Eio-native web framework for modern OCaml."
+  tagline="Fast, ergonomic and RFC-strict. Simple to start, ready for production."
+  image={{ file: logo, alt: "Spindle" }}
+  actions={[
+    { text: "Get started", link: "/spindle/install/", icon: "right-arrow" },
+    { text: "Reference", link: "/spindle/reference/", variant: "secondary" },
+  ]}
+>
 
 ```sh
 opam repo add hypha https://github.com/hyphatech/opam-repository.git
 opam install spindle
 ```
 
-```ocaml title="bin/main.ml"
+<Fragment slot="aside">
+
+```ocaml
 --8<-- "greeting.ml:app"
 ```
 
-<CardGrid>
-  <Card title="Beautiful and idiomatic" icon="pencil">
+</Fragment>
+</Landing>
+
+<Features>
+  <Feature title="Beautiful and idiomatic" icon="sparkles">
     Expressive and composable, doing the heavy lifting in just a few lines of
     readable code.
-  </Card>
-  <Card title="Performant" icon="rocket">
+  </Feature>
+  <Feature title="Performant" icon="zap" href="/spindle/guide/domains/" linkText="Multicore">
     Multicore by design, with domains putting every core to work serving
-    connections in parallel. [Multicore](/spindle/guide/domains/)
-  </Card>
-  <Card title="Eio-native" icon="random">
+    connections in parallel.
+  </Feature>
+  <Feature title="Eio-native" icon="waves-horizontal">
     OCaml 5 effects give every connection its own fiber and keep handlers in
     plain direct style.
-  </Card>
-  <Card title="OpenAPI docs via Scalar" icon="open-book">
+  </Feature>
+  <Feature title="OpenAPI docs via Scalar" icon="book-open" href="/spindle/tutorial/openapi/" linkText="OpenAPI">
     Interactive docs at `/docs`, generated from the routes and never out of
-    date. [OpenAPI](/spindle/tutorial/openapi/)
-  </Card>
-  <Card title="Front end in sync" icon="approve-check">
+    date.
+  </Feature>
+  <Feature title="Front end in sync" icon="wand-sparkles" href="/spindle/tutorial/client-schemas/" linkText="Client schemas">
     Zod or Melange schemas generated from the routes, keeping client and
-    server aligned. [Client schemas](/spindle/tutorial/client-schemas/)
-  </Card>
-  <Card title="Typed end to end" icon="list-format">
+    server aligned.
+  </Feature>
+  <Feature title="Typed end to end" icon="braces" href="/spindle/tutorial/bodies/" linkText="Request bodies">
     JSON contracts derived from OCaml types, bounds and docs included.
-    [Request bodies](/spindle/tutorial/bodies/)
-  </Card>
-  <Card title="HTTP from the ground up" icon="padlock">
+  </Feature>
+  <Feature title="HTTP from the ground up" icon="shield-check">
     Built for speed and safety, and extensively tested against RFC standards.
-  </Card>
-  <Card title="Dependencies and Resources" icon="puzzle">
+  </Feature>
+  <Feature title="Dependencies and Resources" icon="blocks" href="/spindle/tutorial/dependencies/" linkText="Dependencies">
     Extend any route with injectable logic and resources that compose and
-    swap easily. [Dependencies](/spindle/tutorial/dependencies/)
-  </Card>
-  <Card title="Batteries included" icon="setting">
+    swap easily.
+  </Feature>
+  <Feature title="Batteries included" icon="boxes" href="/spindle/guide/pages/" linkText="Guides">
     WebSockets, SSE, sessions, rate limits, logs, traces and OpenTelemetry
-    metrics. [Guides](/spindle/guide/pages/)
-  </Card>
-</CardGrid>
+    metrics.
+  </Feature>
+</Features>

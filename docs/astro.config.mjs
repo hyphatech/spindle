@@ -37,6 +37,7 @@ export default defineConfig({
         // The reference is odoc's, in public/, which the validator cannot see;
         // the tutorial links to the server it has the reader start.
         links({
+          components: [["Feature", "href"]],
           errorOnLocalLinks: false,
           exclude: ["**/reference/spindle*/**"],
         }),

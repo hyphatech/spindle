@@ -9,6 +9,6 @@
     "astro": "^7.3.3",
     "satteri": "^0.10.5",
     "starlight-links-validator": "^0.27.0",
-    "starlight-theme-hypha": "github:hyphatech/starlight-theme-hypha#v0.1.1"
+    "starlight-theme-hypha": "github:hyphatech/starlight-theme-hypha#v0.2.0"
   }
 }
