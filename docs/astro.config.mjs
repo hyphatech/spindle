@@ -26,7 +26,7 @@ export default defineConfig({
     starlight({
       title: "spindle",
       description: "The Eio-native web framework for modern OCaml.",
-      logo: { light: "./src/assets/mark-light.svg", dark: "./src/assets/mark-dark.svg" },
+      logo: { src: "starlight-theme-hypha/assets/hypha.webp" },
       favicon: "/favicon.svg",
       plugins: [
         hypha({
