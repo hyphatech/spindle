@@ -13,7 +13,7 @@ make setup   # once: the switch hypha-spindle, every dependency
 make test    # starts the test Postgres in Docker, runs every suite
 make lint    # formatting, odoc, the release build, and the opam files
 make fmt     # format in place
-make docs    # the documentation site into site/, as Pages publishes it; docs-serve to preview
+make docs    # the documentation site into site/, as Pages publishes it; docs-serve serves it
 ```
 
 `make test` needs `docker compose`, and `make docs` Bun 1.3 or later.

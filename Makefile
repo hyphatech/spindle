@@ -52,8 +52,10 @@ docs/node_modules: docs/package.json docs/bun.lock
 docs: reference docs/node_modules ## build the documentation site into site/
 	cd docs && bun --bun astro build
 
-docs-serve: reference docs/node_modules ## serve the documentation site on DOCS_PORT, rebuilt as pages change
-	cd docs && bun --bun astro dev --open --port $(DOCS_PORT)
+# The built site, as Pages serves it: Pagefind's index exists only in a
+# build, and a page served as it changes loads its styles after its text.
+docs-serve: docs ## serve the built documentation site on DOCS_PORT, search included
+	cd docs && bun --bun astro preview --open --port $(DOCS_PORT)
 
 reference: doc
 	rm -rf docs/public/reference
