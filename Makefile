@@ -18,7 +18,7 @@ help: ## list targets
 
 setup: ## create the switch and install dependencies
 	@docker compose version >/dev/null 2>&1 || echo "The Postgres suites need docker compose."
-	@command -v bun >/dev/null 2>&1 || echo "The documentation site needs Bun 1.3 or later."
+	@command -v bun >/dev/null 2>&1 || echo "The documentation site and the OAuth suite need Bun 1.3 or later."
 	@opam switch list --short | grep -qx $(SWITCH) || opam switch create $(SWITCH) --empty -y
 	opam repo add hypha https://github.com/hyphatech/opam-repository.git --switch=$(SWITCH) --rank=1
 	opam install . --switch=$(SWITCH) --deps-only --with-test --with-dev-setup -y
@@ -26,8 +26,16 @@ setup: ## create the switch and install dependencies
 build: ## build everything
 	$(OPAM) dune build @all
 
-test: db ## run the tests
-	SPINDLE_TEST_PG=$(PG_TEST_URL) $(OPAM) dune test --force
+test: db test/oidc/node_modules ## run the tests
+	SPINDLE_TEST_PG=$(PG_TEST_URL) SPINDLE_TEST_OIDC=$(CURDIR)/test/oidc \
+	  $(OPAM) dune test --force
+
+# node-oidc-provider, the authorization server test_oauth_rfc's issuer rows
+# get tokens from, installed again whenever its lockfile or manifest
+# changes. Bun runs it too, so the suite needs nothing more than the site.
+test/oidc/node_modules: test/oidc/package.json test/oidc/bun.lock
+	cd test/oidc && bun install --frozen-lockfile
+	@touch test/oidc/node_modules
 
 # Release is the profile opam installs with. opam lint passes a warning
 # unless told it is an error, and installing from source prints each one.

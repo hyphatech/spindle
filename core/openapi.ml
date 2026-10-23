@@ -252,7 +252,9 @@ let security (r : D.route) =
         ( "security",
           List
             (List.map
-               (fun (c : Dep.credential) -> Obj [ (c.scheme, List []) ])
+               (fun (c : Dep.credential) ->
+                 Obj
+                   [ (c.scheme, List (List.map (fun s -> String s) c.scopes)) ])
                creds
             @ if r.anonymous then [ Obj [] ] else []) );
       ]

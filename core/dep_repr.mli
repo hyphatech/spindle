@@ -99,7 +99,12 @@ type context = {
   resources : resources;
 }
 
-type credential = { scheme : string; doc : string option; reads : need list }
+type credential = {
+  scheme : string;
+  doc : string option;
+  scopes : string list;
+  reads : need list;
+}
 
 type listing = {
   owner : int;
@@ -133,7 +138,13 @@ val needs : 'a t -> need list
 (** What it reads, an identity read twice listed once. *)
 
 val codes : 'a t -> Refusal.Code.t list
+
 val credentials : 'a t -> credential list
+(** One a scheme, as {!merge_credentials} makes them. *)
+
+val merge_credentials : credential list -> credential list
+(** Each scheme once, in the order first read: its scopes and what it reads are
+    every one's, and its doc the first given. *)
 
 val resources_read : 'a t -> (int * string) list
 (** The resources it reads outside a [bind], each once: the identity of the

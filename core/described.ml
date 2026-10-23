@@ -438,9 +438,7 @@ let merged first rest =
             distinct String.equal (List.concat_map (fun r -> r.tags) routes);
           parameters = merged_parameters routes;
           credentials =
-            distinct
-              (fun (a : Dep.credential) (b : Dep.credential) ->
-                String.equal a.scheme b.scheme)
+            Dep_repr.merge_credentials
               (List.concat_map (fun r -> r.credentials) routes);
           anonymous = List.exists (fun r -> r.anonymous) routes;
           codes =

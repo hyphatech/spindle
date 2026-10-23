@@ -1,6 +1,7 @@
 # MCP servers and clients, and the OAuth they need
 
-**Status: Accepted** — the whole shape is signed off; stage 1 has landed.
+**Status: Accepted** — the whole shape is signed off; stages 1 and 2 have
+landed.
 Date: 2026-10-23
 
 ## The problem
@@ -286,7 +287,7 @@ MCP server must configure, to protect nothing a tool reads.
 ```ocaml
 let auth =
   Spindle.Bearer.make ~issuer:"https://id.example.com"
-    ~resource:"https://mcp.example.com/mcp" ()
+    ~resource:"https://mcp.example.com/mcp"
 
 let user = Spindle.Bearer.claims auth            (* a credential *)
 let writes = Spindle.Bearer.scope auth "files:write"
@@ -343,35 +344,28 @@ uses the OAuth client it was given.
 
 - **An MCP rule is a row.** A requirement of MCP 2026-07-28 that Spindle
   meets, as a server or as a client, has a row in `test_mcp_spec`, named
-  by its page and section, as does one of JSON-RPC 2.0 as MCP uses it.
-  OAuth's -- RFC 6750, 7636, 8414, 8707, 9068, 9207 and 9728 -- have
-  theirs in `test_oauth_rfc`, JWS's RFC 7515 and 8037 examples among
-  them. Why: as with HTTP, review by example misses the MUST nobody
+  by its page and section, as does one of JSON-RPC 2.0 as MCP uses it;
+  the OAuth client's -- RFC 7636 and 9207 -- join *An OAuth rule is a
+  row*'s. Why: as with HTTP, review by example misses the MUST nobody
   thought of.
 - **An MCP server keeps nothing between requests.** No table of sessions
   or clients; what spans calls is a sealed state or a handle the
   application mints. Why: 2026-07-28 is stateless, and a server with
   several domains, or behind a balancer, has no other way to be right.
-- **A token is checked against its audience.** No bearer token is
-  accepted whose `aud` is not the resource's canonical URI, or whose
-  `alg` is `none` or an HMAC. Why: a token for another server replayed
-  here is the confused deputy MCP's security considerations name.
 - *Revised:* **`invalid_arg` is raised in these places alone** gains
   `Spindle_mcp.routes` (two tools of one name, a name MCP refuses, a tool
-  reading two argument descriptions or one that is no object) and
-  `Spindle.Bearer.make` (an issuer or a resource that is no absolute URI
-  without a fragment).
+  reading two argument descriptions or one that is no object).
 - *Revised:* **its client links no framework** names `spindle-client` and
   `spindle-mcp-client`, neither linking `spindle`, and `spindle` linking
   neither.
-- *Revised:* **A secret has no span** names a tool's arguments, a
-  `requestState`, a token and its claims; a span's name is the MCP
+- *Revised:* **A secret has no span** names a tool's arguments and a
+  `requestState`; a span's name is the MCP
   method, `tools/call`, never a tool's name, which a caller chooses.
 
 ## Stages
 
 - [x] 1. `spindle-http` and `spindle-client` as packages of their own.
-- [ ] 2. Bearer tokens: JWS and JWK in `spindle-http`, `Spindle.Bearer`
+- [x] 2. Bearer tokens: JWS and JWK in `spindle-http`, `Spindle.Bearer`
   and its metadata route, `Spindle_client.Oauth.keys`, the OpenAPI
   security scheme; node-oidc-provider in the suite.
 - [ ] 3. The MCP server over HTTP: the protocol library, `server/discover`,

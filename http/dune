@@ -9,7 +9,7 @@
 (library
  (name spindle_http)
  (public_name spindle-http)
- (private_modules frame grammar calendar context)
+ (private_modules frame grammar calendar context base64url)
  (libraries
   eio
   mtime
@@ -18,6 +18,9 @@
   wiretype
   digestif
   base64
+  ; A JWS's signature checked: RS256, ES256 and EdDSA.
+  mirage-crypto-pk
+  mirage-crypto-ec
   angstrom
   ipaddr
   unix

@@ -8,8 +8,9 @@ type certified = Name_and_address | Name_only
 
 (* The server's half, and an authenticator that trusts its key and nothing
    else -- and checks the name or address the client says it is calling, as
-   a real one does. Made once for each, since a key takes a while. *)
-let certificate =
+   a real one does -- and the certificate and key as PEM, for a server that
+   is not ours. Made once for each, since a key takes a while. *)
+let made =
   let make certified =
     Mirage_crypto_rng_unix.use_default ();
     let key = X509.Private_key.generate `P256 in
@@ -58,10 +59,22 @@ let certificate =
         ~time:(fun () -> Some (Ptime_clock.now ()))
         ~hash:`SHA256 ~fingerprint chain
     in
-    (config, authenticator)
+    ( config,
+      authenticator,
+      (X509.Certificate.encode_pem certificate, X509.Private_key.encode_pem key)
+    )
   in
   let both = lazy (make Name_and_address) and name = lazy (make Name_only) in
   function Name_and_address -> Lazy.force both | Name_only -> Lazy.force name
+
+let certificate certified =
+  let config, authenticator, _ = made certified in
+  (config, authenticator)
+
+(* The certificate and its key, as PEM. *)
+let pem certified =
+  let _, _, pem = made certified in
+  pem
 
 (* A front for the server on [port], which a client calls as [localhost]:
    its port, and the authenticator that trusts it. *)

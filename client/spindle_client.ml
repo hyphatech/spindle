@@ -1428,3 +1428,120 @@ module Otlp = struct
     Eio.Fiber.both (fun () -> Eio.Promise.resolve answered (f exporter)) sender;
     Eio.Promise.await answer
 end
+
+module Oauth = struct
+  module Jwk = Spindle_http.Jwk
+
+  type keys = kid:string option -> Jwk.t list
+  type metadata = { issuer : string; jwks_uri : string option }
+
+  let metadata_json =
+    Wiretype.Object.(
+      map (fun issuer jwks_uri -> { issuer; jwks_uri })
+      |> mem "issuer" Wiretype.string
+      |> opt_mem "jwks_uri" Wiretype.string
+      |> finish)
+
+  (* RFC 8414 §3.1 and OpenID Connect Discovery §4, in the order MCP's
+     authorization tries them: the well-known names before the issuer's
+     path, its terminating slash removed, then OpenID Connect's after it. *)
+  let metadata_urls issuer =
+    let u = Uri.of_string issuer in
+    let path =
+      let p = Uri.path u in
+      if String.ends_with ~suffix:"/" p then String.sub p 0 (String.length p - 1)
+      else p
+    in
+    let at p = Uri.to_string (Uri.with_path u p) in
+    if String.equal path "" then
+      [
+        at "/.well-known/oauth-authorization-server";
+        at "/.well-known/openid-configuration";
+      ]
+    else
+      [
+        at ("/.well-known/oauth-authorization-server" ^ path);
+        at ("/.well-known/openid-configuration" ^ path);
+        at (path ^ "/.well-known/openid-configuration");
+      ]
+
+  let ( let* ) = Result.bind
+
+  let fetch client url =
+    match call client `GET url with
+    | Ok { status = `OK; body; _ } -> Ok body
+    | Ok { status; _ } ->
+        Error
+          (Printf.sprintf "%s answered %d" url
+             (Spindle_http.Status.to_int status))
+    | Error e -> Error (error_to_string e)
+
+  let jwks_uri client ~issuer =
+    let rec first = function
+      | [] -> Error "no metadata was found at any well-known URL"
+      | url :: rest -> (
+          match fetch client url with
+          | Error _ -> first rest
+          | Ok body -> (
+              match Wiretype.decode metadata_json body with
+              | Error _ -> Error (url ^ " is no JSON object naming its issuer")
+              (* RFC 8414 §3.3: metadata naming another issuer is not used. *)
+              | Ok m when not (String.equal m.issuer issuer) ->
+                  Error (url ^ " names another issuer")
+              | Ok { jwks_uri = None; _ } -> Error (url ^ " names no jwks_uri")
+              | Ok { jwks_uri = Some u; _ } -> Ok u))
+    in
+    first (metadata_urls issuer)
+
+  (* A token naming a key nobody has costs one fetch this often, however many
+     arrive. *)
+  let refetch_after = Mtime.Span.(1 * min)
+
+  type kept = {
+    mutable jwks_uri : string option;
+    mutable keys : Jwk.t list;
+    mutable fetched : Mtime.t option;
+  }
+
+  let keys client ~issuer =
+    let lock = Eio.Mutex.create () in
+    let kept = { jwks_uri = None; keys = []; fetched = None } in
+    let refresh () =
+      let now = Eio.Time.Mono.now client.clock in
+      let fetched =
+        let* uri =
+          match kept.jwks_uri with
+          | Some u -> Ok u
+          | None ->
+              let* u = jwks_uri client ~issuer in
+              kept.jwks_uri <- Some u;
+              Ok u
+        in
+        let* body = fetch client uri in
+        Jwk.set_of_string body
+      in
+      kept.fetched <- Some now;
+      match fetched with
+      | Ok keys -> kept.keys <- keys
+      | Error why ->
+          L.warn (fun m -> m "the keys of %s were not fetched: %s" issuer why)
+    in
+    fun ~kid ->
+      Eio.Mutex.use_rw ~protect:true lock (fun () ->
+          let named k =
+            match kid with
+            | None -> true
+            | Some id -> Option.equal String.equal (Jwk.kid k) (Some id)
+          in
+          let due =
+            match kept.fetched with
+            | None -> true
+            | Some at ->
+                Mtime.Span.compare
+                  (Mtime.span at (Eio.Time.Mono.now client.clock))
+                  refetch_after
+                >= 0
+          in
+          if (not (List.exists named kept.keys)) && due then refresh ();
+          List.filter named kept.keys)
+end

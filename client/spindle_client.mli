@@ -241,6 +241,32 @@ val websocket :
     a statement's, say -- which closes the socket as [Internal] and is answered
     as it is. *)
 
+(** {1 OAuth} *)
+
+(** What a resource server needs of its authorization server, found as RFC 8414
+    says. *)
+module Oauth : sig
+  type keys = kid:string option -> Spindle_http.Jwk.t list
+  (** The issuer's keys, as [Spindle.Bearer.keys] reads them. *)
+
+  val keys : t -> issuer:string -> keys
+  (** [keys client ~issuer]: the keys [issuer] signs its tokens with, from its
+      metadata's [jwks_uri]. The metadata is the first found of
+      [/.well-known/oauth-authorization-server] and then
+      [/.well-known/openid-configuration] put before the issuer's path (RFC 8414
+      §3.1), and [openid-configuration] after it (OpenID Connect Discovery §4),
+      in the order MCP gives, and is used only where its [issuer] is [issuer]
+      exactly (RFC 8414 §3.3).
+
+      They are fetched when first asked for and kept. A [kid] the kept keys do
+      not have fetches them again, at most once a minute -- so a key the issuer
+      rotated in is found, and tokens naming keys nobody has cost one fetch a
+      minute -- and so does none kept at all. A fetch that fails is a [warn]
+      line, and the kept keys go on answering: none before one succeeds, so
+      every token is refused until then. Each call answers the keys of the [kid]
+      named, or every key where it names none. *)
+end
+
 (** {1 Spans, sent to a collector} *)
 
 (** OTLP over HTTP, as JSON: what an OpenTelemetry Collector reads at

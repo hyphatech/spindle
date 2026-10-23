@@ -91,6 +91,7 @@ module Websocket = Spindle_http.Websocket
 module Returns = Returns
 module Meta = Meta
 module Dep = Dep
+module Bearer = Bearer
 module Query = Query
 module Form = Form
 module Header = Header

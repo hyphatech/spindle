@@ -16,10 +16,12 @@ make fmt     # format in place
 make docs    # the documentation site into site/, as Pages publishes it; docs-serve serves it
 ```
 
-`make test` needs `docker compose`, and `make docs` Bun 1.3 or later.
-Without `SPINDLE_TEST_PG` the suites that need a server are skipped, and
-the test output says so. CI runs `make lint` and `make test`, against the
-same compose Postgres, on OCaml 5.5, and `make test` again on the oldest
+`make test` needs `docker compose` and Bun 1.3 or later, which runs the
+OAuth suite's authorization server, and `make docs` Bun. Without
+`SPINDLE_TEST_PG` the suites that need a server are skipped, and without
+`SPINDLE_TEST_OIDC` the rows that need the authorization server, and the
+test output says so. CI runs `make lint` and `make test`, against the same
+compose Postgres, on OCaml 5.5, and `make test` again on the oldest
 versions the opam files allow. `docs.yml` publishes the site to GitHub
 Pages on every push to `main`.
 
@@ -78,7 +80,10 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   `Spindle.Broadcast.create` (for a depth below one), `Spindle.Compress.make`
   (for a level deflate has not, a negative size, or a type that is no media
   type pattern), `Spindle.Rate.create` (for a limit or a burst below one, or a
-  period shorter than a nanosecond a call), `Spindle.Server.Limits.make` (for
+  period shorter than a nanosecond a call), `Spindle.Bearer.make` (for an
+  issuer or a resource that is no https URL without a query or a fragment)
+  and `Spindle.Bearer.scope` (for a scope that is no RFC 6749
+  scope-token), `Spindle.Server.Limits.make` (for
   a limit out of its range), `Spindle.Server.run`, `serve_on` and
   `Spindle.serve` (for fewer than one domain, or a trusted proxy that is no
   address), `Spindle.serve` and
@@ -158,10 +163,13 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   name keeps its words, which hold no data. A span's name is a route, a
   method, `postgresql` or `sqlite`, never a path or a string a caller
   chose, since a name per URL is a series per URL in every
-  collector. Test: a token in a collector, or a card number in a log line;
+  collector. A bearer token and its claims are in no line, a refusal's
+  detail naming the check that failed and nothing of the token. Test: a
+  token in a collector, or a card number in a log line;
   `test_spindle` sends one in a header and a query and searches every
   attribute of the trace, and raises one from a handler, a stream and a
-  socket and searches every line.
+  socket and searches every line, and `test_oauth_rfc` sends a token that
+  passes and one that fails and searches every line for either.
 - **Spindle frames every body, and its connection loop is the only thing
   that reads a socket.** A connection carries another request only once the
   last one's body was read to its end -- a route that ignored it has it
@@ -190,6 +198,21 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   `test_multipart_rfc`'s, read the same three ways. Review by example misses the requirement nobody thought of.
   Symptom: a MUST nobody noticed, which is how the missing `Host` check was
   found.
+- **An OAuth rule is a row.** A requirement of RFC 6750, 7515, 7517, 7518,
+  8037, 8414, 8707, 9068 or 9728 that Spindle meets, as a resource server
+  or in fetching an issuer's keys, has a row in `test_oauth_rfc`, named by
+  its RFC and section; each RFC's published example is verified as it is
+  printed, and its issuer rows take real tokens from node-oidc-provider,
+  OpenID Certified, which `make test` runs. Spindle follows the RFC, not
+  what other implementations tolerate: a requirement an issuer skips is
+  still checked. Symptom: a token accepted that a MUST refuses, which no
+  token of ours happened to break.
+- **A token is checked against its audience.** No bearer token is accepted
+  whose `aud` does not name the resource, whose `typ` is not `at+jwt`, or
+  whose `alg` is `none` or an HMAC, since a token issued for another server,
+  an ID token, or one signed with a key both ends hold is the confused
+  deputy RFC 8707 and RFC 9068 §4 guard against. Test: `test_oauth_rfc`'s
+  rows refuse each, and the issuer's token for another resource.
 - **A value with structure is read by its parser.** Inside Spindle,
   a header whose value has a structure `spindle_http` reads -- a list, a
   media type, credentials, `Accept`, `Cache-Control`, `Forwarded`, a

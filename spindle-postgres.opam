@@ -36,6 +36,7 @@ depends: [
   "tls" {with-test & >= "2.1.2"}
   "tls-eio" {with-test & >= "2.1.2"}
   "x509" {with-test & >= "1.2.0"}
+  "mirage-crypto-ec" {with-test & >= "2.4.1"}
   "odoc" {with-doc}
 ]
 build: [

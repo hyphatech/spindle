@@ -55,7 +55,12 @@
   (base64
    (>= 3.5.2))
   (ipaddr
-   (>= 5.6.2))))
+   (>= 5.6.2))
+  ; A JWS's signature checked: RS256, ES256 and EdDSA.
+  (mirage-crypto-pk
+   (>= 2.4.1))
+  (mirage-crypto-ec
+   (>= 2.4.1))))
 
 (package
  (name spindle-client)
@@ -307,7 +312,12 @@
   (x509
    (and
     :with-test
-    (>= 1.2.0)))))
+    (>= 1.2.0)))
+  ; The OAuth rows sign what the server checks.
+  (mirage-crypto-ec
+   (and
+    :with-test
+    (>= 2.4.1)))))
 
 (package
  (name spindle-sqlite)

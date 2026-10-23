@@ -116,7 +116,12 @@ type context = {
   resources : resources;
 }
 
-type credential = { scheme : string; doc : string option; reads : need list }
+type credential = {
+  scheme : string;
+  doc : string option;
+  scopes : string list;
+  reads : need list;
+}
 
 type listing = {
   owner : int;
@@ -191,8 +196,35 @@ let first_listings listed =
 let needs d = List.concat_map (fun l -> l.needs) (first_listings d.listed)
 let codes d = List.concat_map (fun l -> l.codes) (first_listings d.listed)
 
+(* One scheme is one credential, however many inputs prove it: a document
+   that listed a scheme twice would offer either as enough. *)
+let merge_credentials creds =
+  List.fold_left
+    (fun acc (c : credential) ->
+      if
+        List.exists (fun (x : credential) -> String.equal x.scheme c.scheme) acc
+      then
+        List.map
+          (fun (x : credential) ->
+            if String.equal x.scheme c.scheme then
+              {
+                x with
+                doc = (match x.doc with Some _ -> x.doc | None -> c.doc);
+                scopes =
+                  x.scopes
+                  @ List.filter
+                      (fun s -> not (List.exists (String.equal s) x.scopes))
+                      c.scopes;
+                reads = x.reads @ c.reads;
+              }
+            else x)
+          acc
+      else acc @ [ c ])
+    [] creds
+
 let credentials d =
-  List.concat_map (fun l -> l.credentials) (first_listings d.listed)
+  merge_credentials
+    (List.concat_map (fun l -> l.credentials) (first_listings d.listed))
 
 let resources_read d =
   List.concat_map

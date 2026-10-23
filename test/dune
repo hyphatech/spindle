@@ -16,6 +16,7 @@
   test_websocket
   test_structured
   test_spindle_postgres
+  test_oauth_rfc
   test_cli)
  (package spindle-postgres)
  (modules :standard \ cli_app serve_app test_docs test_spindle_sqlite)
@@ -56,6 +57,8 @@
   x509
   ipaddr
   mirage-crypto-rng.unix
+  ; The OAuth rows sign what the server checks.
+  mirage-crypto-ec
   base64
   unix)
  (deps

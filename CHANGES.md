@@ -10,6 +10,27 @@
   installs both still. Their log sources are renamed the same way, from
   `spindle.http` and `spindle.client`.
 
+- `Spindle.Bearer`, an OAuth 2.0 resource server: `Bearer.make ~issuer
+  ~resource`, `Bearer.claims`, a JWT access token checked as RFC 9068 §4
+  asks -- its signature by RS256, ES256 or EdDSA, `typ` `at+jwt`, `iss`,
+  `aud` naming the resource (RFC 8707), `exp` and `nbf` -- and
+  `Bearer.scope`, each refused with RFC 6750's codes and challenges, which
+  name `Bearer.metadata`, the resource's RFC 9728 document. The issuer's
+  keys are a resource, `Bearer.keys`. See the guide's *OAuth bearer
+  tokens*.
+
+- `Spindle_client.Oauth.keys client ~issuer`: an issuer's keys, from the
+  metadata RFC 8414 or OpenID Connect Discovery finds, fetched again for an
+  unknown `kid` at most once a minute.
+
+- `Spindle_http.Jwk` and `Spindle_http.Jws`: public keys as RFC 7517 writes
+  them, and a compact JWS checked against them.
+
+- `Dep.credential` takes `?scopes`, which the API's document lists beside
+  the scheme, and `Dep.credential`'s record has a `scopes` field. The
+  credentials of one scheme a route reads are one, their scopes merged,
+  where two were listed as alternatives before.
+
 ## 0.10.0 (2026-10-21)
 
 - `spindle-sqlite`, a server's SQLite over rowtype's SQLite backend, as

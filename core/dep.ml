@@ -29,8 +29,10 @@ let derived_from ?needs ?codes ?credentials ?opaque ?binds d compute =
     ~binds:(Option.value binds ~default:d.binds)
     compute
 
-let credential ~scheme ?doc d =
-  derived_from ~credentials:[ { scheme; doc; reads = needs d } ] d (exec d)
+let credential ~scheme ?(scopes = []) ?doc d =
+  derived_from
+    ~credentials:[ { scheme; doc; scopes; reads = needs d } ]
+    d (exec d)
 
 let uncached d =
   { d with key = Option.map (fun k -> { k with cached = false }) d.key }

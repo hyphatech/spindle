@@ -183,20 +183,27 @@ val uncached : 'a t -> 'a t
 val refuse : Refusal.t -> 'a t
 (** Always refuses, and says it may with that code. *)
 
-val credential : scheme:string -> ?doc:string -> 'a t -> 'a t
+val credential :
+  scheme:string -> ?scopes:string list -> ?doc:string -> 'a t -> 'a t
 (** The same dependency, saying that what it reads proves who is asking -- a
     session cookie, a bearer token -- under the name [scheme], so a document
-    generated from the routes names the scheme and which routes need it. What it
-    reads is its {!needs}. *)
+    generated from the routes names the scheme and which routes need it.
+    [scopes] are what it requires the credential to grant, none unless given,
+    which the document lists beside the scheme. What it reads is its {!needs}.
+*)
 
 type credential = Dep_repr.credential = {
   scheme : string;
   doc : string option;
+  scopes : string list;
   reads : need list;
 }
-(** A credential a dependency reads: its scheme's name, and what it reads. *)
+(** A credential a dependency reads: its scheme's name, the scopes it requires,
+    and what it reads. *)
 
 val credentials : 'a t -> credential list
+(** One a scheme: two dependencies reading one scheme -- a token, and a scope of
+    it -- are one credential, with the scopes of both. *)
 
 val problem : at:string -> code:string -> string -> Refusal.t
 (** [problem ~at ~code message]: {!Refusal.invalid} with that one problem -- for
