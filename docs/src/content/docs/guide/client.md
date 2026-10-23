@@ -2,14 +2,21 @@
 title: HTTP client
 ---
 
-`Spindle_client` calls other HTTP and HTTPS servers. It is its own library,
-so a program that only calls out links no framework:
+`Spindle_client` calls other HTTP and HTTPS servers. It is a package of its
+own, so a program that only calls out installs and links no framework:
+
+```sh
+opam install spindle-client
+```
 
 ```lisp
 (executable
  (name main)
- (libraries spindle.client eio_main))
+ (libraries spindle-client eio_main))
 ```
+
+An application on Spindle has it already: `opam install spindle` installs
+it too.
 
 ## Making a request
 
@@ -95,7 +102,7 @@ Good to know:
   `DELETE`, `OPTIONS`, `TRACE`) whose reused connection closed before any
   answer. A `POST` that went out is never sent twice; it fails with
   `` `Lost ``, and you decide.
-- Each call logs one `debug` line on `spindle.client`, never its headers or
+- Each call logs one `debug` line on `spindle-client`, never its headers or
   body.
 
 ## Streaming a response

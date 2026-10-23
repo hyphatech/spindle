@@ -97,7 +97,7 @@ Every request is now a line with its method, path, status, duration (in
 nanoseconds) and an id:
 
 ```
-10:11:03.331 info  spindle.http [cm5nxptpka21] GET / 200  http.request.method=GET  url.path=/  http.response.status_code=200  duration=14875  http.response.body.size=20  http.route=/
+10:11:03.331 info  spindle-http [cm5nxptpka21] GET / 200  http.request.method=GET  url.path=/  http.response.status_code=200  duration=14875  http.response.body.size=20  http.route=/
 ```
 
 Lines look like this in a terminal. When stderr is not a terminal -- a

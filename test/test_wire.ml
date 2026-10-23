@@ -1129,6 +1129,13 @@ let test_a_streamed_body_that_falls_behind_is_cut_off () =
   check_int "unreadable" 400 a.status;
   check_bool "and closed" true (closed r)
 
+(* A user filters a library's log by the name they installed. *)
+let test_the_log_source_is_the_librarys_name () =
+  check_bool "spindle-http is a source" true
+    (List.exists
+       (fun src -> String.equal (Logs.Src.name src) "spindle-http")
+       (Logs.Src.list ()))
+
 let () =
   Alcotest.run "wire"
     [
@@ -1176,6 +1183,11 @@ let () =
             test_bodies_share_a_budget;
           Alcotest.test_case "a refusal before the body costs nothing" `Quick
             test_a_refusal_before_the_body_costs_nothing;
+        ] );
+      ( "log",
+        [
+          Alcotest.test_case "the log source is the library's name" `Quick
+            test_the_log_source_is_the_librarys_name;
         ] );
       ( "heads and time",
         [

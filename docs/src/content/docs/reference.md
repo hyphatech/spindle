@@ -8,12 +8,14 @@ function says what it does, what it refuses and what it defaults to.
 ## The packages
 
 Each library is separate, so a program links only what it uses. A `dune`
-file names a library as it is installed (`spindle.http`); OCaml code names
+file names a library as it is installed (`spindle-http`); OCaml code names
 it as a module (`Spindle_http`).
 
 | Package | Libraries | What it is |
 |---|---|---|
-| `spindle` | `spindle`, `spindle.http`, `spindle.client` | The framework; HTTP as both ends speak it; calling another server, which links no framework |
+| `spindle` | `spindle` | The framework; installs `spindle-http` and `spindle-client` with it |
+| `spindle-http` | `spindle-http` | HTTP as both ends speak it |
+| `spindle-client` | `spindle-client` | Calling another server, which installs and links no framework |
 | `spindle-sqlite` | `spindle-sqlite` | A server's SQLite: a pool of one file in WAL mode, a transaction per borrow, sessions |
 | `spindle-postgres` | `spindle-postgres` | A server's Postgres: bounded connections, a pool, a transaction per borrow, sessions |
 | `spindle-cli` | `spindle-cli` | An application's command line: its API's document, Zod schemas and Melange client |
@@ -35,9 +37,9 @@ it as a module (`Spindle_http`).
   [`Static`](/spindle/reference/spindle/Spindle/Static/index.html),
   [`Openapi`](/spindle/reference/spindle/Spindle/Openapi/index.html) and
   [`Test`](/spindle/reference/spindle/Spindle/Test/index.html).
-- [`Spindle_http`](/spindle/reference/spindle/Spindle_http/index.html) --
+- [`Spindle_http`](/spindle/reference/spindle-http/Spindle_http/index.html) --
   HTTP as both ends speak it.
-- [`Spindle_client`](/spindle/reference/spindle/Spindle_client/index.html) --
+- [`Spindle_client`](/spindle/reference/spindle-client/Spindle_client/index.html) --
   calling another server.
 - [`Spindle_sqlite`](/spindle/reference/spindle-sqlite/Spindle_sqlite/index.html)
   -- a server's SQLite.

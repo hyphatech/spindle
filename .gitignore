@@ -6,3 +6,5 @@ node_modules/
 .astro/
 site/
 docs/public/reference/
+# What `dune build -p` writes beside the opam files, as `make lint` runs it.
+*.install

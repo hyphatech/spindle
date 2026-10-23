@@ -31,7 +31,7 @@
   multidomain)
  (libraries
   spindle
-  spindle.client
+  spindle-client
   spindle-cli
   spindle-postgres
   spindle-sqlite

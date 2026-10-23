@@ -139,7 +139,7 @@ val call :
 (** [call t meth url]. Any status is an answer: what a [4xx] means is the
     caller's to say. The URL's path and query are sent byte for byte as it wrote
     them, so a signed URL arrives as it was signed, and its fragment is not
-    sent. One [debug] line per call on [spindle.client] -- the method, the host,
+    sent. One [debug] line per call on [spindle-client] -- the method, the host,
     the status, whether the connection was new or kept, and how long it took,
     and never a header or a body, because they are where a credential travels.
 *)

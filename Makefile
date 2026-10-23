@@ -7,7 +7,7 @@ export PG_TEST_PORT
 
 DOCS_PORT ?= 4321
 # The reference is odoc's, for Spindle's own packages and nothing under them.
-REFERENCE = spindle spindle-cli spindle-postgres spindle-sqlite odoc.support
+REFERENCE = spindle spindle-http spindle-client spindle-cli spindle-postgres spindle-sqlite odoc.support
 
 .DEFAULT_GOAL := help
 .PHONY: help setup build test lint fmt docs docs-serve reference db db-down
@@ -31,9 +31,12 @@ test: db ## run the tests
 
 # Release is the profile opam installs with. opam lint passes a warning
 # unless told it is an error, and installing from source prints each one.
+# The client's packages are built alone, as opam installs them for a
+# program that wants no framework.
 lint: ## check formatting, docs, the release build and the opam files
 	$(OPAM) dune build @all @fmt @doc
 	$(OPAM) dune build --profile release @all
+	$(OPAM) dune build -p spindle-http,spindle-client @install
 	opam lint -W @1..99 *.opam
 
 fmt: ## format the code

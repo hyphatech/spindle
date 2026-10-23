@@ -21,8 +21,8 @@
  (modules :standard \ cli_app serve_app test_docs test_spindle_sqlite)
  (libraries
   spindle
-  spindle.http
-  spindle.client
+  spindle-http
+  spindle-client
   spindle-postgres
   rowtype
   rowtype-postgres
@@ -100,7 +100,7 @@
   (glob_files ../sqlite/migrations/*.sql))
  (libraries
   spindle
-  spindle.http
+  spindle-http
   spindle-sqlite
   rowtype
   rowtype-sqlite

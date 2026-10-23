@@ -31,13 +31,90 @@
  (github hyphatech/spindle))
 
 (package
- (name spindle)
- (synopsis "The Eio-native web framework for modern OCaml")
+ (name spindle-http)
+ (synopsis "HTTP/1.1 as both ends speak it, on Eio: heads, bodies, fields, WebSockets")
  (description
-  "Routes as values, dependencies that list what a route reads, failures as values, streams and WebSockets, the API described as OpenAPI and Zod, and HTTP/1.1 read and written by itself. The spindle.client package calls other servers and links no framework.")
+  "What Spindle's server and its client share: a message read off a connection and written to one, every framing RFC 9112 allows, the fields RFC 9110 gives a structure, Structured Fields, multipart and WebSockets. It holds no socket and applies no limit it is not given.")
  (depends
   (ocaml
    (>= 5.5))
+  (wiretype
+   (and (>= 0.6.0) (< 0.7.0)))
+  (eio
+   (>= 1.6))
+  (angstrom
+   (>= 0.16.1))
+  (logs
+   (>= 0.10.0))
+  (mtime
+   (>= 2.1.0))
+  (ptime
+   (>= 1.2.0))
+  (digestif
+   (>= 1.3.1))
+  (base64
+   (>= 3.5.2))
+  (ipaddr
+   (>= 5.6.2))))
+
+(package
+ (name spindle-client)
+ (synopsis "Calling other servers from Eio, over HTTPS, with no web framework")
+ (description
+  "Calls, streamed bodies, Server-Sent Events and WebSockets, over HTTPS with the system's trust store, a switch and a deadline per call, on spindle-http alone.")
+ (depends
+  (ocaml
+   (>= 5.5))
+  (spindle-http
+   (= :version))
+  (wiretype
+   (and (>= 0.6.0) (< 0.7.0)))
+  (eio
+   (>= 1.6))
+  (cstruct
+   (>= 6.2.0))
+  (iomux
+   (>= 0.4))
+  (mtime
+   (>= 2.1.0))
+  (ptime
+   (>= 1.2.0))
+  (uri
+   (>= 4.4.0))
+  (tls
+   (>= 2.1.2))
+  (tls-eio
+   (>= 2.1.2))
+  (x509
+   (>= 1.1.1))
+  (ipaddr
+   (>= 5.6.2))
+  (ca-certs
+   (>= 1.0.3))
+  (mirage-crypto-rng
+   (>= 2.4.1))
+  (base64
+   (>= 3.5.2))
+  (domain-name
+   (>= 0.5.0))
+  (logs
+   (>= 0.10.0))))
+
+(package
+ (name spindle)
+ (synopsis "The Eio-native web framework for modern OCaml")
+ (description
+  "Routes as values, dependencies that list what a route reads, failures as values, streams and WebSockets, the API described as OpenAPI and Zod, and HTTP/1.1 read and written by itself.")
+ (depends
+  (ocaml
+   (>= 5.5))
+  (spindle-http
+   (= :version))
+  ; The client, installed with the framework so one package is the whole of
+  ; starting; the framework never links it, so a server that calls nobody
+  ; compiles no TLS.
+  (spindle-client
+   (= :version))
   (wiretype
    (and (>= 0.6.0) (< 0.7.0)))
   ; A UUID is Uuidm's, in a path or a query as in a body and a row.
@@ -54,8 +131,6 @@
    (>= 1.6))
   (uri
    (>= 4.4.0))
-  (angstrom
-   (>= 0.16.1))
   (logs
    (>= 0.10.0))
   (mtime
@@ -72,18 +147,6 @@
    (>= 3.5.2))
   (ipaddr
    (>= 5.6.2))
-  (domain-name
-   (>= 0.5.0))
-  (tls
-   (>= 2.1.2))
-  (tls-eio
-   (>= 2.1.2))
-  (iomux
-   (>= 0.4))
-  (x509
-   (>= 1.1.1))
-  (ca-certs
-   (>= 1.0.3))
   (mirage-crypto
    (>= 2.4.1))
   (decompress

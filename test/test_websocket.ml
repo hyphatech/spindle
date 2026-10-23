@@ -351,11 +351,11 @@ let test_a_client_socket_says_how_it_ended env () =
   Alcotest.(check bool)
     "a clean close, at info" true
     (said
-       {|"level":"info","logger.name":"spindle.client","message":"socket to 127.0.0.1/echo ended: closed"|});
+       {|"level":"info","logger.name":"spindle-client","message":"socket to 127.0.0.1/echo ended: closed"|});
   Alcotest.(check bool)
     "a refusal, at warn" true
     (said
-       {|"level":"warn","logger.name":"spindle.client","message":"socket to 127.0.0.1/closed ended: answered 403|});
+       {|"level":"warn","logger.name":"spindle-client","message":"socket to 127.0.0.1/closed ended: answered 403|});
   Alcotest.(check bool) "and never the query" false (said "hush")
 
 (* A client's handler that raises is our bug too: one line at error, the

@@ -9,7 +9,7 @@ module Status = Spindle_http.Status
 module Trace = Spindle_http.Trace
 module Websocket = Spindle_http.Websocket
 
-let src = Logs.Src.create "spindle.client" ~doc:"Calls to other servers"
+let src = Logs.Src.create "spindle-client" ~doc:"Calls to other servers"
 
 module L = (val Logs.src_log src : Logs.LOG)
 

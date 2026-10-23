@@ -26,11 +26,11 @@ Pages on every push to `main`.
 ## Layout
 
 ```
-http/       spindle.http: HTTP as both ends speak it -- heads, bodies,
+http/       spindle-http: HTTP as both ends speak it -- heads, bodies,
             fields, dates, structured fields, multipart, the wire
 core/       spindle: routes, dependencies, answers, refusals, cookies,
             logging, streams, WebSockets, the routes described as OpenAPI
-client/     spindle.client: calling another server, on http/ alone
+client/     spindle-client: calling another server, on http/ alone
 postgres/   spindle-postgres: a server's Postgres, over rowtype's backend,
             and its sessions table's migration
 sqlite/     spindle-sqlite: a server's SQLite, over rowtype's backend, and
@@ -105,16 +105,19 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   -g '*.ml' http core client postgres sqlite cli` finds one in a place this
   list does not name.
 - **Spindle reads and writes HTTP itself, names no driver, and its client
-  links no framework.** No library links another HTTP implementation or
-  names one; `spindle-postgres` and `spindle-sqlite` reach their database
-  through rowtype's backends alone, so a second driver is a second backend
-  and no change here; and
-  `spindle.client` links `spindle.http` and never `spindle`, so a program
-  that calls other servers compiles no framework. Symptom: `rg -n -i -w
+  installs and links no framework.** No library links another HTTP
+  implementation or names one; `spindle-postgres` and `spindle-sqlite`
+  reach their database through rowtype's backends alone, so a second driver
+  is a second backend and no change here; `spindle-client` and
+  `spindle-http` are packages of their own, the client linking
+  `spindle-http` and never `spindle`, so a program that calls other servers
+  installs and compiles no framework; and `spindle` never links the client,
+  so a server that calls nobody compiles no TLS. Symptom: `rg -n -i -w
   'cohttp\w*|httpun\w*|httpaf\w*|h1|h2|piaf|paf|ezcurl|postgres.eio|sqlite3'
   -g '*.{ml,mli}' -g dune http core client postgres sqlite cli` finds a
-  name, or
-  `rg -n '^ *spindle$' client/dune` finds the framework.
+  name, `rg -n '^ *spindle$' client/dune` finds the framework, `rg -n
+  spindle_client core/dune` finds the client, or `make lint`'s build of
+  `spindle-http` and `spindle-client` alone fails.
 - **A route is one value, and a dependency hands over an input.** A method
   and a path are declared together (`Spindle.post Path.(...)`), so a route no
   method can reach cannot be written. Every input a request carries -- a
@@ -258,8 +261,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
 
 ## Changes and releases
 
-Its packages are `spindle`, `spindle-postgres`, `spindle-sqlite` and
-`spindle-cli`. A
+Its packages are `spindle-http`, `spindle-client`, `spindle`,
+`spindle-postgres`, `spindle-sqlite` and `spindle-cli`. A
 user-visible change updates the page of the documentation site that
 describes it, not the README. Two variants are closed, from 1.0:
 `Spindle_http.Status.t` and `Spindle_http.Meth.t` name every status and

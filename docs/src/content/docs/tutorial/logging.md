@@ -31,7 +31,7 @@ curl localhost:8080/charge/500
 
 ```
 10:24:06.913 info  shop.billing [trpw9jmqsz6a] charged  shop.pence=500
-10:24:06.913 info  spindle.http [trpw9jmqsz6a] GET /charge/500 200  http.request.method=GET  url.path=/charge/500  http.response.status_code=200  duration=259958  http.response.body.size=8  http.route=/charge/{pence}
+10:24:06.913 info  spindle-http [trpw9jmqsz6a] GET /charge/500 200  http.request.method=GET  url.path=/charge/500  http.response.status_code=200  duration=259958  http.response.body.size=8  http.route=/charge/{pence}
 ```
 
 Your line carries the request's id, `[trpw9jmqsz6a]`, without being handed
@@ -45,7 +45,7 @@ The JSON keys are the ones Datadog and an OpenTelemetry Collector read
 without a mapping:
 
 ```json
-{"timestamp":"2026-10-08T09:24:07.936Z","level":"info","logger.name":"spindle.http","message":"GET /charge/500 200","request_id":"yxh81c3jxdrr","trace_id":"d94e1ed026bb56ed4360738efdab369b","span_id":"aa5e83d9ed21a352","http.request.method":"GET","url.path":"/charge/500","http.response.status_code":200,"duration":199000,"http.response.body.size":8,"http.route":"/charge/{pence}"}
+{"timestamp":"2026-10-08T09:24:07.936Z","level":"info","logger.name":"spindle-http","message":"GET /charge/500 200","request_id":"yxh81c3jxdrr","trace_id":"d94e1ed026bb56ed4360738efdab369b","span_id":"aa5e83d9ed21a352","http.request.method":"GET","url.path":"/charge/500","http.response.status_code":200,"duration":199000,"http.response.body.size":8,"http.route":"/charge/{pence}"}
 ```
 
 `Log.configure` returns an `Error` naming what it could not read, and this

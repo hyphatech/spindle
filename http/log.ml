@@ -1,4 +1,4 @@
-let http = Logs.Src.create "spindle.http" ~doc:"Requests and their answers"
+let http = Logs.Src.create "spindle-http" ~doc:"Requests and their answers"
 
 type value =
   [ `String of string | `Int of int | `Float of float | `Bool of bool ]

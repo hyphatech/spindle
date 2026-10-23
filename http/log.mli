@@ -6,7 +6,7 @@
     answered logs under that request. *)
 
 val http : Logs.src
-(** [spindle.http]: the framework's own lines -- the access log, a refusal's
+(** [spindle-http]: the framework's own lines -- the access log, a refusal's
     detail, a connection that failed. *)
 
 type value =

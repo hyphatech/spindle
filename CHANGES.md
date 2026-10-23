@@ -1,5 +1,15 @@
 # Changes
 
+## Unreleased
+
+- The client and HTTP are packages of their own, `spindle-client` and
+  `spindle-http`, so an Eio program that only calls other servers installs
+  `spindle-client` and no framework. Their libraries are named after them:
+  a `dune` file names `spindle-http` where it named `spindle.http`, and
+  `spindle-client` where it named `spindle.client`. `opam install spindle`
+  installs both still. Their log sources are renamed the same way, from
+  `spindle.http` and `spindle.client`.
+
 ## 0.10.0 (2026-10-21)
 
 - `spindle-sqlite`, a server's SQLite over rowtype's SQLite backend, as
