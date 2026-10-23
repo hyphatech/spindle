@@ -24,12 +24,13 @@ export default defineConfig({
   markdown: { processor: satteri({ mdastPlugins: [snippets({ base: `${repository}examples` })] }) },
   integrations: [
     starlight({
-      title: "Spindle",
+      title: "spindle",
       description: "The Eio-native web framework for modern OCaml.",
       logo: { light: "./src/assets/mark-light.svg", dark: "./src/assets/mark-dark.svg" },
       favicon: "/favicon.svg",
       plugins: [
         hypha({
+          brand: "hypha",
           github: "hyphatech/spindle",
           tabs: { Tutorial: "graduation-cap", Guides: "book-open", Reference: "library" },
           links: [{ label: "Hypha Stack", href: "https://hyphatech.io/stack", icon: "layers" }],
