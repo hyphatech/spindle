@@ -17,7 +17,7 @@ help: ## list targets
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
 
 setup: ## create the switch and install dependencies
-	@docker compose version >/dev/null 2>&1 || echo "The Postgres suites need docker compose."
+	@podman compose version >/dev/null 2>&1 || echo "The Postgres suites need podman compose."
 	@command -v bun >/dev/null 2>&1 || echo "The documentation site and the OAuth suite need Bun 1.3 or later."
 	@opam switch list --short | grep -qx $(SWITCH) || opam switch create $(SWITCH) --empty -y
 	opam repo add hypha https://github.com/hyphatech/opam-repository.git --switch=$(SWITCH) --rank=1
@@ -74,7 +74,7 @@ reference:
 	chmod -R u+w docs/public/reference
 
 db: ## start the test database
-	docker compose up -d --wait db
+	podman compose up -d --wait db
 
 db-down: ## stop and delete the test database
-	docker compose rm -sf db
+	podman compose rm -sf db

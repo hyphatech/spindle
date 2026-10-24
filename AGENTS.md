@@ -10,13 +10,13 @@ documentation site, [docs/](docs/src/content/docs/index.mdx).
 
 ```sh
 make setup   # once: the switch hypha-spindle, every dependency
-make test    # starts the test Postgres in Docker, runs every suite
+make test    # starts the test Postgres in Podman, runs every suite
 make lint    # formatting, odoc, the release build, and the opam files
 make fmt     # format in place
 make docs    # the documentation site into site/, as Pages publishes it; docs-serve serves it
 ```
 
-`make test` needs `docker compose` and Bun 1.3 or later, which runs the
+`make test` needs `podman compose` and Bun 1.3 or later, which runs the
 OAuth suite's authorization server, and `make docs` Bun. Without
 `SPINDLE_TEST_PG` the suites that need a server are skipped, and without
 `SPINDLE_TEST_OIDC` the rows that need the authorization server, and the
