@@ -27,6 +27,9 @@ jobs:
       - run: opam install . --deps-only --with-test --with-dev-setup -y
       # Use setup-ocaml's switch instead of the Makefile's.
       - run: make lint OPAM="opam exec --"
+      # Compose reaches Podman through its user socket, which the runner
+      # does not start.
+      - run: systemctl --user start podman.socket
       # The Postgres of compose.yaml, as on a laptop, so CI tests the
       # database every contributor does.
       - run: make test OPAM="opam exec --"
@@ -51,4 +54,7 @@ jobs:
       - run: opam install . --deps-only --with-test -y
       - run: opam list --installed --columns=name,version
       - run: opam exec -- dune build -p spindle-http,spindle-client,spindle,spindle-mcp-client,spindle-mcp,spindle-postgres,spindle-sqlite,spindle-cli @install
+      # Compose reaches Podman through its user socket, which the runner
+      # does not start.
+      - run: systemctl --user start podman.socket
       - run: make test OPAM="opam exec --"
