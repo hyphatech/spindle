@@ -149,6 +149,12 @@ let response ~content_type body =
         | Some e -> Ok e.data
         | None -> Error (`Unreadable "a stream that ended with no response"))
 
+type progress = {
+  progress : float;
+  total : float option;
+  message : string option;
+}
+
 (* The bearer challenge's parameters, among an answer's [WWW-Authenticate]
    fields, read by their parser. *)
 let bearer_challenge headers =
@@ -170,7 +176,7 @@ let bearer_challenge headers =
 (* MCP's authorization: the token kept for the server goes with every
    request; a 401 signs in where its challenge says, and a 403 for a scope
    steps up to it, each retried once. *)
-let exchange t ~headers ~body =
+let exchange ?on_event t ~headers ~body =
   let send () =
     let* bearer =
       match t.oauth with
@@ -181,7 +187,29 @@ let exchange t ~headers ~body =
           | Ok None -> Ok []
           | Error e -> Error e)
     in
-    Spindle_client.call t.client ~headers:(headers @ bearer) ~body `POST t.url
+    let headers = headers @ bearer in
+    match on_event with
+    | None -> Spindle_client.call t.client ~headers ~body `POST t.url
+    (* Each event handed on as it arrives, and the whole kept for the
+       answer's reading, as {!Spindle_client.call} would give it. *)
+    | Some on_event ->
+        Result.join
+          (Spindle_client.stream t.client ~headers ~body `POST t.url
+             (fun (answer : Spindle_client.Body.t Spindle_client.response) ->
+               let whole = Buffer.create 256
+               and reader = Event_stream.reader () in
+               let rec read () =
+                 match Spindle_client.Body.read answer.body with
+                 | Ok (`Data d) ->
+                     Buffer.add_string whole d;
+                     (match Event_stream.feed reader d with
+                     | Ok events -> List.iter on_event events
+                     | Error _ -> ());
+                     read ()
+                 | Ok `End -> Ok { answer with body = Buffer.contents whole }
+                 | Error e -> Error e
+               in
+               read ()))
   in
   let* answer = send () in
   match t.oauth with
@@ -209,8 +237,9 @@ let exchange t ~headers ~body =
       | `Forbidden, Some "insufficient_scope" -> again ()
       | _ -> Ok answer)
 
-let request t ~meth ?name ?(mirrored = []) params =
+let request ?progress t ~meth ?name ?(mirrored = []) params =
   let id = Atomic.fetch_and_add t.next_id 1 in
+  let token = Value.String ("progress-" ^ string_of_int id) in
   let capabilities =
     Value.Object
       (match t.elicit with
@@ -223,10 +252,40 @@ let request t ~meth ?name ?(mirrored = []) params =
          ("io.modelcontextprotocol/protocolVersion", Value.String P.version);
          ("io.modelcontextprotocol/clientCapabilities", capabilities);
        ]
+      @ (match t.info with
+        | Some i -> [ ("io.modelcontextprotocol/clientInfo", i) ]
+        | None -> [])
       @
-      match t.info with
-      | Some i -> [ ("io.modelcontextprotocol/clientInfo", i) ]
+      match progress with
+      | Some _ -> [ ("progressToken", token) ]
       | None -> [])
+  in
+  (* progress §Progress Flow: a report naming this call's token is told the
+     caller; any other event is the answer's, or not this call's. *)
+  let on_event =
+    Option.map
+      (fun tell (e : Event_stream.event) ->
+        match Wiretype.decode Value.json e.data with
+        | Ok v -> (
+            match (string_member "method" v, member "params" v) with
+            | Some "notifications/progress", Some p
+              when Option.equal Value.equal (member "progressToken" p)
+                     (Some token) -> (
+                match member "progress" p with
+                | Some (Value.Number progress) ->
+                    tell
+                      {
+                        progress;
+                        total =
+                          (match member "total" p with
+                          | Some (Value.Number n) -> Some n
+                          | _ -> None);
+                        message = string_member "message" p;
+                      }
+                | _ -> ())
+            | _ -> ())
+        | Error _ -> ())
+      progress
   in
   let body =
     Value.Object
@@ -255,7 +314,7 @@ let request t ~meth ?name ?(mirrored = []) params =
     @ List.map (fun (h, v) -> ("mcp-param-" ^ h, header_value v)) mirrored
     @ t.headers
   in
-  let* answer = exchange t ~headers ~body:text in
+  let* answer = exchange ?on_event t ~headers ~body:text in
   let content_type = List.assoc_opt "content-type" answer.headers in
   let refused code message =
     Error (`Refused { status = answer.status; code; message })
@@ -462,10 +521,10 @@ let mirrored_for t name arguments =
                 (Option.bind (at path arguments) mirrored_value))
             l.mirrored)
 
-let call_value t name arguments =
+let call_value ?progress t name arguments =
   let rec attempt ~round ~relisted extra =
     let r =
-      request t ~meth:"tools/call" ~name
+      request ?progress t ~meth:"tools/call" ~name
         ~mirrored:(mirrored_for t name arguments)
         ([ ("name", Value.String name); ("arguments", arguments) ] @ extra)
     in
@@ -518,13 +577,13 @@ let call_value t name arguments =
   in
   attempt ~round:0 ~relisted:false []
 
-let call t name arguments value result =
+let call ?progress t name arguments value result =
   let* args =
     Result.map_error
       (fun e -> `Unsent (Wiretype.Unwritable.to_string e))
       (Wiretype.to_value arguments value)
   in
-  let* a = call_value t name args in
+  let* a = call_value ?progress t name args in
   match a.structured with
   | None -> Error (`Unreadable "no structuredContent")
   | Some v ->

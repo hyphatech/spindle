@@ -515,6 +515,97 @@ let test_the_metadata_names_every_tools_scope () =
     (text [ "scopes_supported" ] r)
 
 (* ------------------------------------------------------------------ *)
+(* Progress *)
+
+(* A tool that reports as it goes, one report not above the last. *)
+let slow =
+  Mcp.tool "slow" query_json Wiretype.string
+    (let+ call = Mcp.call in
+     fun q ->
+       Mcp.progress call ~total:3. ~message:"started" 1.;
+       Mcp.progress call ~total:3. 2.;
+       Mcp.progress call ~total:3. 1.5;
+       Ok q.city)
+
+let slow_app () =
+  Spindle.Test.app
+    ~resources:[ Spindle.Dep.resource weather temperatures ]
+    (Mcp.routes ~name:"weather" ~version:"1.0.0" [ slow ])
+
+(* An event stream's events, each ended by a blank line. *)
+let blocks body =
+  let ended acc = function
+    | [] -> acc
+    | current -> String.concat "\n" (List.rev current) :: acc
+  in
+  let rec go acc current = function
+    | [] -> List.rev (ended acc current)
+    | "" :: rest -> go (ended acc current) [] rest
+    | line :: rest -> go acc (line :: current) rest
+  in
+  go [] [] (String.split_on_char '\n' body)
+
+(* Each event's data, in order. *)
+let events body =
+  List.filter_map
+    (fun block ->
+      List.find_map
+        (fun line ->
+          if String.starts_with ~prefix:"data: " line then
+            Some
+              (Yojson.Safe.from_string
+                 (String.sub line 6 (String.length line - 6)))
+          else None)
+        (String.split_on_char '\n' block))
+    (blocks body)
+
+(* progress §Progress Flow: a call that asks for progress is answered as an
+   event stream, each report a notifications/progress naming its token, the
+   result last. *)
+let test_a_call_asking_for_progress_streams_it () =
+  (* A stream runs in fibers, as a server's does. *)
+  let r =
+    Eio_main.run @@ fun _ ->
+    Mcp.Test.call ~progress_token:"p-1" (slow_app ()) "tools/call"
+      [ ("name", Value.String "slow"); ("arguments", paris) ]
+  in
+  check_status "200" 200 r;
+  check_string "an event stream" "text/event-stream"
+    (Option.value ~default:"" (Spindle.Test.header r "content-type"));
+  match events r.body with
+  | [ first; second; last ] ->
+      check_string "a notification" {|"notifications/progress"|}
+        (Yojson.Safe.to_string (at [ "method" ] first));
+      check_string "its token" {|"p-1"|}
+        (Yojson.Safe.to_string (at [ "params"; "progressToken" ] first));
+      check_string "how far, of how much" "[1,3]"
+        (Yojson.Safe.to_string
+           (`List
+              [
+                at [ "params"; "progress" ] first;
+                at [ "params"; "total" ] first;
+              ]));
+      check_string "its message" {|"started"|}
+        (Yojson.Safe.to_string (at [ "params"; "message" ] first));
+      check_string "the second" "2"
+        (Yojson.Safe.to_string (at [ "params"; "progress" ] second));
+      check_string "the result last" {|"Paris"|}
+        (Yojson.Safe.to_string (at [ "result"; "structuredContent" ] last))
+  | l -> Alcotest.failf "%d events, not 3: %s" (List.length l) r.body
+
+(* progress §Requirements: a report not above the last is not sent. A call
+   that did not ask is one JSON object, its reports dropped. *)
+let test_a_call_not_asking_is_one_answer () =
+  let r =
+    Mcp.Test.call (slow_app ()) "tools/call"
+      [ ("name", Value.String "slow"); ("arguments", paris) ]
+  in
+  check_string "JSON" "application/json"
+    (Option.value ~default:"" (Spindle.Test.header r "content-type"));
+  check_string "its result" {|"Paris"|}
+    (text [ "result"; "structuredContent" ] r)
+
+(* ------------------------------------------------------------------ *)
 (* The client *)
 
 module Client = Spindle_mcp_client
@@ -836,6 +927,21 @@ let test_a_question_without_elicit_is_unanswered () =
       | Error e ->
           Alcotest.failf "another failure: %s" (Client.error_to_string e))
 
+(* progress: the client hands each report to its caller, as it arrives, and
+   asks for them only when it has somewhere to send them. *)
+let test_the_client_reports_progress () =
+  over_a_socket ~routes:(Mcp.routes ~name:"weather" ~version:"1.0.0" [ slow ])
+  @@ fun c ->
+  let seen = ref [] in
+  let a =
+    ok
+      (Client.call_value c "slow"
+         ~progress:(fun (p : Client.progress) -> seen := p.progress :: !seen)
+         paris)
+  in
+  check_bool "its result" true (Option.is_some a.structured);
+  Alcotest.(check (list (float 0.))) "each report" [ 1.; 2. ] (List.rev !seen)
+
 let () =
   Alcotest.run "mcp-spec"
     [
@@ -896,6 +1002,15 @@ let () =
             `Quick test_a_scope_not_granted_is_403;
           Alcotest.test_case "9728 §2: the metadata names every scope" `Quick
             test_the_metadata_names_every_tools_scope;
+        ] );
+      ( "progress",
+        [
+          Alcotest.test_case "progress §Flow: a call asking streams it" `Quick
+            test_a_call_asking_for_progress_streams_it;
+          Alcotest.test_case "progress: a call not asking is one answer" `Quick
+            test_a_call_not_asking_is_one_answer;
+          Alcotest.test_case "progress: the client reports it" `Quick
+            test_the_client_reports_progress;
         ] );
       ( "client",
         [

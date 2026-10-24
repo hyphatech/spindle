@@ -84,11 +84,20 @@ let result id members =
       ("result", Value.Object members);
     ]
 
+let notification meth params =
+  written
+    [
+      ("jsonrpc", Value.String "2.0");
+      ("method", Value.String meth);
+      ("params", Value.Object params);
+    ]
+
 module Code = struct
   let parse_error = -32700
   let invalid_request = -32600
   let method_not_found = -32601
   let invalid_params = -32602
+  let internal_error = -32603
   let header_mismatch = -32020
   let missing_capability = -32021
   let unsupported_version = -32022

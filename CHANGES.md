@@ -19,6 +19,12 @@
   called. `Spindle_mcp.Test.call` calls it in a test. MCP's messages are
   `spindle-mcp-client.protocol`. See the guide's *MCP servers*.
 
+- `Spindle_mcp.call` and `Spindle_mcp.progress`: a tool reports how far it
+  has come, sent as `notifications/progress` on an event stream to a client
+  that asked, and dropped for one that did not; a tool stops for a caller that
+  left by reading `Spindle.client_gone`. `Spindle_mcp_client.call ~progress`
+  asks for the reports and hands each on as it arrives.
+
 - `Spindle_client.Oauth.create` and `sign_in`, an OAuth 2.0 client signing a
   person in to a protected resource: the resource's metadata (RFC 9728),
   the authorization server's (RFC 8414), the code grant with PKCE by

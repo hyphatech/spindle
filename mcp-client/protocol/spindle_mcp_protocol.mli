@@ -33,13 +33,17 @@ val member : string -> Wiretype.Value.t option -> Wiretype.Value.t option
 val result : id -> (string * Wiretype.Value.t) list -> string
 (** A result response: the members given, in order. *)
 
-(** The codes MCP answers with: JSON-RPC's [-32700], [-32600], [-32601] and
-    [-32602], and MCP's own [-32020], [-32021] and [-32022]. *)
+val notification : string -> (string * Wiretype.Value.t) list -> string
+(** [notification meth params]: a message no answer follows. *)
+
+(** The codes MCP answers with: JSON-RPC's [-32700], [-32600], [-32601],
+    [-32602] and [-32603], and MCP's own [-32020], [-32021] and [-32022]. *)
 module Code : sig
   val parse_error : int
   val invalid_request : int
   val method_not_found : int
   val invalid_params : int
+  val internal_error : int
   val header_mismatch : int
   val missing_capability : int
   val unsupported_version : int

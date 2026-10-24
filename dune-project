@@ -252,7 +252,11 @@
   (ptime
    (>= 1.2.0))
   (base64
-   (>= 3.5.2))))
+   (>= 3.5.2))
+  (logs
+   (>= 0.10.0))
+  (eio
+   (>= 1.6))))
 
 (package
  (name spindle-postgres)

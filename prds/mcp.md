@@ -1,7 +1,7 @@
 # MCP servers and clients, and the OAuth they need
 
 **Status: Accepted** — the whole shape is signed off, the endpoint made routes
-a battery adds on 2026-10-24; stages 1 to 3, 8 and 9 have landed.
+a battery adds on 2026-10-24; stages 1 to 4, 8 and 9 have landed.
 Date: 2026-10-23
 
 ## The problem
@@ -392,7 +392,7 @@ uses the OAuth client it was given.
 - [x] 3. The MCP server over HTTP: the protocol library, `server/discover`,
   tools, the validation and errors of FR-5 and FR-6, cacheable lists,
   `Mcp.Test`.
-- [ ] 4. Progress and cancellation.
+- [x] 4. Progress and cancellation.
 - [ ] 5. Elicitation by MRTR, and sealed state.
 - [ ] 6. Resources, resource templates and prompts.
 - [ ] 7. `subscriptions/listen`.

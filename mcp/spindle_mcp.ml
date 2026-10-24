@@ -71,6 +71,63 @@ let tool ?title ?doc ?scope name arguments result f =
     run = Dep.map call f;
   }
 
+let src = Logs.Src.create "spindle-mcp" ~doc:"An MCP server's calls"
+
+module L = (val Logs.src_log src : Logs.LOG)
+
+(* What a call's stream sends: a report as it is made, then the answer. *)
+type note = Report of string | Answer of string
+
+type call = {
+  token : Value.t option;  (** the client's [progressToken], if it asked *)
+  notes : note Eio.Stream.t;
+  last : float Atomic.t;  (** the last report sent *)
+}
+
+(* A tool reporting faster than the client reads waits once this many are
+   unsent. *)
+let unsent_reports = 16
+
+let call =
+  Dep.map
+    (fun body ->
+      let token =
+        match P.read body with
+        | Ok (Request { params; _ }) ->
+            P.member "progressToken" (P.member "_meta" params)
+        | Ok (Notification _) | Error _ -> None
+      in
+      {
+        token;
+        notes = Eio.Stream.create unsent_reports;
+        last = Atomic.make Float.neg_infinity;
+      })
+    Spindle.body
+
+let progress (c : call) ?total ?message done_ =
+  match c.token with
+  | None -> ()
+  | Some token ->
+      (* progress §Requirements: each report larger than the last. *)
+      let rec claim () =
+        let last = Atomic.get c.last in
+        if done_ <= last then false
+        else if Atomic.compare_and_set c.last last done_ then true
+        else claim ()
+      in
+      if claim () then
+        Eio.Stream.add c.notes
+          (Report
+             (P.notification "notifications/progress"
+                ([ ("progressToken", token); ("progress", Value.Number done_) ]
+                @ (match total with
+                  | Some t -> [ ("total", Value.Number t) ]
+                  | None -> [])
+                @
+                match message with
+                | Some m -> [ ("message", Value.String m) ]
+                | None -> [])))
+
 (* tools §Tool Names: what a name SHOULD be, held as a MUST, since a name is
    written in source. *)
 let max_name = 128
@@ -189,7 +246,7 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
     | Some s, Some c -> List.exists (String.equal s) c.scopes
     | Some _, None | None, _ -> true
   in
-  let answer ~id ~meth ~params ~claims ~runs =
+  let answer ~id ~meth ~params ~claims ~runs ~(call : call) =
     let ok members = json (P.result id (members @ [ result_meta ])) in
     let fail ?(status = `OK) ?data code message =
       json ~status (P.error ~id ?data code message)
@@ -261,18 +318,77 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
                       ];
                   ] )
             in
-            match run arguments with
-            | Answered { structured; text } ->
-                ok
-                  [
-                    complete;
-                    content text;
-                    ("structuredContent", structured);
-                    ("isError", Value.Bool false);
-                  ]
-            | Failed why ->
-                ok [ complete; content why; ("isError", Value.Bool true) ]
-            | Broken why -> Error (Spindle.Refusal.internal ~detail:why)))
+            let finished () =
+              match run arguments with
+              | Answered { structured; text } ->
+                  Ok
+                    (P.result id
+                       [
+                         complete;
+                         content text;
+                         ("structuredContent", structured);
+                         ("isError", Value.Bool false);
+                         result_meta;
+                       ])
+              | Failed why ->
+                  Ok
+                    (P.result id
+                       [
+                         complete;
+                         content why;
+                         ("isError", Value.Bool true);
+                         result_meta;
+                       ])
+              | Broken why -> Error why
+            in
+            match call.token with
+            | None -> (
+                match finished () with
+                | Ok text -> json text
+                | Error why -> Error (Spindle.Refusal.internal ~detail:why))
+            (* streamable-http §Receiving Messages: the reports the client asked
+               for, then the answer, which ends the stream. *)
+            | Some _ ->
+                let event data =
+                  match Spindle_http.Event_stream.event data with
+                  | Ok e -> e
+                  | Error _ -> ""
+                in
+                Ok
+                  (Spindle.Response.stream ~content_type:"text/event-stream"
+                     ~headers:[ ("x-accel-buffering", "no") ]
+                     (fun send ->
+                       Eio.Fiber.both
+                         (fun () ->
+                           let text =
+                             match finished () with
+                             | Ok text -> text
+                             | Error why ->
+                                 (* The head has gone, so the bug is told as
+                                    JSON-RPC's own, and here. *)
+                                 L.err (fun m ->
+                                     m
+                                       "a tool's result could not be written: \
+                                        %s"
+                                       why);
+                                 P.error ~id P.Code.internal_error
+                                   "Internal error"
+                           in
+                           Eio.Stream.add call.notes (Answer text))
+                         (fun () ->
+                           (* Once the client has gone nothing more is sent, and
+                              the reports are still taken, so a tool reporting
+                              never waits on a reader that left. *)
+                           let rec drain live =
+                             match Eio.Stream.take call.notes with
+                             | Report r ->
+                                 drain (live && Result.is_ok (send (event r)))
+                             | Answer a ->
+                                 if live then
+                                   ignore (send (event a) : (unit, _) result)
+                           in
+                           drain true);
+                       Ok ()))))
     | _ -> fail ~status:`Not_found P.Code.method_not_found "Method not found"
   in
   (* streamable-http §Server Validation, then basic §_meta, then versioning:
@@ -345,6 +461,7 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
        and+ method_header = header "mcp-method"
        and+ name_header = header "mcp-name"
        and+ runs = runs
+       and+ call = call
        and+ body = Spindle.body in
        match P.read body with
        | Error Parse_error ->
@@ -357,11 +474,11 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
        | Ok (Notification _) -> Ok (Spindle.Response.make ~status:`Accepted "")
        | Ok (Request { id; meth; params }) ->
            checked ~id ~meth ~params ~version_header ~method_header ~name_header
-             (fun () -> answer ~id ~meth ~params ~claims ~runs));
+             (fun () -> answer ~id ~meth ~params ~claims ~runs ~call));
   ]
 
 module Test = struct
-  let call ?now ?(path = "/mcp") ?(headers = [])
+  let call ?now ?progress_token ?(path = "/mcp") ?(headers = [])
       ?(capabilities = Value.Object []) app meth params =
     let meta =
       Value.Object
@@ -369,6 +486,11 @@ module Test = struct
           ("io.modelcontextprotocol/protocolVersion", Value.String P.version);
           ("io.modelcontextprotocol/clientCapabilities", capabilities);
         ]
+      |> fun m ->
+      match (m, progress_token) with
+      | Value.Object members, Some token ->
+          Value.Object (("progressToken", Value.String token) :: members)
+      | m, _ -> m
     in
     let body =
       Value.Object

@@ -10,4 +10,6 @@
   spindle-mcp-client.protocol
   wiretype
   ptime
-  base64))
+  base64
+  logs
+  eio))

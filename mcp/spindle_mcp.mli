@@ -48,6 +48,24 @@ val tool :
     left out of [tools/list], and a call of it is refused [insufficient_scope],
     [403] ({!Spindle.Bearer.scope}'s answer). It needs {!routes}'s [auth]. *)
 
+(** {1 The call} *)
+
+type call
+(** What belongs to one call of a tool, beside its arguments. *)
+
+val call : call Spindle.Dep.t
+(** This call, read by a tool's dependency as {!Spindle.now} is: the same value
+    for every tool, read once. It refuses nothing. *)
+
+val progress : call -> ?total:float -> ?message:string -> float -> unit
+(** [progress call done_]: how far the call has come, of [total] where it is
+    known, [message] for a person. Where the client asked for progress (a
+    [progressToken]), the call is answered as an event stream, each report a
+    [notifications/progress] before the result; where it did not, a report is
+    dropped, so a tool reports the same either way. A report not above the last
+    is dropped too, as the specification has each one larger. A tool that should
+    stop when its caller has gone reads {!Spindle.client_gone} beside it. *)
+
 val routes :
   ?path:Spindle.Path.path ->
   ?guard:unit Spindle.Dep.t ->
@@ -92,6 +110,7 @@ val routes :
 module Test : sig
   val call :
     ?now:Ptime.t ->
+    ?progress_token:string ->
     ?path:string ->
     ?headers:(string * string) list ->
     ?capabilities:Wiretype.Value.t ->
@@ -101,6 +120,6 @@ module Test : sig
     Spindle.Test.response
   (** [call app meth params]: a request of id [1] to [/mcp], or [path], with
       [params] and a [_meta] naming 2026-07-28 and [capabilities] (none), the
-      headers matching it. [headers] are added after them, and [now] is
-      {!Spindle.Test.call}'s. *)
+      headers matching it, and [progress_token] in the [_meta] where given.
+      [headers] are added after them, and [now] is {!Spindle.Test.call}'s. *)
 end

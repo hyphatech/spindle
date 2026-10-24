@@ -71,6 +71,33 @@ and a server missing one does not start. That sets two rules:
     tools
   ```
 
+## Progress, and a caller that left
+
+A tool that takes a while tells the caller how far it has come, and stops
+when nobody is waiting any more:
+
+```ocaml
+let export =
+  Spindle_mcp.tool "export" query_json report_json
+    (let+ db = Db.pool
+     and+ call = Spindle_mcp.call
+     and+ gone = Spindle.client_gone in
+     fun query ->
+       Export.run db query
+         ~progress:(fun n total -> Spindle_mcp.progress call ~total n)
+         ~stop:gone)
+```
+
+- `Spindle_mcp.call` is this call, read as `Spindle.now` is.
+  `Spindle_mcp.progress call n` reports `n`, of `~total` where it is known,
+  with a `~message` for a person.
+- A client that asked for progress is answered as an event stream: each
+  report as it is made, then the result. One that did not is answered as
+  before, and the reports are dropped, so the tool is written once.
+- A report not above the last is dropped, as MCP has each one larger.
+- A client that cancels closes the stream. `Spindle.client_gone` resolves
+  then, and the tool stops where it can -- nothing cuts it off mid-write.
+
 ## Tokens and scopes
 
 With `~auth`, every call needs an [OAuth bearer token](/spindle/guide/oauth/),
@@ -133,6 +160,9 @@ opam install spindle-mcp-client
   arguments through.
 - A tool's own failure is `` `Tool_failed `` with its text; a server's
   refusal is `` `Refused `` with its status and JSON-RPC code.
+- `call ~progress:f` asks the server for progress and hands `f` each
+  report as it arrives. A caller that stops waiting cancels its fiber, which
+  closes the connection: that is how a call is cancelled over HTTP.
 - A server that needs a token is signed in to with `~oauth`, a
   [`Spindle_client.Oauth`](/spindle/guide/oauth/#signing-in-as-a-client):
   a `401` opens the browser for a person to sign in, and the call is

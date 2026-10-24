@@ -108,12 +108,20 @@ val tools : t -> (tool list, [> error ]) result
     of a client, with a [warn] line naming it and why. The list is kept, for the
     headers each call mirrors. *)
 
+type progress = {
+  progress : float;  (** how far the call has come *)
+  total : float option;
+  message : string option;
+}
+(** A report a server sent while a call ran. *)
+
 type answer = {
   content : Wiretype.Value.t list;  (** for a model: text, images, links *)
   structured : Wiretype.Value.t option;  (** [structuredContent] *)
 }
 
 val call :
+  ?progress:(progress -> unit) ->
   t ->
   string ->
   'a Wiretype.t ->
@@ -122,9 +130,12 @@ val call :
   ('r, [> error | `Tool_failed of string ]) result
 (** [call t name arguments value result]: the tool [name], its arguments written
     by [arguments] and its [structuredContent] read by [result]. A result the
-    tool marked [isError] is [`Tool_failed], its text. *)
+    tool marked [isError] is [`Tool_failed], its text. [progress] is told each
+    report the server sends while the tool runs, as it arrives, and asks the
+    server for them ([progressToken]); without it, none is asked for. *)
 
 val call_value :
+  ?progress:(progress -> unit) ->
   t ->
   string ->
   Wiretype.Value.t ->
