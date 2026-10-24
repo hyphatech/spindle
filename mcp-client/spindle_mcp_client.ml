@@ -2,6 +2,7 @@ module P = Spindle_mcp_protocol
 module Value = Wiretype.Value
 module Media_type = Spindle_http.Media_type
 module Event_stream = Spindle_http.Event_stream
+module Oauth = Spindle_client.Oauth
 
 let src =
   Logs.Src.create "spindle-mcp-client" ~doc:"Calls of other servers' tools"
@@ -30,6 +31,7 @@ type t = {
   headers : (string * string) list;
   elicit : elicit option;
   rounds : int;
+  oauth : Oauth.oauth option;
   next_id : int Atomic.t;
   listed : listed list option Atomic.t;
       (** the last list, for the headers a call mirrors *)
@@ -39,7 +41,7 @@ type t = {
 let default_rounds = 3
 
 let create ?name ?version ?(headers = []) ?elicit ?(rounds = default_rounds)
-    client ~url =
+    ?oauth client ~url =
   let info =
     match (name, version) with
     | Some n, Some v ->
@@ -55,6 +57,7 @@ let create ?name ?version ?(headers = []) ?elicit ?(rounds = default_rounds)
     headers;
     elicit;
     rounds;
+    oauth;
     next_id = Atomic.make 1;
     listed = Atomic.make None;
   }
@@ -69,7 +72,8 @@ type error =
   [ Spindle_client.error
   | `Refused of refusal
   | `Unreadable of string
-  | `Unanswered of string ]
+  | `Unanswered of string
+  | `Oauth of string ]
 
 let error_to_string = function
   | #Spindle_client.error as e -> Spindle_client.error_to_string e
@@ -80,6 +84,7 @@ let error_to_string = function
         r.message
   | `Unreadable why -> "an answer that is no MCP answer: " ^ why
   | `Unanswered why -> "a question left unanswered: " ^ why
+  | `Oauth why -> "signing in failed: " ^ why
   | `Tool_failed why -> "the tool failed: " ^ why
 
 let ( let* ) = Result.bind
@@ -144,6 +149,66 @@ let response ~content_type body =
         | Some e -> Ok e.data
         | None -> Error (`Unreadable "a stream that ended with no response"))
 
+(* The bearer challenge's parameters, among an answer's [WWW-Authenticate]
+   fields, read by their parser. *)
+let bearer_challenge headers =
+  List.concat_map
+    (fun (name, value) ->
+      if not (String.equal name "www-authenticate") then []
+      else
+        match Spindle_http.Auth.challenges value with
+        | Ok challenges ->
+            List.concat_map
+              (fun (c : Spindle_http.Auth.t) ->
+                match (c.scheme, c.value) with
+                | "bearer", Params params -> params
+                | _ -> [])
+              challenges
+        | Error _ -> [])
+    headers
+
+(* MCP's authorization: the token kept for the server goes with every
+   request; a 401 signs in where its challenge says, and a 403 for a scope
+   steps up to it, each retried once. *)
+let exchange t ~headers ~body =
+  let send () =
+    let* bearer =
+      match t.oauth with
+      | None -> Ok []
+      | Some o -> (
+          match Oauth.access o ~resource:t.url with
+          | Ok (Some token) -> Ok [ ("authorization", "Bearer " ^ token) ]
+          | Ok None -> Ok []
+          | Error e -> Error e)
+    in
+    Spindle_client.call t.client ~headers:(headers @ bearer) ~body `POST t.url
+  in
+  let* answer = send () in
+  match t.oauth with
+  | None -> Ok answer
+  | Some o -> (
+      let param n = List.assoc_opt n (bearer_challenge answer.headers) in
+      let scopes =
+        Option.map
+          (fun s ->
+            List.filter
+              (fun x -> not (String.equal x ""))
+              (String.split_on_char ' ' s))
+          (param "scope")
+      in
+      let again () =
+        let* (_ : Oauth.tokens) =
+          Oauth.sign_in o ~resource:t.url
+            ?metadata:(param "resource_metadata")
+            ?scopes ()
+        in
+        send ()
+      in
+      match (answer.status, param "error") with
+      | `Unauthorized, _ -> again ()
+      | `Forbidden, Some "insufficient_scope" -> again ()
+      | _ -> Ok answer)
+
 let request t ~meth ?name ?(mirrored = []) params =
   let id = Atomic.fetch_and_add t.next_id 1 in
   let capabilities =
@@ -190,7 +255,7 @@ let request t ~meth ?name ?(mirrored = []) params =
     @ List.map (fun (h, v) -> ("mcp-param-" ^ h, header_value v)) mirrored
     @ t.headers
   in
-  let* answer = Spindle_client.call t.client ~headers ~body:text `POST t.url in
+  let* answer = exchange t ~headers ~body:text in
   let content_type = List.assoc_opt "content-type" answer.headers in
   let refused code message =
     Error (`Refused { status = answer.status; code; message })

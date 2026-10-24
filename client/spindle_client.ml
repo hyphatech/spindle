@@ -1431,16 +1431,10 @@ end
 
 module Oauth = struct
   module Jwk = Spindle_http.Jwk
+  module Value = Wiretype.Value
+  module Urlencoded = Spindle_http.Urlencoded
 
   type keys = kid:string option -> Jwk.t list
-  type metadata = { issuer : string; jwks_uri : string option }
-
-  let metadata_json =
-    Wiretype.Object.(
-      map (fun issuer jwks_uri -> { issuer; jwks_uri })
-      |> mem "issuer" Wiretype.string
-      |> opt_mem "jwks_uri" Wiretype.string
-      |> finish)
 
   (* RFC 8414 §3.1 and OpenID Connect Discovery §4, in the order MCP's
      authorization tries them: the well-known names before the issuer's
@@ -1476,22 +1470,37 @@ module Oauth = struct
              (Spindle_http.Status.to_int status))
     | Error e -> Error (error_to_string e)
 
-  let jwks_uri client ~issuer =
+  let member name = function
+    | Value.Object members -> List.assoc_opt name members
+    | _ -> None
+
+  let string_member name v =
+    match member name v with Some (Value.String s) -> Some s | _ -> None
+
+  (* An authorization server's metadata, the first found where MCP looks for
+     it, and used only where it names that issuer (RFC 8414 §3.3). *)
+  let server_metadata client ~issuer =
     let rec first = function
       | [] -> Error "no metadata was found at any well-known URL"
       | url :: rest -> (
           match fetch client url with
           | Error _ -> first rest
           | Ok body -> (
-              match Wiretype.decode metadata_json body with
-              | Error _ -> Error (url ^ " is no JSON object naming its issuer")
-              (* RFC 8414 §3.3: metadata naming another issuer is not used. *)
-              | Ok m when not (String.equal m.issuer issuer) ->
-                  Error (url ^ " names another issuer")
-              | Ok { jwks_uri = None; _ } -> Error (url ^ " names no jwks_uri")
-              | Ok { jwks_uri = Some u; _ } -> Ok u))
+              match Wiretype.decode Value.json body with
+              | Error _ -> Error (url ^ " is no JSON")
+              | Ok m -> (
+                  match string_member "issuer" m with
+                  | Some i when String.equal i issuer -> Ok m
+                  | Some _ -> Error (url ^ " names another issuer")
+                  | None -> Error (url ^ " names no issuer"))))
     in
     first (metadata_urls issuer)
+
+  let jwks_uri client ~issuer =
+    let* m = server_metadata client ~issuer in
+    Option.to_result
+      (string_member "jwks_uri" m)
+      ~none:(issuer ^ "'s metadata names no jwks_uri")
 
   (* A token naming a key nobody has costs one fetch this often, however many
      arrive. *)
@@ -1544,4 +1553,484 @@ module Oauth = struct
           in
           if (not (List.exists named kept.keys)) && due then refresh ();
           List.filter named kept.keys)
+
+  type registration = {
+    issuer : string;
+    client_id : string;
+    secret : string option;
+  }
+
+  type tokens = {
+    issuer : string;
+    access : string;
+    refresh : string option;
+    expires : Ptime.t option;
+    scopes : string list;
+  }
+
+  type store = {
+    find : resource:string -> tokens option;
+    keep : resource:string -> tokens -> unit;
+  }
+
+  let in_memory () =
+    let kept = Atomic.make [] in
+    {
+      find = (fun ~resource -> List.assoc_opt resource (Atomic.get kept));
+      keep =
+        (fun ~resource tokens ->
+          let rec put () =
+            let old = Atomic.get kept in
+            if
+              not
+                (Atomic.compare_and_set kept old
+                   ((resource, tokens) :: List.remove_assoc resource old))
+            then put ()
+          in
+          put ());
+    }
+
+  type oauth = {
+    client : t;
+    registered : registration list;
+    metadata_document : string option;
+    store : store;
+    wait : Mtime.Span.t;
+    now : unit -> Ptime.t;
+    authorize : string -> unit;
+  }
+
+  (* The client's own, before this module's names them over. *)
+  type calling = error
+
+  let calling_to_string = error_to_string
+
+  type nonrec error = [ error | `Oauth of string ]
+
+  let error_to_string = function
+    | #calling as e -> calling_to_string e
+    | `Oauth why -> "signing in failed: " ^ why
+
+  let is_https url =
+    let u = Uri.of_string url in
+    match (Uri.scheme u, Uri.host u) with
+    | Some "https", Some h -> not (String.equal h "")
+    | _ -> false
+
+  (* A person given this long to sign in has walked away. *)
+  let default_wait = Mtime.Span.(5 * min)
+
+  let create ?(registered = []) ?metadata_document ?(store = in_memory ())
+      ?(wait = default_wait) ~clock ~authorize client =
+    (match metadata_document with
+    | Some url
+      when not
+             (is_https url
+             && not (String.equal (Uri.path (Uri.of_string url)) "")) ->
+        invalid_arg
+          (Printf.sprintf
+             "Spindle_client.Oauth.create: %S is no https URL with a path" url)
+    | _ -> ());
+    {
+      client;
+      registered;
+      metadata_document;
+      store;
+      wait;
+      now = (fun () -> Spindle_http.Instant.of_clock clock);
+      authorize;
+    }
+
+  let oauth_error why = Error (`Oauth why)
+  let lift r = Result.map_error (fun why -> `Oauth why) r
+
+  (* RFC 9728 §3.1, in the order MCP has a client try them: the resource's
+     path after the well-known name, then the root. *)
+  let resource_urls resource =
+    let u = Uri.of_string resource in
+    let at p = Uri.to_string (Uri.with_query (Uri.with_path u p) []) in
+    let root = at "/.well-known/oauth-protected-resource" in
+    let origin = Uri.to_string (Uri.with_query (Uri.with_path u "") []) in
+    match Uri.path u with
+    | "" | "/" -> [ (root, origin) ]
+    | path ->
+        let path =
+          if String.ends_with ~suffix:"/" path then
+            String.sub path 0 (String.length path - 1)
+          else path
+        in
+        [
+          (at ("/.well-known/oauth-protected-resource" ^ path), resource);
+          (root, origin);
+        ]
+
+  (* The resource's metadata, used only where it names the resource it was
+     found for (RFC 9728 §3.3): the URL a request went to where a challenge
+     named it, else the identifier the well-known name was put in. *)
+  let resource_metadata o ~resource ?metadata () =
+    let candidates =
+      match metadata with
+      | Some url -> [ (url, resource) ]
+      | None -> resource_urls resource
+    in
+    let rec first = function
+      | [] -> oauth_error ("no metadata was found for " ^ resource)
+      | (url, expected) :: rest -> (
+          if not (is_https url) then oauth_error (url ^ " is no https URL")
+          else
+            match fetch o.client url with
+            | Error _ -> first rest
+            | Ok body -> (
+                match Wiretype.decode Value.json body with
+                | Error _ -> oauth_error (url ^ " is no JSON")
+                | Ok m -> (
+                    match string_member "resource" m with
+                    | Some r when String.equal r expected -> Ok m
+                    | Some _ -> oauth_error (url ^ " names another resource")
+                    | None -> oauth_error (url ^ " names no resource"))))
+    in
+    first candidates
+
+  let strings name m =
+    match member name m with
+    | Some (Value.Array l) ->
+        List.filter_map (function Value.String s -> Some s | _ -> None) l
+    | _ -> []
+
+  let random_url_safe n =
+    Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet
+      (Mirage_crypto_rng.generate n)
+
+  (* 32 random octets: RFC 7636 §4.1's 43 characters, and as long a state. *)
+  let entropy = 32
+
+  let form_encoded s =
+    let pair = Urlencoded.to_string [ ("x", s) ] in
+    String.sub pair 2 (String.length pair - 2)
+
+  (* Who this client is to that server, in MCP's order: an id registered with
+     it, then a metadata document where it reads them. *)
+  let identity o ~issuer m =
+    match
+      List.find_opt
+        (fun (r : registration) -> String.equal r.issuer issuer)
+        o.registered
+    with
+    | Some r -> Ok (r.client_id, r.secret)
+    | None -> (
+        match
+          (o.metadata_document, member "client_id_metadata_document_supported" m)
+        with
+        | Some url, Some (Value.Bool true) -> Ok (url, None)
+        | _ ->
+            oauth_error
+              (issuer
+             ^ " has no id registered for this client, and reads no metadata \
+                document"))
+
+  let token_request o ~endpoint ~client_id ~secret form =
+    let form =
+      form
+      @ match secret with None -> [ ("client_id", client_id) ] | Some _ -> []
+    in
+    let headers =
+      [
+        ("content-type", "application/x-www-form-urlencoded");
+        ("accept", "application/json");
+      ]
+      @
+      match secret with
+      | Some secret ->
+          (* RFC 6749 §2.3.1: each form-encoded, then joined. *)
+          [
+            ( "authorization",
+              "Basic "
+              ^ Base64.encode_string
+                  (form_encoded client_id ^ ":" ^ form_encoded secret) );
+          ]
+      | None -> []
+    in
+    match
+      call o.client ~headers ~body:(Urlencoded.to_string form) `POST endpoint
+    with
+    | Error e -> Error e
+    | Ok answer -> (
+        match Wiretype.decode Value.json answer.body with
+        | Error _ -> oauth_error "the token endpoint answered no JSON"
+        | Ok v -> (
+            match (answer.status, string_member "access_token" v) with
+            | `OK, Some access -> (
+                match string_member "token_type" v with
+                | Some t when String.equal (String.lowercase_ascii t) "bearer"
+                  ->
+                    Ok (access, v)
+                | _ -> oauth_error "the token endpoint issued no bearer token")
+            | _ ->
+                oauth_error
+                  ("the token endpoint refused: "
+                  ^ Option.value (string_member "error" v) ~default:"no reason"
+                  )))
+
+  let tokens_of o ~issuer ~requested ~previous (access, v) =
+    let now = o.now () in
+    {
+      issuer;
+      access;
+      refresh =
+        (match string_member "refresh_token" v with
+        | Some r -> Some r
+        | None -> previous);
+      expires =
+        (match member "expires_in" v with
+        | Some (Value.Number s) when s > 0. ->
+            Some
+              (Spindle_http.Instant.add now
+                 (Mtime.Span.of_uint64_ns (Int64.of_float (s *. 1e9))))
+        | _ -> None);
+      scopes =
+        (match string_member "scope" v with
+        | Some s ->
+            List.filter
+              (fun x -> not (String.equal x ""))
+              (String.split_on_char ' ' s)
+        | None -> requested);
+    }
+
+  (* RFC 9207 §2.4, as MCP has it: a present iss is compared; an absent one
+     is refused only where the server says it sends one. *)
+  let issued_here ~issuer m params =
+    match
+      ( List.assoc_opt "iss" params,
+        member "authorization_response_iss_parameter_supported" m )
+    with
+    | Some iss, _ when not (String.equal iss issuer) ->
+        oauth_error "the answer names another issuer"
+    | None, Some (Value.Bool true) -> oauth_error "the answer names no issuer"
+    | _ -> Ok ()
+
+  (* RFC 8252 §7.3: the browser is sent back to the loopback address, on a
+     port the system gives, and the first answer there is the one. *)
+  let callback o ~f =
+    Eio.Switch.run @@ fun sw ->
+    let socket =
+      Eio.Net.listen o.client.net ~sw ~backlog:4 ~reuse_addr:true
+        (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
+    in
+    let port =
+      match Eio.Net.listening_addr socket with `Tcp (_, p) -> p | `Unix _ -> 0
+    in
+    let answered, answer = Eio.Promise.create () in
+    let module Head = Spindle_http.Private.Head in
+    let module Write = Spindle_http.Private.Write in
+    Eio.Fiber.fork_daemon ~sw (fun () ->
+        let rec accept () =
+          if Eio.Promise.is_resolved answered then `Stop_daemon
+          else (
+            Eio.Switch.run (fun sw ->
+                let flow, _ = Eio.Net.accept ~sw socket in
+                let ic = Eio.Buf_read.of_flow flow ~max_size:65_536 in
+                match Head.Request.read ~max:65_536 ic with
+                | Error _ -> ()
+                | Ok head ->
+                    let u = Uri.of_string head.target in
+                    let found = String.equal (Uri.path u) "/callback" in
+                    if found && not (Eio.Promise.is_resolved answered) then
+                      Eio.Promise.resolve answer
+                        (Urlencoded.parse
+                           (Option.value (Uri.verbatim_query u) ~default:""));
+                    let body =
+                      if found then "Signed in. You can close this window."
+                      else "Not found."
+                    in
+                    Eio.Buf_write.with_flow flow (fun oc ->
+                        match
+                          Write.response_head oc
+                            (if found then `OK else `Not_found)
+                            [
+                              ("content-type", "text/plain; charset=utf-8");
+                              ( "content-length",
+                                string_of_int (String.length body) );
+                              ("connection", "close");
+                            ]
+                        with
+                        | Ok () -> Eio.Buf_write.string oc body
+                        | Error _ -> ()));
+            accept ())
+        in
+        accept ());
+    f
+      ~redirect_uri:(Printf.sprintf "http://127.0.0.1:%d/callback" port)
+      ~answered
+
+  let sign_in o ~resource ?metadata ?scopes () =
+    let* r = resource_metadata o ~resource ?metadata () in
+    let resource =
+      Option.value (string_member "resource" r) ~default:resource
+    in
+    let* issuer =
+      match strings "authorization_servers" r with
+      | [] -> oauth_error "the resource names no authorization server"
+      | first :: _ as servers -> (
+          match
+            List.find_opt
+              (fun s ->
+                List.exists
+                  (fun (g : registration) -> String.equal g.issuer s)
+                  o.registered)
+              servers
+          with
+          | Some s -> Ok s
+          | None -> Ok first)
+    in
+    let* () =
+      if is_https issuer then Ok ()
+      else oauth_error (issuer ^ " is no https URL")
+    in
+    let* m = lift (server_metadata o.client ~issuer) in
+    let* client_id, secret = identity o ~issuer m in
+    let* authorization_endpoint =
+      Option.to_result
+        (string_member "authorization_endpoint" m)
+        ~none:(`Oauth "the server names no authorization endpoint")
+    in
+    let* token_endpoint =
+      Option.to_result
+        (string_member "token_endpoint" m)
+        ~none:(`Oauth "the server names no token endpoint")
+    in
+    (* RFC 7636 and MCP: a server that names no S256 is not signed in
+       with, since its codes could be redeemed by whoever saw them. *)
+    let* () =
+      if
+        List.exists (String.equal "S256")
+          (strings "code_challenge_methods_supported" m)
+      then Ok ()
+      else oauth_error "the server names no S256 PKCE"
+    in
+    let scopes =
+      match scopes with
+      | None -> strings "scopes_supported" r
+      | Some asked ->
+          let kept =
+            match o.store.find ~resource with
+            | Some (t : tokens) -> t.scopes
+            | None -> []
+          in
+          kept
+          @ List.filter (fun s -> not (List.exists (String.equal s) kept)) asked
+    in
+    let verifier = random_url_safe entropy
+    and state = random_url_safe entropy in
+    let challenge =
+      Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet
+        (Digestif.SHA256.to_raw_string (Digestif.SHA256.digest_string verifier))
+    in
+    callback o ~f:(fun ~redirect_uri ~answered ->
+        let query =
+          Urlencoded.to_string
+            ([
+               ("response_type", "code");
+               ("client_id", client_id);
+               ("redirect_uri", redirect_uri);
+               ("code_challenge", challenge);
+               ("code_challenge_method", "S256");
+               ("state", state);
+               ("resource", resource);
+             ]
+            @
+            match scopes with
+            | [] -> []
+            | s -> [ ("scope", String.concat " " s) ])
+        in
+        let joined =
+          match Uri.verbatim_query (Uri.of_string authorization_endpoint) with
+          | Some _ -> authorization_endpoint ^ "&" ^ query
+          | None -> authorization_endpoint ^ "?" ^ query
+        in
+        o.authorize joined;
+        let* params =
+          match
+            Eio.Time.Timeout.run (Eio.Time.Timeout.v o.client.clock o.wait)
+              (fun () -> Ok (Eio.Promise.await answered))
+          with
+          | Ok p -> Ok p
+          | Error `Timeout -> oauth_error "nobody signed in in time"
+        in
+        (* RFC 9207 §2.4 before anything of the answer is believed, its error
+           among them. *)
+        let* () = issued_here ~issuer m params in
+        let* () =
+          match List.assoc_opt "state" params with
+          | Some s when String.equal s state -> Ok ()
+          | _ -> oauth_error "the answer is not this sign-in's"
+        in
+        let* code =
+          match
+            (List.assoc_opt "code" params, List.assoc_opt "error" params)
+          with
+          | Some c, _ -> Ok c
+          | None, Some e -> oauth_error ("the server refused: " ^ e)
+          | None, None -> oauth_error "the answer has no code"
+        in
+        let* issued =
+          token_request o ~endpoint:token_endpoint ~client_id ~secret
+            [
+              ("grant_type", "authorization_code");
+              ("code", code);
+              ("redirect_uri", redirect_uri);
+              ("code_verifier", verifier);
+              ("resource", resource);
+            ]
+        in
+        let tokens =
+          tokens_of o ~issuer ~requested:scopes ~previous:None issued
+        in
+        o.store.keep ~resource tokens;
+        Ok tokens)
+
+  (* A token this close to its end is refreshed before it is sent. *)
+  let refresh_within = Mtime.Span.(1 * min)
+
+  let access o ~resource =
+    match o.store.find ~resource with
+    | None -> Ok None
+    | Some (tokens : tokens) -> (
+        let expiring =
+          match tokens.expires with
+          | None -> false
+          | Some e ->
+              Mtime.Span.compare
+                (Spindle_http.Instant.until ~now:(o.now ()) e)
+                refresh_within
+              <= 0
+        in
+        match (expiring, tokens.refresh) with
+        | false, _ -> Ok (Some tokens.access)
+        | true, None -> Ok None
+        | true, Some refresh -> (
+            let refreshed =
+              let* m = lift (server_metadata o.client ~issuer:tokens.issuer) in
+              let* client_id, secret = identity o ~issuer:tokens.issuer m in
+              let* token_endpoint =
+                Option.to_result
+                  (string_member "token_endpoint" m)
+                  ~none:(`Oauth "the server names no token endpoint")
+              in
+              token_request o ~endpoint:token_endpoint ~client_id ~secret
+                [
+                  ("grant_type", "refresh_token");
+                  ("refresh_token", refresh);
+                  ("resource", resource);
+                ]
+            in
+            match refreshed with
+            | Ok issued ->
+                let t =
+                  tokens_of o ~issuer:tokens.issuer ~requested:tokens.scopes
+                    ~previous:tokens.refresh issued
+                in
+                o.store.keep ~resource t;
+                Ok (Some t.access)
+            (* One that cannot be refreshed is signed in for again. *)
+            | Error _ -> Ok None))
 end

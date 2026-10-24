@@ -102,6 +102,8 @@
    (>= 3.5.2))
   (domain-name
    (>= 0.5.0))
+  (digestif
+   (>= 1.3.1))
   (logs
    (>= 0.10.0))))
 
@@ -361,7 +363,11 @@
   (mirage-crypto-ec
    (and
     :with-test
-    (>= 2.4.1)))))
+    (>= 2.4.1)))
+  (digestif
+   (and
+    :with-test
+    (>= 1.3.1)))))
 
 (package
  (name spindle-sqlite)

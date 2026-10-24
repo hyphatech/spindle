@@ -92,6 +92,45 @@ first needs them. A token naming a key it has not seen fetches them again,
 at most once a minute, so a key the issuer rotates in is picked up. A fetch
 that fails is a `warn` line, and tokens are refused until one succeeds.
 
+## Signing in, as a client
+
+The other side: a program that calls a protected resource, and signs a
+person in to get its token. `Spindle_client.Oauth` does what MCP's
+authorization asks of a client, with no framework:
+
+```ocaml
+let oauth =
+  Spindle_client.Oauth.create client
+    ~clock:(Eio.Stdenv.clock env)
+    ~metadata_document:"https://app.example.com/oauth/client.json"
+    ~authorize:(fun url -> open_in_browser url)
+
+let token =
+  Spindle_client.Oauth.sign_in oauth ~resource:"https://notes.example.com" ()
+```
+
+- It reads the resource's metadata ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728))
+  and uses it only where it names that resource, then the authorization
+  server's, used only where it names that issuer.
+- It identifies itself by an id registered with that server
+  (`~registered`), or else by the URL of its
+  [Client ID Metadata Document](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/),
+  where the server reads them.
+- `~authorize` is handed the URL a person signs in at, to open in their
+  browser, which is sent back to `http://127.0.0.1:<port>/callback`, a
+  port the system gives. The answer is checked to be this sign-in's
+  (`state`) and the server's own (`iss`,
+  [RFC 9207](https://www.rfc-editor.org/rfc/rfc9207)) before its code is
+  redeemed, with PKCE by `S256` and the `resource` named
+  ([RFC 8707](https://www.rfc-editor.org/rfc/rfc8707)).
+- Tokens are kept in `~store`, by resource -- `Oauth.in_memory ()` unless
+  given; a keychain or a file of the program's own otherwise -- and
+  `Oauth.access` refreshes one as it expires.
+
+An [MCP client](/spindle/guide/mcp/#calling-another-servers-tools) given
+`~oauth` does all of this by itself: a `401` signs in, and a `403` for a
+scope steps up to it, keeping those granted.
+
 ## Testing
 
 A test gives its own keys instead, and signs its own tokens with them:

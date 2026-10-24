@@ -265,6 +265,105 @@ module Oauth : sig
       line, and the kept keys go on answering: none before one succeeds, so
       every token is refused until then. Each call answers the keys of the [kid]
       named, or every key where it names none. *)
+
+  (** {1 Signing in}
+
+      What a client of a protected resource needs: the authorization server
+      found from the resource (RFC 9728) and its own metadata (RFC 8414, OpenID
+      Connect Discovery), a person signed in through their browser by the
+      authorization code grant with PKCE [S256] (RFC 7636), the token asked for
+      that resource alone (RFC 8707), the answer checked to come from that
+      server (RFC 9207), and the token refreshed as it expires.
+
+      {[
+      let oauth =
+        Spindle_client.Oauth.create client ~clock:(Eio.Stdenv.clock env)
+          ~metadata_document:"https://app.example.com/oauth/client.json"
+          ~authorize:(fun url -> open_in_browser url)
+      ]} *)
+
+  type registration = {
+    issuer : string;  (** the authorization server it was registered with *)
+    client_id : string;
+    secret : string option;  (** a confidential client's *)
+  }
+  (** A client registered beforehand with one authorization server, and used
+      with that one alone. *)
+
+  type tokens = {
+    issuer : string;  (** who issued them *)
+    access : string;
+    refresh : string option;
+    expires : Ptime.t option;
+    scopes : string list;
+  }
+
+  type store = {
+    find : resource:string -> tokens option;
+    keep : resource:string -> tokens -> unit;
+  }
+  (** Where tokens are kept, by the resource they are for -- a keychain, a file
+      the program owns. The library writes none itself. *)
+
+  val in_memory : unit -> store
+  (** Tokens kept for as long as the program runs. *)
+
+  type oauth
+  (** A client signing people in. *)
+
+  type nonrec error =
+    [ error
+    | `Oauth of string
+      (** signing in failed: a resource or an authorization server whose
+          metadata could not be found or does not check, no way to identify this
+          client to it, an answer that is not its own, or its refusal; in words,
+          quoting no token *) ]
+
+  val error_to_string : [< error ] -> string
+
+  val create :
+    ?registered:registration list ->
+    ?metadata_document:string ->
+    ?store:store ->
+    ?wait:Mtime.Span.t ->
+    clock:_ Eio.Time.clock ->
+    authorize:(string -> unit) ->
+    t ->
+    oauth
+  (** [authorize] is given the URL a person signs in at, and opens it in their
+      browser. The browser is sent back to [http://127.0.0.1:<port>/callback], a
+      port the system gives, which this client listens on while it waits, at
+      most [wait] (5 min) for the person (RFC 8252 §7.3).
+
+      This client is identified to an authorization server by its [registered]
+      id for that server where there is one, and otherwise by
+      [metadata_document], the HTTPS URL of a Client ID Metadata Document, where
+      the server says it reads them, as MCP orders them. [store] ({!in_memory})
+      keeps the tokens. [clock] says when one expires.
+
+      Raises [Invalid_argument] for a [metadata_document] that is no https URL
+      with a path: a constant written in source. *)
+
+  val access : oauth -> resource:string -> (string option, [> error ]) result
+  (** The access token kept for [resource], refreshed first where it expires
+      within a minute and a refresh token was kept; [None] where none is kept,
+      or one that cannot be refreshed. *)
+
+  val sign_in :
+    oauth ->
+    resource:string ->
+    ?metadata:string ->
+    ?scopes:string list ->
+    unit ->
+    (tokens, [> error ]) result
+  (** Signs a person in for [resource] -- the URL a request was made to -- and
+      keeps the tokens. The resource's metadata is read from [metadata], the URL
+      a [401]'s challenge named, or else from its well-known URL with the
+      resource's path, then without (RFC 9728 §3.1, as MCP orders them), and
+      used only where it names [resource] (§3.3). Its first authorization server
+      this client can identify itself to is asked for [scopes] and those of the
+      tokens kept for [resource], so a step up for one more scope keeps the
+      others (as MCP asks), or else the metadata's [scopes_supported]. *)
 end
 
 (** {1 Spans, sent to a collector} *)

@@ -1,7 +1,7 @@
 # MCP servers and clients, and the OAuth they need
 
 **Status: Accepted** — the whole shape is signed off, the endpoint made routes
-a battery adds on 2026-10-24; stages 1 to 3 and 8 have landed.
+a battery adds on 2026-10-24; stages 1 to 3, 8 and 9 have landed.
 Date: 2026-10-23
 
 ## The problem
@@ -397,7 +397,7 @@ uses the OAuth client it was given.
 - [ ] 6. Resources, resource templates and prompts.
 - [ ] 7. `subscriptions/listen`.
 - [x] 8. The MCP client over HTTP.
-- [ ] 9. The OAuth client, and the MCP client's use of it.
+- [x] 9. The OAuth client, and the MCP client's use of it.
 
 Each stage brings its guide page and examples, its rows and its line in
 `CHANGES.md`.

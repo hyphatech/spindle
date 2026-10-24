@@ -63,6 +63,7 @@
   mirage-crypto-rng.unix
   ; The OAuth rows sign what the server checks.
   mirage-crypto-ec
+  digestif
   base64
   unix)
  (deps

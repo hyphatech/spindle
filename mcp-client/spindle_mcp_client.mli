@@ -39,6 +39,7 @@ val create :
   ?headers:(string * string) list ->
   ?elicit:elicit ->
   ?rounds:int ->
+  ?oauth:Spindle_client.Oauth.oauth ->
   Spindle_client.t ->
   url:string ->
   t
@@ -49,7 +50,13 @@ val create :
     [elicit] answers a server's questions, and is how this client says it can
     ([elicitation] among its capabilities): without it, a server may not ask. A
     call a server asks of is retried with the answers, as a new request, at most
-    [rounds] (3) times. Does no I/O. *)
+    [rounds] (3) times.
+
+    [oauth] signs a person in where the server needs a token, as MCP's
+    authorization has it: the token kept for [url] goes with every request; a
+    [401] signs in at the authorization server its challenge's metadata names,
+    and a [403] [insufficient_scope] steps up to the scope it names, keeping
+    those granted, each retried once. Does no I/O. *)
 
 (** {1 Answers} *)
 
@@ -69,7 +76,9 @@ type error =
         read; in words *)
   | `Unanswered of string
     (** a server that asked questions this client cannot answer -- it has no
-        {!elicit}, or the rounds ran out *) ]
+        {!elicit}, or the rounds ran out *)
+  | `Oauth of string  (** signing in failed, as {!Spindle_client.Oauth} says *)
+  ]
 
 val error_to_string : [< error | `Tool_failed of string ] -> string
 

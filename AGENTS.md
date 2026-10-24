@@ -88,7 +88,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   period shorter than a nanosecond a call), `Spindle.Bearer.make` (for an
   issuer or a resource that is no https URL without a query or a fragment)
   and `Spindle.Bearer.scope` (for a scope that is no RFC 6749
-  scope-token), `Spindle_mcp.routes` (for two tools of one name, a name MCP
+  scope-token), `Spindle_client.Oauth.create` (for a metadata document that
+  is no https URL with a path), `Spindle_mcp.routes` (for two tools of one name, a name MCP
   refuses, arguments whose description is no object, a scope with no
   `~auth`, or a tool whose dependency may refuse, which would refuse every
   call), `Spindle.Server.Limits.make` (for
@@ -207,9 +208,10 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   `test_multipart_rfc`'s, read the same three ways. Review by example misses the requirement nobody thought of.
   Symptom: a MUST nobody noticed, which is how the missing `Host` check was
   found.
-- **An OAuth rule is a row.** A requirement of RFC 6750, 7515, 7517, 7518,
-  8037, 8414, 8707, 9068 or 9728 that Spindle meets, as a resource server
-  or in fetching an issuer's keys, has a row in `test_oauth_rfc`, named by
+- **An OAuth rule is a row.** A requirement of RFC 6749, 6750, 7515, 7517,
+  7518, 7636, 8037, 8252, 8414, 8707, 9068, 9207 or 9728 that Spindle meets,
+  as a resource server, in fetching an issuer's keys or in signing a person
+  in, has a row in `test_oauth_rfc`, named by
   its RFC and section; each RFC's published example is verified as it is
   printed, and its issuer rows take real tokens from node-oidc-provider,
   OpenID Certified, which `make test` runs. Spindle follows the RFC, not

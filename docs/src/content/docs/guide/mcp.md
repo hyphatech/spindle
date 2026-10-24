@@ -133,6 +133,10 @@ opam install spindle-mcp-client
   arguments through.
 - A tool's own failure is `` `Tool_failed `` with its text; a server's
   refusal is `` `Refused `` with its status and JSON-RPC code.
+- A server that needs a token is signed in to with `~oauth`, a
+  [`Spindle_client.Oauth`](/spindle/guide/oauth/#signing-in-as-a-client):
+  a `401` opens the browser for a person to sign in, and the call is
+  retried with the token, which is kept for the next.
 - A server may ask a question in the middle of a call. Give `~elicit` a
   function that answers it -- a person, a form, a policy -- and the call is
   retried with the answer; without one, the client tells servers it answers

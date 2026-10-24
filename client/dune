@@ -22,6 +22,8 @@
   ca-certs
   mirage-crypto-rng
   mirage-crypto-rng.unix
+  ; PKCE's S256 (RFC 7636 §4.2).
+  digestif
   base64
   domain-name
   logs))

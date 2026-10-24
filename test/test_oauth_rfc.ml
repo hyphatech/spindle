@@ -10,6 +10,7 @@ open Spindle.Syntax
 
 let check_bool = Alcotest.(check bool)
 let check_string = Alcotest.(check string)
+let check_int = Alcotest.(check int)
 let b64 s = Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet s
 
 (* ------------------------------------------------------------------ *)
@@ -887,6 +888,434 @@ let test_a_token_of_another_issuer_is_refused () =
   in
   check_status "401" 401 r
 
+(* ------------------------------------------------------------------ *)
+(* Signing in, as a client *)
+
+module Oauth = Spindle_client.Oauth
+
+(* The parts a sign-in meets, each a stub's answer the row may change: the
+   resource's metadata, the authorization server's, and its token
+   endpoint. *)
+type server = {
+  mutable resource_metadata : base:string -> string option;
+      (** at the path's well-known URL *)
+  mutable root_metadata : base:string -> string option;
+  mutable as_metadata : base:string -> string;
+  mutable token : form:(string * string) list -> string;
+}
+
+let resource_doc ?(resource = fun base -> base ^ "/mcp") () ~base =
+  Some
+    (Printf.sprintf
+       {|{"resource":%S,"authorization_servers":[%S],"scopes_supported":["notes:read"]}|}
+       (resource base) base)
+
+let as_doc ?(extra = {|,"authorization_response_iss_parameter_supported":true|})
+    ?(pkce = {|,"code_challenge_methods_supported":["S256"]|}) () ~base =
+  Printf.sprintf
+    {|{"issuer":%S,"authorization_endpoint":"%s/authorize","token_endpoint":"%s/token","client_id_metadata_document_supported":true%s%s}|}
+    base base base pkce extra
+
+let issued ?(access = "at-1") ?(expires_in = 3600) () ~form:_ =
+  Printf.sprintf
+    {|{"access_token":%S,"token_type":"Bearer","expires_in":%d,"refresh_token":"rt-1","scope":"notes:read"}|}
+    access expires_in
+
+let a_server () =
+  {
+    resource_metadata = resource_doc ();
+    root_metadata = (fun ~base:_ -> None);
+    as_metadata = as_doc ();
+    token = issued ();
+  }
+
+let form_of (r : Stub_server.request) = Spindle_http.Urlencoded.parse r.body
+
+(* A sign-in against [server], over TLS, the browser played by [browse]:
+   given the URL a person signs in at and the base, it says where the
+   browser is sent back. *)
+let signing_in ?(server = a_server ()) ?(registered = fun ~base:_ -> [])
+    ?(metadata_document = "https://app.example.com/client.json") browse f =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  let port, start = Stub_server.listen ~sw ~net in
+  let front, authenticator = Tls_front.listen ~sw ~net ~port in
+  let base = Printf.sprintf "https://localhost:%d" front in
+  let asked = ref [] in
+  start (fun (r : Stub_server.request) ->
+      asked := r :: !asked;
+      match r.path with
+      | "/.well-known/oauth-protected-resource/mcp" -> (
+          match server.resource_metadata ~base with
+          | Some d -> json d
+          | None -> not_found)
+      | "/.well-known/oauth-protected-resource" -> (
+          match server.root_metadata ~base with
+          | Some d -> json d
+          | None -> not_found)
+      | "/.well-known/oauth-authorization-server" ->
+          json (server.as_metadata ~base)
+      | "/token" -> json (server.token ~form:(form_of r))
+      | _ -> not_found);
+  let clock = Eio_mock.Clock.make () in
+  Eio_mock.Clock.set_time clock (Ptime.to_float_s now);
+  Spindle_client.run ~authenticator env @@ fun client ->
+  let oauth =
+    Oauth.create ~registered:(registered ~base) ~metadata_document ~clock
+      ~authorize:(fun url ->
+        match browse ~base url with
+        | None -> ()
+        | Some back -> (
+            match Spindle_client.call client `GET back with
+            | Ok _ -> ()
+            | Error e ->
+                Alcotest.failf "the callback: %s" (Oauth.error_to_string e)))
+      client
+  in
+  f ~base ~clock ~oauth ~asked:(fun () -> List.rev !asked)
+
+let query url =
+  Spindle_http.Urlencoded.parse
+    (Option.value ~default:"" (Uri.verbatim_query (Uri.of_string url)))
+
+let param url name = Option.value ~default:"" (List.assoc_opt name (query url))
+
+(* What an authorization server sends the browser back with: a code, the
+   request's state, and its issuer (RFC 9207). *)
+let back_to ?(state = fun url -> param url "state") ?iss ~base url =
+  let iss = match iss with Some i -> i | None -> Some base in
+  Some
+    (param url "redirect_uri" ^ "?"
+    ^ Spindle_http.Urlencoded.to_string
+        ([ ("code", "c-1"); ("state", state url) ]
+        @ match iss with Some i -> [ ("iss", i) ] | None -> []))
+
+let signed_in ?metadata ~base oauth =
+  Oauth.sign_in oauth ~resource:(base ^ "/mcp") ?metadata ()
+
+let check_oauth_error name = function
+  | Error (`Oauth _) -> ()
+  | Ok _ -> Alcotest.failf "%s: signed in" name
+  | Error e -> Alcotest.failf "%s: %s" name (Oauth.error_to_string e)
+
+(* RFC 6749 §4.1, RFC 7636, RFC 8707, RFC 8252 §7.3: a sign-in, as each asks
+   -- the code grant, PKCE by S256, the resource in both requests, the browser
+   sent back to the loopback address. *)
+let test_a_sign_in_as_the_rfcs_ask () =
+  let seen = ref "" in
+  signing_in
+    (fun ~base url ->
+      seen := url;
+      back_to ~base url)
+    (fun ~base ~clock:_ ~oauth ~asked ->
+      let tokens =
+        match signed_in ~base oauth with
+        | Ok t -> t
+        | Error e -> Alcotest.failf "no sign-in: %s" (Oauth.error_to_string e)
+      in
+      check_string "the access token" "at-1" tokens.access;
+      let url = !seen in
+      check_string "to the authorization endpoint" (base ^ "/authorize")
+        (Uri.to_string (Uri.with_query (Uri.of_string url) []));
+      check_string "response_type" "code" (param url "response_type");
+      check_string "client_id" "https://app.example.com/client.json"
+        (param url "client_id");
+      check_string "S256" "S256" (param url "code_challenge_method");
+      check_string "resource" (base ^ "/mcp") (param url "resource");
+      check_string "scope" "notes:read" (param url "scope");
+      check_bool "a state" true (String.length (param url "state") >= 16);
+      let redirect = Uri.of_string (param url "redirect_uri") in
+      check_string "loopback" "127.0.0.1"
+        (Option.value ~default:"" (Uri.host redirect));
+      check_bool "a port" true (Option.is_some (Uri.port redirect));
+      let token =
+        match
+          List.find_opt
+            (fun (r : Stub_server.request) -> String.equal r.path "/token")
+            (asked ())
+        with
+        | Some r -> form_of r
+        | None -> Alcotest.fail "no token request"
+      in
+      let field n = Option.value ~default:"" (List.assoc_opt n token) in
+      check_string "grant_type" "authorization_code" (field "grant_type");
+      check_string "the code" "c-1" (field "code");
+      check_string "the same redirect" (param url "redirect_uri")
+        (field "redirect_uri");
+      check_string "resource again" (base ^ "/mcp") (field "resource");
+      let verifier = field "code_verifier" in
+      check_bool "a verifier of 43 to 128" true
+        (String.length verifier >= 43 && String.length verifier <= 128);
+      check_string "S256 of it"
+        (param url "code_challenge")
+        (b64
+           (Digestif.SHA256.to_raw_string
+              (Digestif.SHA256.digest_string verifier))))
+
+(* RFC 9728 §3.3: metadata naming another resource is not used. *)
+let test_metadata_of_another_resource_is_not_used () =
+  let server = a_server () in
+  server.resource_metadata <-
+    resource_doc ~resource:(fun _ -> "https://evil.example.com/mcp") ();
+  signing_in ~server
+    (fun ~base url -> back_to ~base url)
+    (fun ~base ~clock:_ ~oauth ~asked:_ ->
+      check_oauth_error "another resource" (signed_in ~base oauth))
+
+(* RFC 9728 §3.1 and MCP: the root's metadata when the path's is not
+   found, naming the root. *)
+let test_the_roots_metadata_after_the_paths () =
+  let server = a_server () in
+  server.resource_metadata <- (fun ~base:_ -> None);
+  server.root_metadata <- resource_doc ~resource:(fun base -> base) ();
+  signing_in ~server
+    (fun ~base url -> back_to ~base url)
+    (fun ~base ~clock:_ ~oauth ~asked:_ ->
+      match signed_in ~base oauth with
+      | Ok _ -> ()
+      | Error e -> Alcotest.failf "no sign-in: %s" (Oauth.error_to_string e))
+
+(* RFC 9207 §2.4: an answer naming another issuer is refused; one naming
+   none, where the server says it names one, too; where it says nothing,
+   none is fine. *)
+let test_the_answer_is_the_issuers () =
+  signing_in
+    (fun ~base url -> back_to ~iss:(Some "https://evil.example.com") ~base url)
+    (fun ~base ~clock:_ ~oauth ~asked:_ ->
+      check_oauth_error "another iss" (signed_in ~base oauth));
+  signing_in
+    (fun ~base url -> back_to ~iss:None ~base url)
+    (fun ~base ~clock:_ ~oauth ~asked:_ ->
+      check_oauth_error "no iss, though promised" (signed_in ~base oauth));
+  let server = a_server () in
+  server.as_metadata <- as_doc ~extra:"" ();
+  signing_in ~server
+    (fun ~base url -> back_to ~iss:None ~base url)
+    (fun ~base ~clock:_ ~oauth ~asked:_ ->
+      match signed_in ~base oauth with
+      | Ok _ -> ()
+      | Error e -> Alcotest.failf "none promised: %s" (Oauth.error_to_string e))
+
+(* RFC 6749 §10.12: an answer with a state not this sign-in's is refused. *)
+let test_another_state_is_refused () =
+  signing_in
+    (fun ~base url -> back_to ~state:(fun _ -> "forged") ~base url)
+    (fun ~base ~clock:_ ~oauth ~asked:_ ->
+      check_oauth_error "another state" (signed_in ~base oauth))
+
+(* RFC 7636 and MCP: a server that names no S256 is not signed in with. *)
+let test_a_server_without_pkce_is_refused () =
+  let server = a_server () in
+  server.as_metadata <- as_doc ~pkce:"" ();
+  signing_in ~server
+    (fun ~base url -> back_to ~base url)
+    (fun ~base ~clock:_ ~oauth ~asked:_ ->
+      check_oauth_error "no S256" (signed_in ~base oauth))
+
+(* MCP's client registration: an id registered with the issuer comes
+   first; the metadata document only where the server reads them. *)
+let test_a_registered_id_comes_first () =
+  let seen = ref "" in
+  signing_in
+    ~registered:(fun ~base ->
+      [ { Oauth.issuer = base; client_id = "registered-1"; secret = None } ])
+    (fun ~base url ->
+      seen := url;
+      back_to ~base url)
+    (fun ~base ~clock:_ ~oauth ~asked:_ ->
+      ignore (signed_in ~base oauth : (Oauth.tokens, _) result);
+      check_string "the registered id" "registered-1" (param !seen "client_id"));
+  let server = a_server () in
+  server.as_metadata <-
+    (fun ~base ->
+      Printf.sprintf
+        {|{"issuer":%S,"authorization_endpoint":"%s/authorize","token_endpoint":"%s/token","code_challenge_methods_supported":["S256"]}|}
+        base base base);
+  signing_in ~server
+    (fun ~base url -> back_to ~base url)
+    (fun ~base ~clock:_ ~oauth ~asked:_ ->
+      check_oauth_error "no way to name this client" (signed_in ~base oauth))
+
+(* MCP's step-up: a sign-in for one more scope asks for it and every scope
+   already granted. *)
+let test_a_step_up_keeps_the_scopes_granted () =
+  let seen = ref [] in
+  signing_in
+    (fun ~base url ->
+      seen := param url "scope" :: !seen;
+      back_to ~base url)
+    (fun ~base ~clock:_ ~oauth ~asked:_ ->
+      let resource = base ^ "/mcp" in
+      (match Oauth.sign_in oauth ~resource () with
+      | Ok _ -> ()
+      | Error e -> Alcotest.failf "no sign-in: %s" (Oauth.error_to_string e));
+      (match Oauth.sign_in oauth ~resource ~scopes:[ "notes:write" ] () with
+      | Ok _ -> ()
+      | Error e -> Alcotest.failf "no step-up: %s" (Oauth.error_to_string e));
+      Alcotest.(check (list string))
+        "both asked for"
+        [ "notes:read"; "notes:read notes:write" ]
+        (List.rev !seen))
+
+(* RFC 6749 §6: a token about to expire is refreshed, for the same resource
+   (RFC 8707 §2.2). *)
+let test_an_expiring_token_is_refreshed () =
+  let server = a_server () in
+  signing_in ~server
+    (fun ~base url -> back_to ~base url)
+    (fun ~base ~clock ~oauth ~asked ->
+      (match signed_in ~base oauth with
+      | Ok _ -> ()
+      | Error e -> Alcotest.failf "no sign-in: %s" (Oauth.error_to_string e));
+      let resource = base ^ "/mcp" in
+      check_string "kept" "at-1"
+        (match Oauth.access oauth ~resource with Ok (Some a) -> a | _ -> "");
+      server.token <- issued ~access:"at-2" ();
+      Eio_mock.Clock.set_time clock (Ptime.to_float_s now +. 3590.);
+      check_string "refreshed" "at-2"
+        (match Oauth.access oauth ~resource with Ok (Some a) -> a | _ -> "");
+      match
+        List.rev
+          (List.filter
+             (fun (r : Stub_server.request) -> String.equal r.path "/token")
+             (asked ()))
+      with
+      | r :: _ ->
+          let f = form_of r in
+          check_string "refresh_token" "refresh_token"
+            (Option.value ~default:"" (List.assoc_opt "grant_type" f));
+          check_string "its resource" resource
+            (Option.value ~default:"" (List.assoc_opt "resource" f))
+      | [] -> Alcotest.fail "no refresh")
+
+(* A browser as far as a sign-in needs one: it follows redirects, keeping
+   the cookies each answer sets, until it is sent back to the loopback
+   address, which it calls and stops. *)
+let browse client url =
+  let jar = Hashtbl.create 8 in
+  let rec go url hops =
+    if hops > 20 then Alcotest.fail "redirected too often"
+    else if String.starts_with ~prefix:"http://127.0.0.1" url then
+      match Spindle_client.call client `GET url with
+      | Ok _ -> ()
+      | Error e ->
+          Alcotest.failf "the callback: %s" (Spindle_client.error_to_string e)
+    else
+      let cookie =
+        String.concat "; "
+          (Hashtbl.fold (fun k v acc -> (k ^ "=" ^ v) :: acc) jar [])
+      in
+      let headers =
+        if String.equal cookie "" then [] else [ ("cookie", cookie) ]
+      in
+      match Spindle_client.call client ~headers `GET url with
+      | Error e ->
+          Alcotest.failf "the browser: %s" (Spindle_client.error_to_string e)
+      | Ok r -> (
+          List.iter
+            (fun (name, v) ->
+              if String.equal name "set-cookie" then
+                let pair =
+                  match String.index_opt v ';' with
+                  | Some i -> String.sub v 0 i
+                  | None -> v
+                in
+                match String.index_opt pair '=' with
+                | Some i ->
+                    let k = String.sub pair 0 i
+                    and value =
+                      String.sub pair (i + 1) (String.length pair - i - 1)
+                    in
+                    if String.equal value "" then Hashtbl.remove jar k
+                    else Hashtbl.replace jar k value
+                | None -> ())
+            r.headers;
+          match List.assoc_opt "location" r.headers with
+          | Some l ->
+              go
+                (Uri.to_string
+                   (Uri.resolve "" (Uri.of_string url) (Uri.of_string l)))
+                (hops + 1)
+          | None ->
+              Alcotest.failf "the browser stopped at %d: %s"
+                (Spindle.Status.to_int r.status)
+                r.body)
+  in
+  go url 0
+
+(* Scenario 6: our MCP client calls a tool of our server behind the issuer's
+   tokens; with none, it signs ada in through the browser by the code grant
+   with PKCE, for that resource, and calls again -- and a second call is
+   made with the token kept. *)
+let test_a_person_signs_in_once () =
+  let issuer = Lazy.force provider in
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  let _, authenticator = Tls_front.certificate Name_only in
+  Spindle_client.run ~authenticator env @@ fun client ->
+  let socket =
+    Eio.Net.listen net ~sw ~backlog:8 ~reuse_addr:true
+      (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
+  in
+  let port =
+    match Eio.Net.listening_addr socket with
+    | `Tcp (_, p) -> p
+    | _ -> Alcotest.fail "expected a TCP socket"
+  in
+  let front, _ = Tls_front.listen ~sw ~net ~port in
+  let url = Printf.sprintf "https://localhost:%d/mcp" front in
+  let auth = Bearer.make ~issuer ~resource:url in
+  let city =
+    Wiretype.Object.(
+      map Fun.id |> mem "city" Wiretype.string ~enc:Fun.id |> finish)
+  in
+  let served =
+    Spindle_mcp.routes ~auth ~name:"weather" ~version:"1.0.0"
+      [
+        Spindle_mcp.tool "get_forecast" ~scope:"weather:read" city Wiretype.int
+          (Spindle.Dep.return (fun _ -> Ok 18));
+      ]
+  in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      Spindle.Server.serve_on
+        ~mono_clock:(Eio.Stdenv.mono_clock env)
+        ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+        ~domains:1 ~read_clock:Ptime_clock.now
+        ~limits:(Spindle.Server.Limits.make ~drain:Mtime.Span.(100 * ms) ())
+        [ socket ]
+        (Spindle.Test.app
+           ~resources:
+             [
+               Spindle.Dep.resource (Bearer.keys auth)
+                 (Spindle_client.Oauth.keys client ~issuer);
+             ]
+           (served @ [ Bearer.metadata auth served ]));
+      `Stop_daemon);
+  let sign_ins = ref 0 in
+  let oauth =
+    Oauth.create
+      ~registered:[ { issuer; client_id = "spindle-native"; secret = None } ]
+      ~clock:(Eio.Stdenv.clock env)
+      ~authorize:(fun u ->
+        incr sign_ins;
+        browse client u)
+      client
+  in
+  let mcp = Spindle_mcp_client.create ~oauth client ~url in
+  let call () =
+    match
+      Spindle_mcp_client.call mcp "get_forecast" city "Paris" Wiretype.int
+    with
+    | Ok n -> n
+    | Error e ->
+        Alcotest.failf "the call: %s" (Spindle_mcp_client.error_to_string e)
+  in
+  check_int "the forecast" 18 (call ());
+  check_int "again" 18 (call ());
+  check_int "signed in once" 1 !sign_ins
+
 let issuer_rows =
   match oidc_dir with
   | None ->
@@ -907,6 +1336,8 @@ let issuer_rows =
               `Quick test_a_scope_not_granted_is_insufficient;
             Alcotest.test_case "9068 §4: another issuer's token is refused"
               `Quick test_a_token_of_another_issuer_is_refused;
+            Alcotest.test_case "scenario 6: a person signs in once" `Quick
+              test_a_person_signs_in_once;
           ] );
       ]
 
@@ -983,6 +1414,28 @@ let () =
              test_no_token_is_logged;
            Alcotest.test_case "8414 §2: make refuses what is no https URL"
              `Quick test_make_refuses_what_is_no_https_url;
+         ] );
+       ( "sign-in",
+         [
+           Alcotest.test_case "6749 §4.1, 7636, 8707, 8252: a sign-in" `Quick
+             test_a_sign_in_as_the_rfcs_ask;
+           Alcotest.test_case
+             "9728 §3.3: another resource's metadata is not used" `Quick
+             test_metadata_of_another_resource_is_not_used;
+           Alcotest.test_case "9728 §3.1: the root's metadata after the path's"
+             `Quick test_the_roots_metadata_after_the_paths;
+           Alcotest.test_case "9207 §2.4: the answer is the issuer's" `Quick
+             test_the_answer_is_the_issuers;
+           Alcotest.test_case "6749 §10.12: another state is refused" `Quick
+             test_another_state_is_refused;
+           Alcotest.test_case "7636: a server without S256 is refused" `Quick
+             test_a_server_without_pkce_is_refused;
+           Alcotest.test_case "MCP registration: a registered id first" `Quick
+             test_a_registered_id_comes_first;
+           Alcotest.test_case "MCP step-up: the scopes granted are kept" `Quick
+             test_a_step_up_keeps_the_scopes_granted;
+           Alcotest.test_case "6749 §6: an expiring token is refreshed" `Quick
+             test_an_expiring_token_is_refreshed;
          ] );
        ( "keys",
          [

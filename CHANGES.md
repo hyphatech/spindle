@@ -19,6 +19,15 @@
   called. `Spindle_mcp.Test.call` calls it in a test. MCP's messages are
   `spindle-mcp-client.protocol`. See the guide's *MCP servers*.
 
+- `Spindle_client.Oauth.create` and `sign_in`, an OAuth 2.0 client signing a
+  person in to a protected resource: the resource's metadata (RFC 9728),
+  the authorization server's (RFC 8414), the code grant with PKCE by
+  `S256` (RFC 7636), the browser sent back to the loopback address (RFC
+  8252), the answer checked to be the server's (RFC 9207), the token asked
+  for that resource (RFC 8707), kept in a `store` and refreshed by
+  `access`. `Spindle_mcp_client.create ~oauth` signs in on a `401` and steps
+  up on a `403`.
+
 - `spindle-mcp-client`, calling another server's tools over MCP 2026-07-28
   with no framework: `Spindle_mcp_client.create client ~url`, `discover`,
   `tools`, `call` typed by Wiretype descriptions and `call_value` as JSON. A
