@@ -91,8 +91,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   scope-token), `Spindle_client.Oauth.create` (for a metadata document that
   is no https URL with a path), `Spindle_mcp.routes` (for two tools of one name, a name MCP
   refuses, arguments whose description is no object, a scope with no
-  `~auth`, or a tool whose dependency may refuse, which would refuse every
-  call), `Spindle.Server.Limits.make` (for
+  `~auth`, a question that is no form or two of one key on a tool, or a
+  tool whose dependency may refuse, which would refuse every call), `Spindle.Server.Limits.make` (for
   a limit out of its range), `Spindle.Server.run`, `serve_on` and
   `Spindle.serve` (for fewer than one domain, or a trusted proxy that is no
   address), `Spindle.serve` and

@@ -98,6 +98,38 @@ let export =
 - A client that cancels closes the stream. `Spindle.client_gone` resolves
   then, and the tool stops where it can -- nothing cuts it off mid-write.
 
+## Asking before acting
+
+A tool that deletes, pays or sends asks the person first:
+
+```ocaml
+type confirm = { ok : bool } [@@deriving wiretype]
+
+let sure =
+  Spindle_mcp.Question.form "confirm"
+    ~message:"Delete the folder and all it holds?" confirm_json
+
+let delete =
+  Spindle_mcp.tool "delete_folder" ~asks:[ Spindle_mcp.Question.declare sure ]
+    folder_json Wiretype.string
+    (let+ db = Db.pool and+ call = Spindle_mcp.call in
+     fun folder ->
+       match Spindle_mcp.answer call sure with
+       | Accept { ok = true } -> Folder.delete db folder
+       | Accept _ | Decline | Cancel -> Ok "Nothing was deleted.")
+```
+
+- A question is a form: an object of strings, numbers, integers, booleans
+  and enums, which the client shows the person. `Spindle_mcp.routes`
+  raises `Invalid_argument` for any other.
+- A tool's questions are asked before its function runs. A call without
+  their answers is answered "input required", every question at once; the
+  client asks the person and calls again with the answers, as MCP
+  2026-07-28 has it. So the function always has its answers:
+  `Accept` what they filled in, `Decline`, or `Cancel` if they dismissed it.
+- A client that cannot show a form is told so before anything runs.
+- Claude Code shows the question, and calls again with your answer.
+
 ## Tokens and scopes
 
 With `~auth`, every call needs an [OAuth bearer token](/spindle/guide/oauth/),

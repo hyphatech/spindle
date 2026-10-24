@@ -27,10 +27,34 @@
 type tool
 (** One tool an agent may call. *)
 
+(** A question a tool asks a person before it acts -- "Delete the folder and all
+    it holds?" -- through the client, which shows it as a form (MCP's
+    elicitation). *)
+module Question : sig
+  type 'a t
+
+  val form : string -> message:string -> 'a Wiretype.t -> 'a t
+  (** [form key ~message answer]: [message] for the person, [answer] what they
+      fill in -- an object whose members are strings, numbers, integers,
+      booleans or enums, as a form holds ({!routes} refuses any other). [key]
+      names it among a tool's questions. *)
+
+  type declared
+  (** A question of any answer, as a tool lists them. *)
+
+  val declare : 'a t -> declared
+end
+
+type 'a reply =
+  | Accept of 'a  (** what the person filled in *)
+  | Decline  (** they said no *)
+  | Cancel  (** they dismissed it, choosing nothing *)
+
 val tool :
   ?title:string ->
   ?doc:string ->
   ?scope:string ->
+  ?asks:Question.declared list ->
   string ->
   'a Wiretype.t ->
   'r Wiretype.t ->
@@ -52,6 +76,11 @@ val tool :
 
 type call
 (** What belongs to one call of a tool, beside its arguments. *)
+
+val answer : call -> 'a Question.t -> 'a reply
+(** The person's answer to a question the tool asks ([~asks]), which every call
+    of the tool has before its function runs; a question the tool does not ask
+    reads as [Cancel], as one never put. *)
 
 val call : call Spindle.Dep.t
 (** This call, read by a tool's dependency as {!Spindle.now} is: the same value
@@ -98,12 +127,20 @@ val routes :
     another site's page is refused [403] by the application's forgery check
     ({!Spindle.App.make}), which MCP asks of every server against DNS rebinding.
 
+    A tool's questions ([~asks]) are asked before its function runs: a call
+    without an answer to each, or with one that does not read, is answered
+    [input_required], every such question in one round, and the client calls
+    again with the answers (MCP's multi round-trip requests); a client that
+    declared no form elicitation is answered [400] [-32021] before anything
+    runs.
+
     Raises [Invalid_argument] for two tools of one name, a name MCP refuses
     (outside [A-Za-z0-9_.-], or longer than 128), arguments whose description is
-    no object, a tool with a [scope] and no [auth], or a tool whose dependency
-    may refuse ({!Spindle.Dep.codes}): every one is read on every call, so one
-    that refused would refuse every call. Each is a constant written in source.
-*)
+    no object, a tool with a [scope] and no [auth], a question whose answer is
+    no form (an object of strings, numbers, integers, booleans and enums), two
+    questions of one key on a tool, or a tool whose dependency may refuse
+    ({!Spindle.Dep.codes}): every one is read on every call, so one that refused
+    would refuse every call. Each is a constant written in source. *)
 
 (** Calling the routes in a test, as a client would: the JSON-RPC envelope, the
     [_meta] and the headers MCP asks for, written for the test. *)

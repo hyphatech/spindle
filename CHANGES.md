@@ -19,6 +19,12 @@
   called. `Spindle_mcp.Test.call` calls it in a test. MCP's messages are
   `spindle-mcp-client.protocol`. See the guide's *MCP servers*.
 
+- `Spindle_mcp.Question` and `Spindle_mcp.answer`: a tool asks a person
+  before it acts, its questions declared with `~asks` and asked before its
+  function runs, all at once, as MCP 2026-07-28's multi round-trip requests
+  have it; the function reads each answer, `Accept`, `Decline` or `Cancel`.
+  A client that cannot show a form is answered `-32021`.
+
 - `Spindle_mcp.call` and `Spindle_mcp.progress`: a tool reports how far it
   has come, sent as `notifications/progress` on an event stream to a client
   that asked, and dropped for one that did not; a tool stops for a caller that

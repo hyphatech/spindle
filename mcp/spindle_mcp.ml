@@ -5,6 +5,69 @@ module Value = Wiretype.Value
 module Schema = Wiretype.Schema
 open Spindle.Syntax
 
+(* elicitation §Requested Schema: a form is a flat object, each member a
+   string, a number, an integer, a boolean or an enum, written in place. *)
+let form_schema ~at description =
+  let ctx = Schema.create () in
+  let root = Schema.walk ctx Schema.Decode ~at description in
+  let components = Schema.components ctx in
+  let resolved = function
+    | Schema.Ref name -> (
+        match List.assoc_opt (Schema.name_of_kind name) components with
+        | Some s -> s
+        | None -> Schema.Ref name)
+    | s -> s
+  in
+  let rec primitive = function
+    | Schema.String _ | Schema.Number _ | Schema.Integer _ | Schema.Boolean ->
+        true
+    | Schema.Described { schema; _ } -> primitive schema
+    | _ -> false
+  in
+  match resolved root with
+  | Schema.Object o ->
+      let props =
+        List.map
+          (fun (p : Schema.prop) -> { p with schema = resolved p.schema })
+          o.props
+      in
+      if List.for_all (fun (p : Schema.prop) -> primitive p.schema) props then
+        Ok (Schema.Json_schema.of_t (Schema.Object { o with props }))
+      else Error "an object holding no more than strings, numbers and booleans"
+  | _ -> Error "an object"
+
+module Question = struct
+  type 'a t = {
+    key : string;
+    message : string;
+    answer : 'a Wiretype.t;
+    form : (Value.t, string) result;
+  }
+
+  type declared = Declared : 'a t -> declared
+
+  let form key ~message answer =
+    { key; message; answer; form = form_schema ~at:key answer }
+
+  let declare q = Declared q
+end
+
+type 'a reply = Accept of 'a | Decline | Cancel
+
+(* elicitation §Response Actions: what a person did with a question; an
+   accepted answer that does not read is no answer. *)
+let replied (q : 'a Question.t) response =
+  match
+    (P.member "action" (Some response), P.member "content" (Some response))
+  with
+  | Some (Value.String "accept"), Some content -> (
+      match Wiretype.of_value q.answer content with
+      | Ok a -> Some (Accept a)
+      | Error _ -> None)
+  | Some (Value.String "decline"), _ -> Some Decline
+  | Some (Value.String "cancel"), _ -> Some Cancel
+  | _ -> None
+
 (* What a call of a tool came to. *)
 type outcome =
   | Answered of { structured : Value.t; text : string }
@@ -19,6 +82,7 @@ type tool = {
   input : (Value.t, string) result;  (** [Error] where it is no object *)
   output : Value.t;
   may_refuse : bool;
+  asks : Question.declared list;
   run : (Value.t -> outcome) Dep.t;
 }
 
@@ -39,7 +103,7 @@ let schema dir ~at description =
   in
   (root, Schema.Json_schema.document components root)
 
-let tool ?title ?doc ?scope name arguments result f =
+let tool ?title ?doc ?scope ?(asks = []) name arguments result f =
   let input =
     match schema Schema.Decode ~at:name arguments with
     | Schema.Object _, document -> Ok document
@@ -68,6 +132,7 @@ let tool ?title ?doc ?scope name arguments result f =
     input;
     output;
     may_refuse = (match Dep.codes f with [] -> false | _ :: _ -> true);
+    asks;
     run = Dep.map call f;
   }
 
@@ -80,6 +145,8 @@ type note = Report of string | Answer of string
 
 type call = {
   token : Value.t option;  (** the client's [progressToken], if it asked *)
+  responses : (string * Value.t) list;
+      (** the [inputResponses] a call made again carries, by question *)
   notes : note Eio.Stream.t;
   last : float Atomic.t;  (** the last report sent *)
 }
@@ -91,18 +158,29 @@ let unsent_reports = 16
 let call =
   Dep.map
     (fun body ->
-      let token =
+      let params =
         match P.read body with
-        | Ok (Request { params; _ }) ->
-            P.member "progressToken" (P.member "_meta" params)
+        | Ok (Request { params; _ }) -> params
         | Ok (Notification _) | Error _ -> None
       in
       {
-        token;
+        token = P.member "progressToken" (P.member "_meta" params);
+        responses =
+          (match P.member "inputResponses" params with
+          | Some (Value.Object r) -> r
+          | _ -> []);
         notes = Eio.Stream.create unsent_reports;
         last = Atomic.make Float.neg_infinity;
       })
     Spindle.body
+
+let answer (c : call) (q : 'a Question.t) =
+  match Option.bind (List.assoc_opt q.key c.responses) (replied q) with
+  | Some r -> r
+  | None -> Cancel
+
+let answered (c : call) (Question.Declared q) =
+  Option.is_some (Option.bind (List.assoc_opt q.key c.responses) (replied q))
 
 let progress (c : call) ?total ?message done_ =
   match c.token with
@@ -161,6 +239,20 @@ let check ~auth tools =
           refuse
             (Printf.sprintf "%S needs a scope, and no auth is given" t.name)
       | _ -> ());
+      List.iteri
+        (fun j (Question.Declared q) ->
+          (match q.form with
+          | Error why ->
+              refuse (Printf.sprintf "%S asks %S for %s" t.name q.key why)
+          | Ok _ -> ());
+          if
+            List.exists
+              (fun (Question.Declared r) -> String.equal r.key q.key)
+              (List.filteri (fun k _ -> k < j) t.asks)
+          then
+            refuse
+              (Printf.sprintf "%S asks two questions keyed %S" t.name q.key))
+        t.asks;
       if t.may_refuse then
         refuse
           (Printf.sprintf
@@ -301,6 +393,68 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
             match (auth, t.scope) with
             | Some a, Some s -> Error (Bearer.lacking a s)
             | _ -> fail P.Code.invalid_params "Invalid params: no such tool")
+        (* mrtr §Basic Workflow: a question unanswered, or answered so it
+           does not read, is asked again, every one in one round, before the
+           tool runs. *)
+        | Some (t, _) when List.exists (fun q -> not (answered call q)) t.asks
+          ->
+            let unanswered =
+              List.filter (fun q -> not (answered call q)) t.asks
+            in
+            (* mrtr §Server Requirements 7: a client is asked only what it said
+               it answers; [elicitation: {}] is a form, as it was before modes
+               were named. *)
+            let forms =
+              match
+                P.member "elicitation"
+                  (P.member "io.modelcontextprotocol/clientCapabilities"
+                     (P.member "_meta" params))
+              with
+              | Some (Value.Object modes) ->
+                  List.mem_assoc "form" modes
+                  || not (List.mem_assoc "url" modes)
+              | _ -> false
+            in
+            if not forms then
+              json ~status:`Bad_request
+                (P.error ~id
+                   ~data:
+                     (Value.Object
+                        [
+                          ( "requiredCapabilities",
+                            Value.Object
+                              [
+                                ( "elicitation",
+                                  Value.Object [ ("form", Value.Object []) ] );
+                              ] );
+                        ])
+                   P.Code.missing_capability
+                   "Missing required client capability")
+            else
+              ok
+                [
+                  ("resultType", Value.String "input_required");
+                  ( "inputRequests",
+                    Value.Object
+                      (List.map
+                         (fun (Question.Declared q) ->
+                           ( q.key,
+                             Value.Object
+                               [
+                                 ("method", Value.String "elicitation/create");
+                                 ( "params",
+                                   Value.Object
+                                     [
+                                       ("mode", Value.String "form");
+                                       ("message", Value.String q.message);
+                                       ( "requestedSchema",
+                                         match q.form with
+                                         | Ok s -> s
+                                         | Error _ -> Value.Null );
+                                     ] );
+                               ] ))
+                         unanswered) );
+                ]
         | Some (_, run) -> (
             let arguments =
               Option.value

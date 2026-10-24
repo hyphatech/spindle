@@ -606,13 +606,162 @@ let test_a_call_not_asking_is_one_answer () =
     (text [ "result"; "structuredContent" ] r)
 
 (* ------------------------------------------------------------------ *)
+(* Questions *)
+
+type confirm = { ok : bool }
+
+let confirm_json =
+  Wiretype.Object.(
+    map (fun ok -> { ok })
+    |> mem "ok" Wiretype.bool ~enc:(fun c -> c.ok)
+    |> finish)
+
+type reason = { why : string }
+
+let reason_json =
+  Wiretype.Object.(
+    map (fun why -> { why })
+    |> mem "why" Wiretype.string ~enc:(fun r -> r.why)
+    |> finish)
+
+let sure =
+  Mcp.Question.form "confirm" ~message:"Delete the folder and all it holds?"
+    confirm_json
+
+let because = Mcp.Question.form "reason" ~message:"Why?" reason_json
+
+let delete =
+  Mcp.tool "delete_folder"
+    ~asks:[ Mcp.Question.declare sure; Mcp.Question.declare because ]
+    query_json Wiretype.string
+    (let+ call = Mcp.call in
+     fun q ->
+       match (Mcp.answer call sure, Mcp.answer call because) with
+       | Accept { ok = true }, Accept { why } ->
+           Ok ("deleted " ^ q.city ^ " because " ^ why)
+       | _ -> Ok "Nothing was deleted.")
+
+let asking_app () =
+  Spindle.Test.app (Mcp.routes ~name:"files" ~version:"1" [ delete ])
+
+let forms =
+  Value.Object [ ("elicitation", Value.Object [ ("form", Value.Object []) ]) ]
+
+let delete_call ?(capabilities = forms) responses =
+  Mcp.Test.call ~capabilities (asking_app ()) "tools/call"
+    ([ ("name", Value.String "delete_folder"); ("arguments", paris) ]
+    @
+    match responses with
+    | [] -> []
+    | r -> [ ("inputResponses", Value.Object r) ])
+
+let accepted content =
+  Value.Object [ ("action", Value.String "accept"); ("content", content) ]
+
+(* mrtr §Basic Workflow: a call without the answers its tool needs is
+   answered input_required, every question at once, each a form. *)
+let test_a_tools_questions_are_asked_at_once () =
+  let r = delete_call [] in
+  check_status "200" 200 r;
+  check_string "input_required" {|"input_required"|}
+    (text [ "result"; "resultType" ] r);
+  List.iter
+    (fun (key, message) ->
+      let q = at [ "result"; "inputRequests"; key ] (json r) in
+      check_string (key ^ ", its method") {|"elicitation/create"|}
+        (Yojson.Safe.to_string (at [ "method" ] q));
+      check_string (key ^ ", a form") {|"form"|}
+        (Yojson.Safe.to_string (at [ "params"; "mode" ] q));
+      check_string (key ^ ", its message")
+        (Printf.sprintf "%S" message)
+        (Yojson.Safe.to_string (at [ "params"; "message" ] q));
+      check_string (key ^ ", an object") {|"object"|}
+        (Yojson.Safe.to_string (at [ "params"; "requestedSchema"; "type" ] q)))
+    [ ("confirm", "Delete the folder and all it holds?"); ("reason", "Why?") ];
+  check_string "no state" "null" (text [ "result"; "requestState" ] r)
+
+(* mrtr §Basic Workflow: the call made again with the answers runs the tool,
+   which reads each. *)
+let test_the_answers_reach_the_tool () =
+  let ok = Value.Object [ ("ok", Value.Bool true) ]
+  and why = Value.Object [ ("why", Value.String "tidy") ] in
+  let r = delete_call [ ("confirm", accepted ok); ("reason", accepted why) ] in
+  check_string "accepted" {|"deleted Paris because tidy"|}
+    (text [ "result"; "structuredContent" ] r);
+  let r =
+    delete_call
+      [
+        ("confirm", Value.Object [ ("action", Value.String "decline") ]);
+        ("reason", accepted why);
+      ]
+  in
+  check_string "declined" {|"Nothing was deleted."|}
+    (text [ "result"; "structuredContent" ] r)
+
+(* mrtr §Error Handling: an answer that does not read is asked for again,
+   rather than refused. *)
+let test_an_unreadable_answer_is_asked_again () =
+  let r =
+    delete_call
+      [
+        ("confirm", accepted (Value.Object [ ("ok", Value.String "yes") ]));
+        ("reason", accepted (Value.Object [ ("why", Value.String "tidy") ]));
+      ]
+  in
+  check_string "input_required" {|"input_required"|}
+    (text [ "result"; "resultType" ] r);
+  check_bool "confirm again" true
+    (match at [ "result"; "inputRequests"; "confirm" ] (json r) with
+    | `Null -> false
+    | _ -> true);
+  check_string "reason not again" "null"
+    (text [ "result"; "inputRequests"; "reason" ] r)
+
+(* basic §_meta and mrtr §Server Requirements 7: a client that declared no
+   form elicitation is never asked, and is answered -32021 naming it. *)
+let test_a_client_that_answers_no_forms_is_told () =
+  let r = delete_call ~capabilities:(Value.Object []) [] in
+  check_error "400" ~status:400 ~code:(-32021) r;
+  check_string "what it needs" "{}"
+    (text [ "error"; "data"; "requiredCapabilities"; "elicitation"; "form" ] r)
+
+(* What routes refuses of questions, each a constant written in source. *)
+let test_routes_refuses_what_is_no_form () =
+  let refused name asks =
+    check_bool name true
+      (match
+         Mcp.routes ~name:"w" ~version:"1"
+           [
+             Mcp.tool "t" ~asks query_json Wiretype.string
+               (Spindle.Dep.return (fun _ -> Ok ""));
+           ]
+       with
+      | _ -> false
+      | exception Invalid_argument _ -> true)
+  in
+  refused "a list for an answer"
+    [
+      Mcp.Question.declare
+        (Mcp.Question.form "l" ~message:"?" (Wiretype.list Wiretype.string));
+    ];
+  refused "an object holding an object"
+    [
+      Mcp.Question.declare
+        (Mcp.Question.form "o" ~message:"?"
+           Wiretype.Object.(
+             map Fun.id |> mem "inner" query_json ~enc:Fun.id |> finish));
+    ];
+  refused "two of one key"
+    [ Mcp.Question.declare sure; Mcp.Question.declare sure ]
+
+(* ------------------------------------------------------------------ *)
 (* The client *)
 
 module Client = Spindle_mcp_client
 
 (* A Spindle server on a socket of its own, and a client to call it. *)
-let over_a_socket ?(routes = Mcp.routes ~name:"weather" ~version:"1.0.0" tools)
-    f =
+let over_a_socket ?elicit
+    ?(routes = Mcp.routes ~name:"weather" ~version:"1.0.0" tools) f =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let socket =
@@ -637,7 +786,9 @@ let over_a_socket ?(routes = Mcp.routes ~name:"weather" ~version:"1.0.0" tools)
            routes);
       `Stop_daemon);
   Spindle_client.run env @@ fun client ->
-  f (Client.create client ~url:(Printf.sprintf "http://127.0.0.1:%d/mcp" port))
+  f
+    (Client.create ?elicit client
+       ~url:(Printf.sprintf "http://127.0.0.1:%d/mcp" port))
 
 (* A stub server answering as the test says, and what it was asked. *)
 let against respond f =
@@ -942,6 +1093,27 @@ let test_the_client_reports_progress () =
   check_bool "its result" true (Option.is_some a.structured);
   Alcotest.(check (list (float 0.))) "each report" [ 1.; 2. ] (List.rev !seen)
 
+(* Scenario 3: our client answers our server's questions through the
+   function it was given, and the tool runs on the answers. *)
+let test_our_client_answers_our_servers_questions () =
+  let asked = ref [] in
+  let elicit ~message ~schema:_ =
+    asked := message :: !asked;
+    match message with
+    | "Why?" -> Client.Accept (Value.Object [ ("why", Value.String "tidy") ])
+    | _ -> Client.Accept (Value.Object [ ("ok", Value.Bool true) ])
+  in
+  over_a_socket ~elicit
+    ~routes:(Mcp.routes ~name:"files" ~version:"1" [ delete ])
+  @@ fun c ->
+  let r =
+    ok
+      (Client.call c "delete_folder" query_json { city = "Paris" }
+         Wiretype.string)
+  in
+  check_string "the tool ran on them" "deleted Paris because tidy" r;
+  check_int "both asked" 2 (List.length !asked)
+
 let () =
   Alcotest.run "mcp-spec"
     [
@@ -1002,6 +1174,21 @@ let () =
             `Quick test_a_scope_not_granted_is_403;
           Alcotest.test_case "9728 §2: the metadata names every scope" `Quick
             test_the_metadata_names_every_tools_scope;
+        ] );
+      ( "questions",
+        [
+          Alcotest.test_case "mrtr §Basic: a tool's questions, at once" `Quick
+            test_a_tools_questions_are_asked_at_once;
+          Alcotest.test_case "mrtr §Basic: the answers reach the tool" `Quick
+            test_the_answers_reach_the_tool;
+          Alcotest.test_case "mrtr §Errors: an unreadable answer, again" `Quick
+            test_an_unreadable_answer_is_asked_again;
+          Alcotest.test_case "mrtr §Server 7: no form elicitation is -32021"
+            `Quick test_a_client_that_answers_no_forms_is_told;
+          Alcotest.test_case "routes refuses a question that is no form" `Quick
+            test_routes_refuses_what_is_no_form;
+          Alcotest.test_case "scenario 3: our client answers our server" `Quick
+            test_our_client_answers_our_servers_questions;
         ] );
       ( "progress",
         [

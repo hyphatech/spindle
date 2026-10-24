@@ -1,7 +1,7 @@
 # MCP servers and clients, and the OAuth they need
 
 **Status: Accepted** — the whole shape is signed off, the endpoint made routes
-a battery adds on 2026-10-24; stages 1 to 4, 8 and 9 have landed.
+a battery adds on 2026-10-24; stages 1 to 5, 8 and 9 have landed.
 Date: 2026-10-23
 
 ## The problem
@@ -287,35 +287,37 @@ arguments where a body is described.
 ### Questions by MRTR
 
 ```ocaml
-let confirm =
-  Mcp.Question.elicit "confirm" ~message:"Delete the folder and all it holds?"
+let sure =
+  Mcp.Question.form "confirm" ~message:"Delete the folder and all it holds?"
     confirm_json
 
 let delete =
-  Mcp.tool "delete_folder" ~asks:[ Mcp.Question.any confirm ] folder_json
+  Mcp.tool "delete_folder" ~asks:[ Mcp.Question.declare sure ] folder_json
     Wiretype.string
     (let+ db = Db.pool and+ call = Mcp.call in
      fun folder ->
-       match Mcp.answer call confirm with
-       | Accept _ -> Folder.delete db folder
-       | Decline | Cancel -> Ok "Nothing was deleted.")
+       match Mcp.answer call sure with
+       | Accept { ok = true } -> Folder.delete db folder
+       | Accept _ | Decline | Cancel -> Ok "Nothing was deleted.")
 ```
 
-A tool names the questions it asks, as it names its scope. The route asks
-every one the call has not answered in one round, `input_required`,
-before the tool's function runs, so the function reads each answer and
-never a missing one; a client that did not declare `elicitation` is
-answered `-32021` before anything runs.
+A tool declares the questions it asks, as it names its scope, and as a
+stream declares its events. The route asks every one the call has not
+answered, or answered so it does not read, in one round,
+`input_required`, before the tool's function runs, so the function reads
+each answer and never a missing one; a client that did not declare form
+elicitation is answered `-32021` before anything runs. A question is a
+form: an object of strings, numbers, integers, booleans and enums, as MCP
+has a form be, which `routes` holds as it is made.
 
-A tool that keeps no state sends no `requestState`: the client re-sends
-the arguments, and an elicitation's answer is the person's own input,
-which nothing on the server needs to vouch for. A tool that keeps state
-across rounds reads it from the call by its description, sealed with the
-application's key ring as an encrypted cookie is, bound to the caller's
-subject, the method, the tool, a digest of the arguments and an expiry
-from `now`; one that fails any of them is absent and the question is
-asked again, never an error.
+Asked before the tool runs, a question needs nothing kept across rounds:
+the client sends the arguments again, and an answer is the person's own
+input, which nothing on the server vouches for. So no `requestState` is
+sent, and no key ring is needed.
 
+*Rejected:* a question decided as the tool runs ("ask only if the folder
+is not empty"), for now: it needs the function to stop and ask, and a
+state sealed across the rounds, and no tool needs it yet (*Open*).
 *Rejected:* sealing a state on every round, which costs a key ring every
 MCP server must configure, to protect nothing a tool reads.
 
@@ -393,7 +395,7 @@ uses the OAuth client it was given.
   tools, the validation and errors of FR-5 and FR-6, cacheable lists,
   `Mcp.Test`.
 - [x] 4. Progress and cancellation.
-- [ ] 5. Elicitation by MRTR, and sealed state.
+- [x] 5. Elicitation by MRTR, its questions declared on a tool.
 - [ ] 6. Resources, resource templates and prompts.
 - [ ] 7. `subscriptions/listen`.
 - [x] 8. The MCP client over HTTP.
@@ -416,8 +418,11 @@ Each stage brings its guide page and examples, its rows and its line in
   2026-07-28 yet (*Open*).
 - By hand: Claude Code connects to the example server and calls a tool --
   done on 2026-10-24 with Claude Code 2.1.310, which discovered the
-  server, listed its tool and called it -- and, once stage 9 lands,
-  signs in.
+  server, listed its tool and called it; and, against a probe server
+  asking a question, declared form and link elicitation, answered it --
+  cancelling, run with nobody to ask -- and called again with the answer
+  and the state echoed. Signing in waits on an authorization server of
+  the owner's choosing.
 
 ## Open
 
@@ -434,7 +439,11 @@ Each stage brings its guide page and examples, its rows and its line in
    2.4.0 speaks 2026-07-28 -- each opens with `initialize` -- so the
    interoperability run the PRD first planned waits for one that does,
    and runs on Bun when it comes. Blocks nothing.
-5. **The official conformance suite.** Whether MCP's covers 2026-07-28
+5. **Questions decided as a tool runs, and links.** A question asked
+   only on what the tool found, and the sealed `requestState` it needs,
+   and MCP's link elicitation -- sending the person to a page -- which
+   Claude Code declares. Proposed: when a tool needs one. Blocks nothing.
+6. **The official conformance suite.** Whether MCP's covers 2026-07-28
    and can run in CI. Blocks nothing; strengthens *Verification*.
 
 ## Where the facts go
