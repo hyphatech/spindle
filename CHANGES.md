@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.11.0 (2026-10-24)
 
 - The client and HTTP are packages of their own, `spindle-client` and
   `spindle-http`, so an Eio program that only calls other servers installs
