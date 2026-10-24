@@ -1,0 +1,124 @@
+---
+title: MCP servers
+---
+
+Give an agent tools to call. `spindle-mcp` serves the
+[Model Context Protocol](https://modelcontextprotocol.io/specification/2026-07-28),
+revision 2026-07-28, over HTTP: one `POST` endpoint, added to your routes as
+[health checks](/spindle/guide/health/) are.
+
+```sh
+opam install spindle-mcp
+```
+
+## A tool
+
+```ocaml
+--8<-- "mcp.ml:tool"
+```
+
+A tool is a name, the description of its arguments, the description of its
+result, and a [dependency](/spindle/tutorial/dependencies/) giving the
+function a call runs -- as a health check is a name and a dependency giving
+the function a probe runs.
+
+- The arguments' description is printed as the tool's `inputSchema`, and
+  must be an object; the result's as its `outputSchema`. Nothing else
+  states them.
+- The function's `Ok` is the result: `structuredContent`, and its JSON as
+  text beside it. Its `Error` is a result too, `isError`, with the
+  refusal's sentence: the model reads it and can try again. So are
+  arguments that do not read, with every problem named.
+- `~title` is for a person, `~doc` for the model.
+
+## Serving it
+
+```ocaml
+--8<-- "mcp.ml:serve"
+```
+
+`Spindle_mcp.routes` is `POST /mcp` (or `~path`), serving
+`server/discover`, `tools/list` and `tools/call`:
+
+```console
+$ curl -X POST localhost:8080/mcp -H 'content-type: application/json' \
+    -H 'mcp-protocol-version: 2026-07-28' -H 'mcp-method: tools/call' \
+    -H 'mcp-name: get_forecast' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_forecast",
+         "arguments":{"city":"Paris"},"_meta":{"io.modelcontextprotocol/protocolVersion":
+         "2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+{"jsonrpc":"2.0","id":1,"result":{"resultType":"complete","content":[{"type":"text",
+"text":"{\"city\":\"Paris\",\"celsius\":18}"}],"structuredContent":{"city":"Paris",
+"celsius":18},"isError":false,"_meta":{"io.modelcontextprotocol/serverInfo":
+{"name":"weather","version":"1.0.0"}}}}
+```
+
+Every tool's dependency is read on every call, as every health check's is on
+every probe, so the endpoint reads the same on every request: what it reads
+is listed, the resources its tools read are checked as the server starts,
+and a server missing one does not start. That sets two rules:
+
+- **A tool's dependency hands over what the server holds** -- a pool, a
+  client -- and its function does the work.
+- **A tool's dependency refuses nothing.** One that could -- a rate limit, a
+  required header -- would refuse every call, so `Spindle_mcp.routes` raises
+  `Invalid_argument` for it. What refuses for the whole endpoint is
+  `~guard`, read first:
+
+  ```ocaml
+  Spindle_mcp.routes ~name ~version
+    ~guard:(Spindle.Rate.limit calls ~key:Spindle.client_ip)
+    tools
+  ```
+
+## Tokens and scopes
+
+With `~auth`, every call needs an [OAuth bearer token](/spindle/guide/oauth/),
+and a tool may need a scope:
+
+```ocaml
+let forecast =
+  Spindle_mcp.tool "get_forecast" ~scope:"weather:read" query_json
+    forecast_json (...)
+
+let routes =
+  let served = Spindle_mcp.routes ~auth ~name ~version [ forecast ] in
+  served @ [ Spindle.Bearer.metadata auth served ]
+```
+
+- `tools/list` names only the tools the token grants, so a model is never
+  shown one it cannot call; a call of one it lacks is a `403`
+  `insufficient_scope` naming the scope, so the client can ask for it.
+- The metadata document names every tool's scope in `scopes_supported`.
+
+## What a client is told
+
+The server speaks 2026-07-28 alone, and answers as that revision says:
+
+| | Answer |
+|---|---|
+| A body that is no JSON | `400`, `-32700` |
+| A batch, a `null` id, a response | `400`, `-32600` |
+| `MCP-Protocol-Version`, `Mcp-Method` or `Mcp-Name` missing or not the body's | `400`, `-32020` |
+| Another version, or a legacy client's `initialize` | `400`, `-32022`, naming 2026-07-28 |
+| `_meta` without the version or the client's capabilities | `400`, `-32602` |
+| A method it does not serve | `404`, `-32601` |
+| An unknown tool | `-32602` |
+| A notification | `202`, no body |
+| A request from another site's page | `403`, the application's [forgery check](/spindle/guide/cookies/#csrf-and-cors) |
+| `GET` | `405` |
+
+The server keeps nothing between requests: 2026-07-28 has no session, and
+each call is answered on its own, on whichever domain or instance takes it.
+
+## Testing
+
+`Spindle_mcp.Test.call` sends a request as a client would -- the JSON-RPC
+envelope, the `_meta` and the headers -- to an app made with
+`Spindle.Test.app`:
+
+```ocaml
+let r =
+  Spindle_mcp.Test.call app "tools/call"
+    [ ("name", String "get_forecast"); ("arguments", Object [ ("city", String "Paris") ]) ]
+```

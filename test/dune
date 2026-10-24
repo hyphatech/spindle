@@ -17,6 +17,7 @@
   test_structured
   test_spindle_postgres
   test_oauth_rfc
+  test_mcp_spec
   test_cli)
  (package spindle-postgres)
  (modules :standard \ cli_app serve_app test_docs test_spindle_sqlite)
@@ -25,6 +26,8 @@
   spindle-http
   spindle-client
   spindle-postgres
+  spindle-mcp
+  spindle-mcp-client.protocol
   rowtype
   rowtype-postgres
   wiretype

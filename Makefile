@@ -7,7 +7,7 @@ export PG_TEST_PORT
 
 DOCS_PORT ?= 4321
 # The reference is odoc's, for Spindle's own packages and nothing under them.
-REFERENCE = spindle spindle-http spindle-client spindle-cli spindle-postgres spindle-sqlite odoc.support
+REFERENCE = spindle spindle-http spindle-client spindle-mcp spindle-mcp-client spindle-cli spindle-postgres spindle-sqlite odoc.support
 
 .DEFAULT_GOAL := help
 .PHONY: help setup build test lint fmt docs docs-serve reference db db-down

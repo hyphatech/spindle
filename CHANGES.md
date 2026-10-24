@@ -10,6 +10,19 @@
   installs both still. Their log sources are renamed the same way, from
   `spindle.http` and `spindle.client`.
 
+- `spindle-mcp`, a Model Context Protocol server: `Spindle_mcp.routes`
+  serves MCP 2026-07-28 over HTTP at `POST /mcp` -- `server/discover`,
+  `tools/list` and `tools/call` -- added to an application's routes as
+  `Health.routes` are. A tool is `Spindle_mcp.tool name arguments result f`,
+  its schemas printed from its descriptions; with `~auth` every call needs a
+  bearer token and a tool's `~scope` decides whether it is listed and may be
+  called. `Spindle_mcp.Test.call` calls it in a test. MCP's messages are
+  `spindle-mcp-client.protocol`. See the guide's *MCP servers*.
+
+- `Spindle.Bearer.lacking` and `Spindle.Bearer.insufficient_scope`: the
+  `403` `Bearer.scope` answers, for a route that knows the scope it needs
+  only as it runs.
+
 - `Spindle.Bearer`, an OAuth 2.0 resource server: `Bearer.make ~issuer
   ~resource`, `Bearer.claims`, a JWT access token checked as RFC 9068 §4
   asks -- its signature by RS256, ES256 or EdDSA, `typ` `at+jwt`, `iss`,

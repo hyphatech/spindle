@@ -1,7 +1,7 @@
 # MCP servers and clients, and the OAuth they need
 
-**Status: Accepted** — the whole shape is signed off; stages 1 and 2 have
-landed.
+**Status: Accepted** — the whole shape is signed off, the endpoint made routes
+a battery adds on 2026-10-24; stages 1 to 3 have landed.
 Date: 2026-10-23
 
 ## The problem
@@ -116,10 +116,11 @@ It does not cover:
 - **FR-3.** A server that requires a bearer token serves its RFC 9728
   metadata document at the well-known path its resource's URI gives, its
   `scopes_supported` the scopes its routes read.
-- **FR-4.** A tool is one value: its name, what it reads -- arguments,
-  resources, credentials, as any dependency -- and what it returns; its
-  input and output schemas are printed from the descriptions it reads and
-  returns, and nothing else states them.
+- **FR-4.** The MCP endpoint is routes a battery adds, as Health's are,
+  whose reads are listed and checked as any route's; a tool is one value
+  -- its name, the scope it needs, its arguments' and its result's
+  descriptions, and a dependency giving its function -- whose input and
+  output schemas are printed from those descriptions and nothing else.
 - **FR-5.** The MCP endpoint answers 2026-07-28 and nothing else: it
   validates `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` against
   the body, the required `_meta`, the `Origin`, and the client's
@@ -177,103 +178,138 @@ which is what scenario 7 is about; and a repository of its own for the
 HTTP client, as Wiretype and Rowtype have, which pays for a release
 cadence and users outside Hypha Stack that the client does not have.
 
-### A tool is a route's twin
+### The endpoint is routes, as Health's are
+
+MCP over HTTP is one `POST` endpoint whose body and answer have a fixed
+shape, so `spindle-mcp` is a battery of the kind Spindle already has
+three of -- `Health.routes`, `Metrics.routes`, `Openapi.routes`: a
+function returning ordinary routes, whose parts are dependencies that
+hand over a function.
 
 ```ocaml
 module Mcp = Spindle_mcp
 
+(* As a health check is a name and a dependency giving the function a
+   probe runs, a tool is a name, its descriptions and a dependency giving
+   the function a call runs. *)
 let forecast =
   Mcp.tool "get_forecast" ~title:"Forecast"
-    ~doc:"The weather for a city, a day at a time."
-    (Mcp.Returns.json forecast_json)
-    (let+ q = Mcp.arguments query_json
-     and+ db = Db.pool
-     and+ () = Spindle.Bearer.scope auth "weather:read" in
-     Forecast.find db q)
+    ~doc:"The weather for a city, a day at a time." ~scope:"weather:read"
+    query_json forecast_json
+    (let+ db = Db.pool in
+     fun query -> Forecast.find db query)
 
-let () =
-  Eio_main.run @@ fun env ->
-  Spindle.serve env ~resources:[ ... ]
-    (Mcp.routes Path.(s "mcp") ~name:"weather" ~version:"1.0.0"
-       ~tools:[ forecast ] ())
+let routes =
+  let served =
+    app_routes @ Mcp.routes ~name:"weather" ~version:"1.0.0" ~auth [ forecast ]
+  in
+  served @ [ Spindle.Bearer.metadata auth served ]
 ```
 
-A tool's arguments are a dependency, `Mcp.arguments`, as a path parameter
-is `Spindle.param`, so *A route is one value, and a dependency hands over
-an input* holds for a tool unchanged: what it reads is listed, its
-`inputSchema` is the description its `Mcp.arguments` reads (Wiretype
-prints JSON Schema 2020-12 already), and a tool that reads two is refused
-when the routes are made. Everything a route may read, a tool may: a
-resource, the bearer's claims, a rate limit, `Spindle.now`.
+`Mcp.routes` is one `POST` at `/mcp`, or `?path`, as `Health.routes`
+takes `?live`. Its dependencies are MCP's own -- the body, read by
+`Spindle.json`, the headers MCP mirrors, the bearer token where `~auth`
+is given -- and every tool's, read on every call as `/readyz` reads
+every check's; its handler reads the body's `method` and calls the
+function of the tool it names. What the route reads is the same on every
+request, so it is listed, its resources are checked as the server starts
+and its codes declared, as any route's are, and nothing in `spindle`
+changes.
 
-`Mcp.routes` is ordinary routes: one `POST` at the path, and the
-metadata document when a credential is read. They get the server's
-limits, deadlines, logging and traces. A GET or DELETE is the router's
-`405` already, as 2026-07-28 asks of a server that speaks only it.
+Three things follow, and `Mcp.routes` holds the first:
 
-`tools/list` names only the tools the caller's token may call, as MCP
-allows: a tool's scopes are known without running it, so the list is
-filtered without a call, a model is never shown a tool that would only
-answer `403`, and a caller learns nothing of tools beyond their grant. A
-scope a tool asks for from its arguments, inside a `Dep.bind`, is still
-challenged with `insufficient_scope` when called, which is where a
-client steps up. *Rejected:* every tool for every caller, which keeps
-step-up for any tool but lets a model plan with tools that fail.
+- **A tool's dependency refuses nothing.** Every one is read on every
+  call, so one that could refuse -- a rate limit, a required header,
+  `Bearer.scope` -- would refuse every call. A tool whose dependency
+  declares a code is refused when the routes are made, by `Dep.codes`. A
+  refusal for the whole endpoint is `?guard`, a dependency read first, as
+  `Health.routes`' is: a rate limit, keyed by the address or by the
+  token's subject.
+- **A tool's work is in its function.** Its dependency hands over what the
+  server holds -- a pool, a client -- as a health check's does.
+- **What belongs to the call is a dependency, `Mcp.call`**: the caller's
+  claims, the answers to the tool's questions, progress. It is one value
+  for every tool, read once, as `Spindle.client_gone` is.
 
-`Mcp.Returns.json` is `outputSchema`, `structuredContent` and the text
-the specification asks beside it; `Mcp.Returns.text` and
-`Mcp.Returns.content` are unstructured content. A handler returns
-`('a, Refusal.t) result`, as a route does, so dependencies compose
-across both. Where an answer goes:
+A tool's `inputSchema` and `outputSchema` are printed from its
+descriptions (Wiretype writes JSON Schema 2020-12). Its `scope` is a
+field, known without calling it: `tools/list` names only the tools the
+caller's token grants, as MCP allows, so a model is never shown a tool
+that would only answer `403`; a call of one it lacks is the HTTP `403`
+RFC 6750 names, for which `Spindle.Bearer` lends its
+`insufficient_scope` code and challenge; and the route's credential
+lists every tool's scope, so `Bearer.metadata` names them in
+`scopes_supported`. A limit for one tool alone is not a dependency, since
+the route reads nothing for one tool; the tool counts in its function, as
+it does any logic of its own.
+
+`spindle-mcp` uses `spindle`'s public interface alone, so it is a battery
+anyone could have written. What it would need and cannot reach is an
+extension the framework lacks, made in the framework's public interface.
+
+A tool's function returns `('a, Refusal.t) result`, as a route's handler
+does. Where an answer goes:
 
 | What happened | Answered |
 |---|---|
 | Arguments that do not read | `isError`, every problem named |
-| A refusal of the application's | `isError`, its sentence |
-| A bearer refusal | HTTP `401` or `403`, its challenge, a JSON-RPC error |
-| A rate limit | HTTP `429`, `Retry-After` |
+| A tool's `Error` | `isError`, its sentence |
+| A bearer refusal, or a scope the token lacks | HTTP `401` or `403`, its challenge |
+| `?guard`'s refusal, a rate limit among them | its own: `429`, `Retry-After` |
 | Unreadable JSON, a batch, a null id | HTTP `400`, `-32700` or `-32600` |
 | An unknown tool | `-32602` |
 | Headers that disagree with the body | HTTP `400`, `-32020` |
 | A question for a capability not declared | HTTP `400`, `-32021` |
 | A version other than 2026-07-28 | HTTP `400`, `-32022`, `supported` |
-| A bug | `-32603`, nothing of the exception |
+| A bug | `500`, logged as any route's, nothing of the exception |
 
-*Rejected:* a tool as a function from its arguments to a dependency,
-`fun args -> ...`. It reads naturally but makes every dependency inside
-it at each call, so a tool's scopes, codes and resources cannot be
-listed, which the metadata document's `scopes_supported` and the start's
-check of resources need. *Rejected:* a tool as a `Route.t` of a pseudo
-method, which would put tools in the OpenAPI document and their
+A tool's `Error` is a result MCP's client hands the model, not an HTTP
+refusal, so its codes are never the route's. A refusal of the route's own
+dependencies is Spindle's, its body Spindle's: MCP names the status for
+authorization and nothing more, and its clients go by the status. `GET`
+and `DELETE` at the path are the router's `405`, as 2026-07-28 asks of a
+server that speaks only it.
+
+*Rejected:* each tool's dependency read only when the body names it, as
+this PRD first had it. That is a `Dep.bind`, whose reads are opaque: the
+server started without a resource a tool reads, and a tool's code was
+undeclared -- shown running before this design was revised.
+*Rejected:* a combinator in `spindle` choosing among listed
+dependencies, a new verb in the core for what reading every tool's
+dependency already does. *Rejected:* MCP inside `spindle`, a
+`Returns.mcp` beside `Returns.websocket`: WebSockets and Server-Sent
+Events are HTTP's own, and MCP is an application protocol over it, a
+battery outside the framework. *Rejected:* a tool as a `Route.t` of a
+pseudo method, which would put tools in the OpenAPI document and their
 arguments where a body is described.
 
 ### Questions by MRTR
 
 ```ocaml
 let confirm =
-  Mcp.Input.elicit "confirm" ~message:"Delete the folder and all it holds?"
+  Mcp.Question.elicit "confirm" ~message:"Delete the folder and all it holds?"
     confirm_json
 
 let delete =
-  Mcp.tool "delete_folder" Mcp.Returns.text
-    (let+ folder = Mcp.arguments folder_json and+ answer = confirm in
-     match answer with
-     | Accept _ -> Folder.delete folder
-     | Decline | Cancel -> Ok "Nothing was deleted.")
+  Mcp.tool "delete_folder" ~asks:[ Mcp.Question.any confirm ] folder_json
+    Wiretype.string
+    (let+ db = Db.pool and+ call = Mcp.call in
+     fun folder ->
+       match Mcp.answer call confirm with
+       | Accept _ -> Folder.delete db folder
+       | Decline | Cancel -> Ok "Nothing was deleted.")
 ```
 
-`Mcp.Input.elicit` is a dependency: answered when the retry carries a
-response under its key, read by its description; otherwise it stops the
-tool before its handler, as a refusal does. Every unanswered question a
-tool reads is collected, as invalid inputs are, so they are asked in one
-round. A client that did not declare `elicitation` is answered `-32021`
-before anything runs. A question computed from what was read is
-`Mcp.Input.ask`, inside a `Dep.bind`.
+A tool names the questions it asks, as it names its scope. The route asks
+every one the call has not answered in one round, `input_required`,
+before the tool's function runs, so the function reads each answer and
+never a missing one; a client that did not declare `elicitation` is
+answered `-32021` before anything runs.
 
-A tool that reads no state sends no `requestState`: the client re-sends
+A tool that keeps no state sends no `requestState`: the client re-sends
 the arguments, and an elicitation's answer is the person's own input,
 which nothing on the server needs to vouch for. A tool that keeps state
-across rounds reads `Mcp.Input.state desc`, sealed with the
+across rounds reads it from the call by its description, sealed with the
 application's key ring as an encrypted cookie is, bound to the caller's
 subject, the method, the tool, a digest of the arguments and an expiry
 from `now`; one that fails any of them is absent and the question is
@@ -342,19 +378,6 @@ uses the OAuth client it was given.
 
 ## Rules it adds
 
-- **An MCP rule is a row.** A requirement of MCP 2026-07-28 that Spindle
-  meets, as a server or as a client, has a row in `test_mcp_spec`, named
-  by its page and section, as does one of JSON-RPC 2.0 as MCP uses it;
-  the OAuth client's -- RFC 7636 and 9207 -- join *An OAuth rule is a
-  row*'s. Why: as with HTTP, review by example misses the MUST nobody
-  thought of.
-- **An MCP server keeps nothing between requests.** No table of sessions
-  or clients; what spans calls is a sealed state or a handle the
-  application mints. Why: 2026-07-28 is stateless, and a server with
-  several domains, or behind a balancer, has no other way to be right.
-- *Revised:* **`invalid_arg` is raised in these places alone** gains
-  `Spindle_mcp.routes` (two tools of one name, a name MCP refuses, a tool
-  reading two argument descriptions or one that is no object).
 - *Revised:* **its client links no framework** names `spindle-client` and
   `spindle-mcp-client`, neither linking `spindle`, and `spindle` linking
   neither.
@@ -368,7 +391,7 @@ uses the OAuth client it was given.
 - [x] 2. Bearer tokens: JWS and JWK in `spindle-http`, `Spindle.Bearer`
   and its metadata route, `Spindle_client.Oauth.keys`, the OpenAPI
   security scheme; node-oidc-provider in the suite.
-- [ ] 3. The MCP server over HTTP: the protocol library, `server/discover`,
+- [x] 3. The MCP server over HTTP: the protocol library, `server/discover`,
   tools, the validation and errors of FR-5 and FR-6, cacheable lists,
   `Mcp.Test`.
 - [ ] 4. Progress and cancellation.

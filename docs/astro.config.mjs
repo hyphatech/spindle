@@ -67,6 +67,7 @@ export default defineConfig({
             "guide/databases",
             "guide/cookies",
             "guide/oauth",
+            "guide/mcp",
             "guide/middleware",
             "guide/sse",
             "guide/websockets",

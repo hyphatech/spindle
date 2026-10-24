@@ -38,11 +38,16 @@ postgres/   spindle-postgres: a server's Postgres, over rowtype's backend,
 sqlite/     spindle-sqlite: a server's SQLite, over rowtype's backend, and
             its sessions table's migration
 cli/        spindle-cli: the API, described on the command line
+mcp/        spindle-mcp: an MCP server, routes a battery adds, on spindle's
+            public interface alone
+mcp-client/ spindle-mcp-client: MCP's messages in protocol/, which the
+            server is built on
 docs/       the documentation site, a Starlight site in Hypha's look, from
             starlight-theme-hypha: its pages in src/content/docs/, every
             program included from examples/ by snippets.mjs
 examples/   the programs the site shows, each built and run
 test/       the suites: the framework, HTTP and WebSocket rows by RFC
+            section, OAuth's by RFC and MCP's by the specification's
             section, the wire, the Postgres and SQLite kits, and test_docs,
             every example on a page
 prds/       the PRDs of work being decided and built, by PRD.md, and its
@@ -83,7 +88,10 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   period shorter than a nanosecond a call), `Spindle.Bearer.make` (for an
   issuer or a resource that is no https URL without a query or a fragment)
   and `Spindle.Bearer.scope` (for a scope that is no RFC 6749
-  scope-token), `Spindle.Server.Limits.make` (for
+  scope-token), `Spindle_mcp.routes` (for two tools of one name, a name MCP
+  refuses, arguments whose description is no object, a scope with no
+  `~auth`, or a tool whose dependency may refuse, which would refuse every
+  call), `Spindle.Server.Limits.make` (for
   a limit out of its range), `Spindle.Server.run`, `serve_on` and
   `Spindle.serve` (for fewer than one domain, or a trusted proxy that is no
   address), `Spindle.serve` and
@@ -229,6 +237,21 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   generator chooses, through a reader smaller than a frame.
   Symptom: a frame one end misreads that no peer in the suite happens to
   send -- as a reply written after a close was, until a row asked.
+- **An MCP rule is a row.** A requirement of MCP 2026-07-28 that Spindle
+  meets has a row in `test_mcp_spec`, named by the specification's page and
+  section, as does one of JSON-RPC 2.0 as MCP uses it. Review by example
+  misses the requirement nobody thought of. Symptom: an answer an MCP
+  client refuses that no row of ours happened to send.
+- **An MCP server keeps nothing between requests.** No table of sessions or
+  clients: 2026-07-28 has none, each call is answered on its own, and what
+  spans calls is a handle the application mints. A server of several domains,
+  or behind a balancer, has no other way to be right. Symptom: a
+  `Hashtbl` or a `ref` in `mcp/` that outlives a request.
+- **A battery uses the framework's public interface alone.** `spindle-mcp`
+  names nothing of `spindle` its `.mli` files do not export, so it is a
+  battery anyone outside could have written, and what it needs and cannot
+  reach is a gap in the framework, closed there. Symptom: `rg -n
+  '_repr|Private' mcp` finds a name.
 - **A socket's failures are values, and so are a stream's.**
   `Websocket.receive`, `Websocket.send` and an events stream's `send` answer
   results, a socket's handler and caller return one, and how a handler's
@@ -287,7 +310,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
 ## Changes and releases
 
 Its packages are `spindle-http`, `spindle-client`, `spindle`,
-`spindle-postgres`, `spindle-sqlite` and `spindle-cli`. A
+`spindle-mcp-client`, `spindle-mcp`, `spindle-postgres`, `spindle-sqlite` and
+`spindle-cli`. A
 user-visible change updates the page of the documentation site that
 describes it, not the README. Two variants are closed, from 1.0:
 `Spindle_http.Status.t` and `Spindle_http.Meth.t` name every status and

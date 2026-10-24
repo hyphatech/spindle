@@ -84,6 +84,15 @@ val scope : t -> string -> unit Dep.t
     [Invalid_argument] for a scope that is no [scope-token] (RFC 6749 §3.3): a
     constant written in source. *)
 
+val insufficient_scope : Refusal.Code.t
+(** [403 insufficient_scope]: a token that does not grant a scope this needs
+    (RFC 6750 §3.1). {!scope} declares it; a route that knows the scope it needs
+    only as it runs declares it itself, and answers {!lacking}. *)
+
+val lacking : t -> string -> Refusal.t
+(** The refusal {!scope} answers for a token that does not grant [scope], its
+    challenge naming the scope and the metadata document. *)
+
 val metadata : t -> Route.t list -> Route.t
 (** The protected resource's metadata (RFC 9728 §2), at
     [/.well-known/oauth-protected-resource] followed by the resource's path

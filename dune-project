@@ -213,6 +213,38 @@
     (>= 1.5.4)))))
 
 (package
+ (name spindle-mcp-client)
+ (synopsis "The Model Context Protocol's messages, as both ends read them")
+ (description
+  "JSON-RPC 2.0 as MCP 2026-07-28 uses it, in spindle-mcp-client.protocol, which spindle-mcp's server is built on, and which does no I/O.")
+ (depends
+  (ocaml
+   (>= 5.5))
+  (wiretype
+   (and (>= 0.6.0) (< 0.7.0)))))
+
+(package
+ (name spindle-mcp)
+ (synopsis "A Model Context Protocol server: the routes an agent calls tools through")
+ (description
+  "MCP 2026-07-28 over Streamable HTTP, as routes added to a Spindle application's own: server/discover, tools/list and tools/call, each tool a name, its arguments' and its result's descriptions, and a dependency giving its function.")
+ (depends
+  (ocaml
+   (>= 5.5))
+  (spindle
+   (= :version))
+  (spindle-http
+   (= :version))
+  (spindle-mcp-client
+   (= :version))
+  (wiretype
+   (and (>= 0.6.0) (< 0.7.0)))
+  (ptime
+   (>= 1.2.0))
+  (base64
+   (>= 3.5.2))))
+
+(package
  (name spindle-postgres)
  (synopsis "Postgres for a Spindle server: bounded connections, a pool and its probe, and a failure's refusal")
  (depends
@@ -234,6 +266,10 @@
    (>= 0.10.0))
   ; The suites are this package's, since they reach every library.
   (spindle-cli
+   (and
+    :with-test
+    (= :version)))
+  (spindle-mcp
    (and
     :with-test
     (= :version)))

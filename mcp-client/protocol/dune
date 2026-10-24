@@ -1,0 +1,7 @@
+; MCP's messages, which the server and the client share, and nothing that
+; does I/O: a client links it without the framework.
+
+(library
+ (name spindle_mcp_protocol)
+ (public_name spindle-mcp-client.protocol)
+ (libraries wiretype))

@@ -253,20 +253,21 @@ let is_scope_token s =
          | _ -> false)
        s
 
+let lacking t s =
+  Refusal.make
+    ~headers:
+      [
+        ( "www-authenticate",
+          challenge ~error:"insufficient_scope" ~scope:s t.metadata_url );
+      ]
+    insufficient_scope "The bearer token does not grant what this needs."
+
 let scope t s =
   if not (is_scope_token s) then
     invalid_arg
       (Printf.sprintf
          "Spindle.Bearer.scope: %S is no scope-token (RFC 6749 §3.3)" s);
-  let lacking =
-    Refusal.make
-      ~headers:
-        [
-          ( "www-authenticate",
-            challenge ~error:"insufficient_scope" ~scope:s t.metadata_url );
-        ]
-      insufficient_scope "The bearer token does not grant what this needs."
-  in
+  let lacking = lacking t s in
   Dep.credential ~scheme:"bearer" ~scopes:[ s ]
     (Dep.join ~refuses:[ insufficient_scope ]
        (Dep.map

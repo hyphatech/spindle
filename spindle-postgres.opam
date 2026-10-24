@@ -18,6 +18,7 @@ depends: [
   "eio" {>= "1.6"}
   "logs" {>= "0.10.0"}
   "spindle-cli" {with-test & = version}
+  "spindle-mcp" {with-test & = version}
   "alcotest" {with-test & >= "1.9.1"}
   "qcheck-core" {with-test & >= "0.91"}
   "qcheck-alcotest" {with-test & >= "0.91"}

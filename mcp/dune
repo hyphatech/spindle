@@ -1,0 +1,13 @@
+; An MCP server: routes made from spindle's public interface alone, as a
+; battery written anywhere else would be.
+
+(library
+ (name spindle_mcp)
+ (public_name spindle-mcp)
+ (libraries
+  spindle
+  spindle-http
+  spindle-mcp-client.protocol
+  wiretype
+  ptime
+  base64))
