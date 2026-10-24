@@ -19,6 +19,13 @@
   called. `Spindle_mcp.Test.call` calls it in a test. MCP's messages are
   `spindle-mcp-client.protocol`. See the guide's *MCP servers*.
 
+- `spindle-mcp-client`, calling another server's tools over MCP 2026-07-28
+  with no framework: `Spindle_mcp_client.create client ~url`, `discover`,
+  `tools`, `call` typed by Wiretype descriptions and `call_value` as JSON. A
+  server's questions are answered through `~elicit` and the call retried;
+  annotated arguments are mirrored as headers. See the guide's *MCP
+  servers*.
+
 - `Spindle.Bearer.lacking` and `Spindle.Bearer.insufficient_scope`: the
   `403` `Bearer.scope` answers, for a route that knows the scope it needs
   only as it runs.

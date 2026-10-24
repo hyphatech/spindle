@@ -514,6 +514,328 @@ let test_the_metadata_names_every_tools_scope () =
   check_string "scopes_supported" {|["weather:read"]|}
     (text [ "scopes_supported" ] r)
 
+(* ------------------------------------------------------------------ *)
+(* The client *)
+
+module Client = Spindle_mcp_client
+
+(* A Spindle server on a socket of its own, and a client to call it. *)
+let over_a_socket ?(routes = Mcp.routes ~name:"weather" ~version:"1.0.0" tools)
+    f =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let socket =
+    Eio.Net.listen (Eio.Stdenv.net env) ~sw ~backlog:8 ~reuse_addr:true
+      (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
+  in
+  let port =
+    match Eio.Net.listening_addr socket with
+    | `Tcp (_, p) -> p
+    | _ -> Alcotest.fail "expected a TCP socket"
+  in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      Spindle.Server.serve_on
+        ~mono_clock:(Eio.Stdenv.mono_clock env)
+        ~domain_mgr:(Eio.Stdenv.domain_mgr env)
+        ~domains:1
+        ~read_clock:(fun () -> Ptime.epoch)
+        ~limits:(Spindle.Server.Limits.make ~drain:Mtime.Span.(100 * ms) ())
+        [ socket ]
+        (Spindle.Test.app
+           ~resources:[ Spindle.Dep.resource weather temperatures ]
+           routes);
+      `Stop_daemon);
+  Spindle_client.run env @@ fun client ->
+  f (Client.create client ~url:(Printf.sprintf "http://127.0.0.1:%d/mcp" port))
+
+(* A stub server answering as the test says, and what it was asked. *)
+let against respond f =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let asked = ref [] in
+  let port =
+    Stub_server.serve ~sw ~net:(Eio.Stdenv.net env) (fun r ->
+        asked := r :: !asked;
+        respond r)
+  in
+  Spindle_client.run env @@ fun client ->
+  f ~client ~url:(Printf.sprintf "http://127.0.0.1:%d/mcp" port)
+    ~asked:(fun () -> List.rev !asked)
+
+let ok = function
+  | Ok v -> v
+  | Error e -> Alcotest.failf "the client: %s" (Client.error_to_string e)
+
+let body_json (r : Stub_server.request) = Yojson.Safe.from_string r.body
+
+let answer ?(content_type = "application/json") body =
+  Stub_server.reply ~headers:[ ("content-type", content_type) ] `OK body
+
+let result id members =
+  Printf.sprintf
+    {|{"jsonrpc":"2.0","id":%s,"result":{"resultType":"complete",%s}}|} id
+    members
+
+let id_of r = Yojson.Safe.to_string (at [ "id" ] (body_json r))
+
+(* Scenario 5: our client lists and calls our server's tools, typed. *)
+let test_our_client_calls_our_server () =
+  over_a_socket @@ fun c ->
+  let s = ok (Client.discover c) in
+  check_string "a version" "2026-07-28" (String.concat "," s.versions);
+  check_string "its name" "weather" (Option.value ~default:"" s.name);
+  let tools = ok (Client.tools c) in
+  check_string "its tools" "get_forecast,echo"
+    (String.concat "," (List.map (fun (t : Client.tool) -> t.name) tools));
+  let f =
+    ok
+      (Client.call c "get_forecast" query_json { city = "Paris" } forecast_json)
+  in
+  check_int "the forecast" 18 f.celsius
+
+(* tools §Error Handling: a tool's failure is its own, not a refusal. *)
+let test_a_tools_failure_reaches_the_caller () =
+  over_a_socket @@ fun c ->
+  match
+    Client.call c "get_forecast" query_json { city = "Atlantis" } forecast_json
+  with
+  | Error (`Tool_failed why) ->
+      check_string "its sentence" "There is no such city." why
+  | Ok _ -> Alcotest.fail "answered"
+  | Error e -> Alcotest.failf "another failure: %s" (Client.error_to_string e)
+
+(* A protocol error is the server's refusal, its code kept. *)
+let test_a_protocol_error_is_a_refusal () =
+  over_a_socket @@ fun c ->
+  match Client.call_value c "nothing" (Value.Object []) with
+  | Error (`Refused (r : Client.refusal)) ->
+      check_bool "-32602" true (Option.equal Int.equal r.code (Some (-32602)))
+  | Ok _ -> Alcotest.fail "answered"
+  | Error e -> Alcotest.failf "another failure: %s" (Client.error_to_string e)
+
+(* streamable-http §Sending Messages and §Request Metadata: every request is
+   a POST taking both answers, its headers and its _meta the revision's. *)
+let test_every_request_carries_what_the_revision_asks () =
+  against
+    (fun r ->
+      answer
+        (result (id_of r)
+           {|"content":[{"type":"text","text":"ok"}],"structuredContent":"ok"|}))
+    (fun ~client ~url ~asked ->
+      let c = Client.create ~name:"tester" ~version:"2" client ~url in
+      let (_ : Client.answer) =
+        ok (Client.call_value c "echo" (Value.Object []))
+      in
+      match asked () with
+      | [ r ] ->
+          check_bool "POST" true
+            (match r.meth with `POST -> true | _ -> false);
+          let h n = Option.value ~default:"" (Stub_server.header r n) in
+          check_string "accept" "application/json, text/event-stream"
+            (h "accept");
+          check_string "MCP-Protocol-Version" "2026-07-28"
+            (h "mcp-protocol-version");
+          check_string "Mcp-Method" "tools/call" (h "mcp-method");
+          check_string "Mcp-Name" "echo" (h "mcp-name");
+          let meta = at [ "params"; "_meta" ] (body_json r) in
+          check_string "_meta's version" {|"2026-07-28"|}
+            (Yojson.Safe.to_string
+               (at [ "io.modelcontextprotocol/protocolVersion" ] meta));
+          check_string "capabilities, none" "{}"
+            (Yojson.Safe.to_string
+               (at [ "io.modelcontextprotocol/clientCapabilities" ] meta));
+          check_string "clientInfo" {|{"name":"tester","version":"2"}|}
+            (Yojson.Safe.to_string
+               (at [ "io.modelcontextprotocol/clientInfo" ] meta))
+      | _ -> Alcotest.fail "not one request")
+
+(* streamable-http §Value Encoding: a name that is no plain ASCII is sent in
+   the Base64 sentinel form. *)
+let test_a_name_not_plain_ascii_is_sent_in_base64 () =
+  against
+    (fun r -> answer (result (id_of r) {|"content":[]|}))
+    (fun ~client ~url ~asked ->
+      let c = Client.create client ~url in
+      let (_ : Client.answer) =
+        ok (Client.call_value c "café" (Value.Object []))
+      in
+      match asked () with
+      | [ r ] ->
+          check_string "Mcp-Name"
+            ("=?base64?" ^ Base64.encode_string "café" ^ "?=")
+            (Option.value ~default:"" (Stub_server.header r "mcp-name"))
+      | _ -> Alcotest.fail "not one request")
+
+(* streamable-http §Sending Messages: the client reads an answer sent as an
+   event stream, notifications before the response. *)
+let test_an_answer_as_an_event_stream_is_read () =
+  against
+    (fun r ->
+      answer ~content_type:"text/event-stream"
+        ("event: message\n\
+          data: \
+          {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{\"progress\":1}}\n\n"
+       ^ "event: message\ndata: "
+        ^ result (id_of r) {|"content":[{"type":"text","text":"done"}]|}
+        ^ "\n\n"))
+    (fun ~client ~url ~asked:_ ->
+      let a =
+        ok
+          (Client.call_value
+             (Client.create client ~url)
+             "slow" (Value.Object []))
+      in
+      check_int "its content" 1 (List.length a.content))
+
+let x_tool annotation_type value =
+  Printf.sprintf
+    {|{"name":"sql","inputSchema":{"type":"object","properties":{"region":{"type":"%s","x-mcp-header":"Region"},"query":{"type":"string"}}},"x":%s}|}
+    annotation_type value
+
+(* tools §x-mcp-header and streamable-http §Custom Headers: an annotated
+   argument is mirrored as Mcp-Param-, plain or in Base64, and left out
+   where it has no value. *)
+let test_annotated_arguments_are_mirrored () =
+  against
+    (fun r ->
+      match Yojson.Safe.to_string (at [ "method" ] (body_json r)) with
+      | {|"tools/list"|} ->
+          answer
+            (result (id_of r)
+               (Printf.sprintf {|"tools":[%s],"ttlMs":0,"cacheScope":"public"|}
+                  (x_tool "string" "0")))
+      | _ -> answer (result (id_of r) {|"content":[]|}))
+    (fun ~client ~url ~asked ->
+      let c = Client.create client ~url in
+      (* An agent lists before it calls, and the list says what to mirror. *)
+      let (_ : Client.tool list) = ok (Client.tools c) in
+      let call region =
+        let args =
+          Value.Object
+            ((match region with
+               | Some v -> [ ("region", Value.String v) ]
+               | None -> [])
+            @ [ ("query", Value.String "select 1") ])
+        in
+        let (_ : Client.answer) = ok (Client.call_value c "sql" args) in
+        let calls =
+          List.filter
+            (fun r ->
+              String.equal
+                (Yojson.Safe.to_string (at [ "method" ] (body_json r)))
+                {|"tools/call"|})
+            (asked ())
+        in
+        match List.rev calls with
+        | r :: _ -> Stub_server.header r "mcp-param-region"
+        | [] -> Alcotest.fail "no call"
+      in
+      check_string "plain" "us-west1"
+        (Option.value ~default:"" (call (Some "us-west1")));
+      check_string "Base64"
+        ("=?base64?" ^ Base64.encode_string "Zürich" ^ "?=")
+        (Option.value ~default:"" (call (Some "Zürich")));
+      check_bool "absent" true (Option.is_none (call None)))
+
+(* tools §x-mcp-header: a tool whose annotation breaks the rules -- on a
+   number, under an array -- is left out of the list. *)
+let test_a_tool_with_a_bad_annotation_is_left_out () =
+  against
+    (fun r ->
+      answer
+        (result (id_of r)
+           (Printf.sprintf
+              {|"tools":[%s,%s,%s],"ttlMs":0,"cacheScope":"public"|}
+              (x_tool "number" "1")
+              {|{"name":"items","inputSchema":{"type":"object","properties":{"rows":{"type":"array","items":{"type":"string","x-mcp-header":"Row"}}}}}|}
+              {|{"name":"good","inputSchema":{"type":"object"}}|})))
+    (fun ~client ~url ~asked:_ ->
+      let tools = ok (Client.tools (Client.create client ~url)) in
+      check_string "only the good one" "good"
+        (String.concat "," (List.map (fun (t : Client.tool) -> t.name) tools)))
+
+(* pagination: every page is read, in order. *)
+let test_every_page_is_read () =
+  against
+    (fun r ->
+      match at [ "params"; "cursor" ] (body_json r) with
+      | `Null ->
+          answer
+            (result (id_of r)
+               {|"tools":[{"name":"a","inputSchema":{"type":"object"}}],"nextCursor":"2","ttlMs":0,"cacheScope":"public"|})
+      | _ ->
+          answer
+            (result (id_of r)
+               {|"tools":[{"name":"b","inputSchema":{"type":"object"}}],"ttlMs":0,"cacheScope":"public"|}))
+    (fun ~client ~url ~asked:_ ->
+      let tools = ok (Client.tools (Client.create client ~url)) in
+      check_string "both pages" "a,b"
+        (String.concat "," (List.map (fun (t : Client.tool) -> t.name) tools)))
+
+let asks =
+  {|"resultType":"input_required","inputRequests":{"confirm":{"method":"elicitation/create","params":{"mode":"form","message":"Sure?","requestedSchema":{"type":"object","properties":{"ok":{"type":"boolean"}}}}}},"requestState":"opaque-7"|}
+
+(* mrtr §Client Requirements: a question is answered through elicit and the
+   call retried as a new request, its answers and the state echoed. *)
+let test_a_question_is_answered_and_the_call_retried () =
+  against
+    (fun r ->
+      match at [ "params"; "inputResponses" ] (body_json r) with
+      | `Null ->
+          answer
+            (Printf.sprintf {|{"jsonrpc":"2.0","id":%s,"result":{%s}}|}
+               (id_of r) asks)
+      | _ ->
+          answer
+            (result (id_of r) {|"content":[{"type":"text","text":"deleted"}]|}))
+    (fun ~client ~url ~asked ->
+      let elicit ~message ~schema:_ =
+        check_string "the message" "Sure?" message;
+        Client.Accept (Value.Object [ ("ok", Value.Bool true) ])
+      in
+      let c = Client.create ~elicit client ~url in
+      let (_ : Client.answer) =
+        ok (Client.call_value c "delete" (Value.Object []))
+      in
+      match asked () with
+      | [ first; retry ] ->
+          check_bool "a new id" false (String.equal (id_of first) (id_of retry));
+          check_string "elicitation declared" "{}"
+            (Yojson.Safe.to_string
+               (at
+                  [
+                    "params";
+                    "_meta";
+                    "io.modelcontextprotocol/clientCapabilities";
+                    "elicitation";
+                  ]
+                  (body_json first)));
+          check_string "the answer"
+            {|{"action":"accept","content":{"ok":true}}|}
+            (Yojson.Safe.to_string
+               (at [ "params"; "inputResponses"; "confirm" ] (body_json retry)));
+          check_string "the state echoed" {|"opaque-7"|}
+            (Yojson.Safe.to_string
+               (at [ "params"; "requestState" ] (body_json retry)))
+      | l -> Alcotest.failf "%d requests" (List.length l))
+
+(* mrtr §Server Requirements 7: a client that declared no elicitation has
+   nothing to answer with. *)
+let test_a_question_without_elicit_is_unanswered () =
+  against
+    (fun r ->
+      answer
+        (Printf.sprintf {|{"jsonrpc":"2.0","id":%s,"result":{%s}}|} (id_of r)
+           asks))
+    (fun ~client ~url ~asked:_ ->
+      match
+        Client.call_value (Client.create client ~url) "delete" (Value.Object [])
+      with
+      | Error (`Unanswered _) -> ()
+      | Ok _ -> Alcotest.fail "answered"
+      | Error e ->
+          Alcotest.failf "another failure: %s" (Client.error_to_string e))
+
 let () =
   Alcotest.run "mcp-spec"
     [
@@ -574,5 +896,31 @@ let () =
             `Quick test_a_scope_not_granted_is_403;
           Alcotest.test_case "9728 §2: the metadata names every scope" `Quick
             test_the_metadata_names_every_tools_scope;
+        ] );
+      ( "client",
+        [
+          Alcotest.test_case "scenario 5: our client calls our server" `Quick
+            test_our_client_calls_our_server;
+          Alcotest.test_case
+            "tools §Errors: a tool's failure reaches the caller" `Quick
+            test_a_tools_failure_reaches_the_caller;
+          Alcotest.test_case "basic §Errors: a protocol error is a refusal"
+            `Quick test_a_protocol_error_is_a_refusal;
+          Alcotest.test_case "streamable-http §Metadata: every request's" `Quick
+            test_every_request_carries_what_the_revision_asks;
+          Alcotest.test_case "streamable-http §Encoding: a name in base64"
+            `Quick test_a_name_not_plain_ascii_is_sent_in_base64;
+          Alcotest.test_case "streamable-http §Sending: an event stream is read"
+            `Quick test_an_answer_as_an_event_stream_is_read;
+          Alcotest.test_case "tools §x-mcp-header: arguments are mirrored"
+            `Quick test_annotated_arguments_are_mirrored;
+          Alcotest.test_case "tools §x-mcp-header: a bad annotation is left out"
+            `Quick test_a_tool_with_a_bad_annotation_is_left_out;
+          Alcotest.test_case "pagination: every page is read" `Quick
+            test_every_page_is_read;
+          Alcotest.test_case "mrtr §Client: a question is answered, retried"
+            `Quick test_a_question_is_answered_and_the_call_retried;
+          Alcotest.test_case "mrtr §Server 7: no elicit, unanswered" `Quick
+            test_a_question_without_elicit_is_unanswered;
         ] );
     ]

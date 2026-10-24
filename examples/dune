@@ -18,6 +18,7 @@
   bearer_auth
   oauth
   mcp
+  mcp_client
   middleware
   cookie
   session
@@ -38,6 +39,7 @@
   spindle-postgres
   spindle-sqlite
   spindle-mcp
+  spindle-mcp-client
   rowtype
   rowtype-postgres
   rowtype-sqlite

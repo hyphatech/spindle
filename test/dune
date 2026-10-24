@@ -28,6 +28,7 @@
   spindle-postgres
   spindle-mcp
   spindle-mcp-client.protocol
+  spindle-mcp-client
   rowtype
   rowtype-postgres
   wiretype

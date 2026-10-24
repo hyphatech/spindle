@@ -111,6 +111,36 @@ The server speaks 2026-07-28 alone, and answers as that revision says:
 The server keeps nothing between requests: 2026-07-28 has no session, and
 each call is answered on its own, on whichever domain or instance takes it.
 
+## Calling another server's tools
+
+`spindle-mcp-client` calls an MCP server's tools from any Eio program, on
+the [HTTP client](/spindle/guide/client/) alone: a program that only calls
+tools installs and links no framework.
+
+```sh
+opam install spindle-mcp-client
+```
+
+```ocaml
+--8<-- "mcp_client.ml:call"
+```
+
+- `create client ~url` names the server and does no I/O. `~headers` go with
+  every call, a bearer token among them.
+- `tools` lists every page of the server's tools. `call` writes the
+  arguments by one description and reads `structuredContent` by another;
+  `call_value` takes and gives JSON, for a program passing a model's
+  arguments through.
+- A tool's own failure is `` `Tool_failed `` with its text; a server's
+  refusal is `` `Refused `` with its status and JSON-RPC code.
+- A server may ask a question in the middle of a call. Give `~elicit` a
+  function that answers it -- a person, a form, a policy -- and the call is
+  retried with the answer; without one, the client tells servers it answers
+  none, and a call that asks anyway is `` `Unanswered ``.
+- Every request carries the headers 2026-07-28 asks for, an argument a
+  listed tool annotates with `x-mcp-header` among them, and an answer is read
+  as one JSON object or an event stream, whichever the server sends.
+
 ## Testing
 
 `Spindle_mcp.Test.call` sends a request as a client would -- the JSON-RPC

@@ -44,7 +44,7 @@ test/oidc/node_modules: test/oidc/package.json test/oidc/bun.lock
 lint: ## check formatting, docs, the release build and the opam files
 	$(OPAM) dune build @all @fmt @doc
 	$(OPAM) dune build --profile release @all
-	$(OPAM) dune build -p spindle-http,spindle-client @install
+	$(OPAM) dune build -p spindle-http,spindle-client,spindle-mcp-client @install
 	opam lint -W @1..99 *.opam
 
 fmt: ## format the code

@@ -40,8 +40,8 @@ sqlite/     spindle-sqlite: a server's SQLite, over rowtype's backend, and
 cli/        spindle-cli: the API, described on the command line
 mcp/        spindle-mcp: an MCP server, routes a battery adds, on spindle's
             public interface alone
-mcp-client/ spindle-mcp-client: MCP's messages in protocol/, which the
-            server is built on
+mcp-client/ spindle-mcp-client: calling another server's tools, on client/
+            alone, and MCP's messages in protocol/, which both ends share
 docs/       the documentation site, a Starlight site in Hypha's look, from
             starlight-theme-hypha: its pages in src/content/docs/, every
             program included from examples/ by snippets.mjs
@@ -123,16 +123,17 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   installs and links no framework.** No library links another HTTP
   implementation or names one; `spindle-postgres` and `spindle-sqlite`
   reach their database through rowtype's backends alone, so a second driver
-  is a second backend and no change here; `spindle-client` and
-  `spindle-http` are packages of their own, the client linking
-  `spindle-http` and never `spindle`, so a program that calls other servers
-  installs and compiles no framework; and `spindle` never links the client,
-  so a server that calls nobody compiles no TLS. Symptom: `rg -n -i -w
+  is a second backend and no change here; `spindle-client`, `spindle-http`
+  and `spindle-mcp-client` are packages of their own, the clients linking
+  `spindle-http` and never `spindle`, so a program that calls other servers,
+  or their tools, installs and compiles no framework; and `spindle` never
+  links a client, so a server that calls nobody compiles no TLS. Symptom: `rg -n -i -w
   'cohttp\w*|httpun\w*|httpaf\w*|h1|h2|piaf|paf|ezcurl|postgres.eio|sqlite3'
   -g '*.{ml,mli}' -g dune http core client postgres sqlite cli` finds a
   name, `rg -n '^ *spindle$' client/dune` finds the framework, `rg -n
-  spindle_client core/dune` finds the client, or `make lint`'s build of
-  `spindle-http` and `spindle-client` alone fails.
+  spindle_client core/dune` finds the client, `rg -n '^ *spindle$'
+  mcp-client/dune` finds the framework, or `make lint`'s build of `spindle-http`,
+  `spindle-client` and `spindle-mcp-client` alone fails.
 - **A route is one value, and a dependency hands over an input.** A method
   and a path are declared together (`Spindle.post Path.(...)`), so a route no
   method can reach cannot be written. Every input a request carries -- a
@@ -238,7 +239,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   Symptom: a frame one end misreads that no peer in the suite happens to
   send -- as a reply written after a close was, until a row asked.
 - **An MCP rule is a row.** A requirement of MCP 2026-07-28 that Spindle
-  meets has a row in `test_mcp_spec`, named by the specification's page and
+  meets, as a server or as a client, has a row in `test_mcp_spec`, named by the specification's page and
   section, as does one of JSON-RPC 2.0 as MCP uses it. Review by example
   misses the requirement nobody thought of. Symptom: an answer an MCP
   client refuses that no row of ours happened to send.

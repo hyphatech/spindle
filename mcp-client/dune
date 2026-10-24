@@ -1,0 +1,13 @@
+; Calling another server's tools, on spindle-client alone: a program that
+; only calls tools installs and links no framework.
+
+(library
+ (name spindle_mcp_client)
+ (public_name spindle-mcp-client)
+ (libraries
+  spindle-client
+  spindle-http
+  spindle-mcp-client.protocol
+  wiretype
+  base64
+  logs))

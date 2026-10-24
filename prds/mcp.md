@@ -1,7 +1,7 @@
 # MCP servers and clients, and the OAuth they need
 
 **Status: Accepted** — the whole shape is signed off, the endpoint made routes
-a battery adds on 2026-10-24; stages 1 to 3 have landed.
+a battery adds on 2026-10-24; stages 1 to 3 and 8 have landed.
 Date: 2026-10-23
 
 ## The problem
@@ -90,9 +90,10 @@ It does not cover:
 5. **Calling another server's tools.** An OCaml program that installed
    only `spindle-mcp-client` lists and calls a remote server's tools,
    typed by Wiretype descriptions or as plain JSON. *Accepted when* it
-   calls the TypeScript SDK's reference server, answers its elicitation
-   through a function it was given, and installs neither `spindle` nor
-   `spindle-mcp`.
+   calls a server `spindle-mcp` serves over a socket -- and the TypeScript
+   SDK's reference server once one speaks 2026-07-28 -- answers its
+   elicitation through a function it was given, and installs neither
+   `spindle` nor `spindle-mcp`.
 6. **A person signs in once.** The client calls a server that answers
    `401`. *Accepted when* it finds the authorization server from the
    resource's metadata, opens the browser for the person with PKCE and
@@ -378,9 +379,6 @@ uses the OAuth client it was given.
 
 ## Rules it adds
 
-- *Revised:* **its client links no framework** names `spindle-client` and
-  `spindle-mcp-client`, neither linking `spindle`, and `spindle` linking
-  neither.
 - *Revised:* **A secret has no span** names a tool's arguments and a
   `requestState`; a span's name is the MCP
   method, `tools/call`, never a tool's name, which a caller chooses.
@@ -398,7 +396,7 @@ uses the OAuth client it was given.
 - [ ] 5. Elicitation by MRTR, and sealed state.
 - [ ] 6. Resources, resource templates and prompts.
 - [ ] 7. `subscriptions/listen`.
-- [ ] 8. The MCP client over HTTP.
+- [x] 8. The MCP client over HTTP.
 - [ ] 9. The OAuth client, and the MCP client's use of it.
 
 Each stage brings its guide page and examples, its rows and its line in
@@ -413,32 +411,29 @@ Each stage brings its guide page and examples, its rows and its line in
 - Against node-oidc-provider, run by the suite: a token it
   issues is accepted, one it issues for another resource is refused, and
   the OAuth client completes a sign-in with a scripted browser.
-- Interoperability, in CI with Bun: the official TypeScript SDK's client
-  runs scenarios 1 to 4 against an example server, and our client
-  runs 5 and 6 against the SDK's reference server.
-- By hand, once: Claude Code connects to the example server, signs in and
-  calls a tool.
+- End to end, in CI: our client calls our server over a socket, every
+  scenario the client has a part in, since no SDK on npm speaks
+  2026-07-28 yet (*Open*).
+- By hand: Claude Code connects to the example server and calls a tool --
+  done on 2026-10-24 with Claude Code 2.1.310, which discovered the
+  server, listed its tool and called it -- and, once stage 9 lands,
+  signs in.
 
 ## Open
 
 1. **Introspection.** Proposed: RFC 7662, for opaque tokens, as a second
    validator behind `Bearer.make`, once an application asks. Blocks
    nothing.
-2. **Which authorization server the tests run.** It must issue RFC 9068
-   tokens with the audience RFC 8707's `resource` names, answer with
-   `iss` (RFC 9207) and accept Client ID Metadata Documents. Proposed:
-   node-oidc-provider, OpenID Certified, which implements each of them,
-   configured by a script of the suite's own, so a row gets exactly the
-   issuer it needs; its Client ID Metadata Documents are experimental and
-   at draft 02 where MCP cites draft 00. Keycloak was weighed and left:
-   it has long ignored `resource`, the audience MCP binds a token to.
-   Agreed. Undecided: whether it runs on Bun, which CI has, or needs
-   Node, which stage 2 finds out.
-3. **Resource templates.** RFC 6570 is large; proposed: level 1, `{name}`
+2. **Resource templates.** RFC 6570 is large; proposed: level 1, `{name}`
    alone, read by a parser of its own. Blocks stage 6.
-4. **`x-mcp-header` on a server's tools.** Optional for a server; it
+3. **`x-mcp-header` on a server's tools.** Optional for a server; it
    needs Wiretype to carry an annotation into the schema. Proposed: not
    until a user asks. The client's side is required and is stage 8.
+4. **The TypeScript SDK in CI.** On 2026-10-24 neither
+   `@modelcontextprotocol/sdk` 1.32.2 nor `@modelcontextprotocol/client`
+   2.4.0 speaks 2026-07-28 -- each opens with `initialize` -- so the
+   interoperability run the PRD first planned waits for one that does,
+   and runs on Bun when it comes. Blocks nothing.
 5. **The official conformance suite.** Whether MCP's covers 2026-07-28
    and can run in CI. Blocks nothing; strengthens *Verification*.
 

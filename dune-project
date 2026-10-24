@@ -214,14 +214,22 @@
 
 (package
  (name spindle-mcp-client)
- (synopsis "The Model Context Protocol's messages, as both ends read them")
+ (synopsis "Calling another server's tools over the Model Context Protocol, with no framework")
  (description
-  "JSON-RPC 2.0 as MCP 2026-07-28 uses it, in spindle-mcp-client.protocol, which spindle-mcp's server is built on, and which does no I/O.")
+  "MCP 2026-07-28 over HTTP on spindle-client alone: server/discover, tools/list and tools/call, typed by Wiretype descriptions or as plain JSON, a server's questions answered through a function. Its protocol library, spindle-mcp-client.protocol, is MCP's messages, which spindle-mcp's server is built on too.")
  (depends
   (ocaml
    (>= 5.5))
+  (spindle-client
+   (= :version))
+  (spindle-http
+   (= :version))
   (wiretype
-   (and (>= 0.6.0) (< 0.7.0)))))
+   (and (>= 0.6.0) (< 0.7.0)))
+  (base64
+   (>= 3.5.2))
+  (logs
+   (>= 0.10.0))))
 
 (package
  (name spindle-mcp)
