@@ -1,10 +1,9 @@
 _build/
 .DS_Store
-# The documentation site's dependencies and Astro's cache, the site, and the
-# reference copied into it.
+# The documentation site's dependencies and Astro's cache, and the reference
+# copied into it.
 node_modules/
 .astro/
-site/
 docs/public/reference/
 # What `dune build -p` writes beside the opam files, as `make lint` runs it.
 *.install

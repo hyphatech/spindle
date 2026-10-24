@@ -23,9 +23,7 @@ let routes =
        Ok { id; text = "Buy milk" });
   ]
 
-(* --8<-- [start:app] *)
 (* The app is only described, never started, so a resource its routes read
    -- a pool, a client -- need not exist. *)
 let () =
   Spindle_cli.run ~name:"notes" ~title:"Notes" ~app:(Spindle.App.make routes) ()
-(* --8<-- [end:app] *)

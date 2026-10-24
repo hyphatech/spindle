@@ -2,9 +2,17 @@
 title: Database
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import create_names from "@examples/migrations/20261021000000_create_names.sql?raw";
+import names_query from "@examples/names_query.ml?raw";
+import names_routes from "@examples/names_routes.ml?raw";
+import sql_query from "@examples/sql_query.ml?raw";
+import name_claim from "@examples/name_claim.ml?raw";
+import sql_transaction from "@examples/sql_transaction.ml?raw";
+
 Read rows into typed values, write several rows that all land or none, and
 answer sensibly when the database is busy. Statements are
-[`rowtype`](https://github.com/hyphatech/rowtype)'s: a value holding its SQL
+[`rowtype`](https://hyphatech.github.io/rowtype/)'s: a value holding its SQL
 and the types of its parameters and rows.
 
 This page uses SQLite, a database in one file, so there is no server to
@@ -37,9 +45,7 @@ $ rowtype-migrate new create_names
 migrations/20261021000000_create_names.sql
 ```
 
-```sql
---8<-- "migrations/20261021000000_create_names.sql"
-```
+<Code code={create_names} lang="sql" />
 
 Make the database and apply the migration:
 
@@ -49,8 +55,8 @@ $ rowtype-migrate up --url sqlite:names.db
 ```
 
 Run `up` before the server starts, never from the server: every instance
-of it would race to apply the same file. The
-[rowtype README](https://github.com/hyphatech/rowtype#migrations) covers the
+of it would race to apply the same file.
+[rowtype's guide to migrations](https://hyphatech.github.io/rowtype/guide/migrations/) covers the
 rest of the command.
 
 ## 3. Read rows
@@ -59,24 +65,18 @@ A statement says its SQL, its parameters and the type of each row.
 `Pool.exec` runs it on a connection borrowed from the pool, and
 `Spindle_sqlite.refusal` turns a failure into an answer:
 
-```ocaml
---8<-- "sql_query.ml:query"
-```
+<Code code={names_query} lang="ocaml" title="names_query.ml" />
 
 A route reads the pool as a dependency, `db`, made once with
 `Dep.of_resource`. The routes are then a plain value that exists before any
 database does:
 
-```ocaml
---8<-- "sql_query.ml:routes"
-```
+<Code code={names_routes} lang="ocaml" title="names_routes.ml" />
 
 The program makes the pool from the database's file and hands it to the
 server with `~resources`:
 
-```ocaml
---8<-- "sql_query.ml:pool"
-```
+<Code code={sql_query} lang="ocaml" title="sql_query.ml" />
 
 `Pool.run` opens every connection before the server listens. A file that
 cannot be opened stops the program, saying why. A route that reads a
@@ -92,23 +92,12 @@ $ curl localhost:8080/names
 []
 ```
 
-<details>
-<summary>The whole app</summary>
-
-```ocaml
---8<-- "sql_query.ml"
-```
-
-</details>
-
 ## 4. Write in a transaction
 
 Claiming a name is an insert and a read in one transaction. The answer is
 `201` the first time and `200` every time after:
 
-```ocaml
---8<-- "sql_transaction.ml:claim"
-```
+<Code code={name_claim} lang="ocaml" title="name_claim.ml" />
 
 `Pool.transaction` borrows a connection and runs the function in one
 transaction. `Ok` commits and `Error` rolls back. `~behaviour:Immediate`
@@ -116,16 +105,7 @@ takes SQLite's write lock as the transaction begins, which a transaction
 that reads and then writes needs.
 
 The handler returns the status beside the value, so the route lists both
-with `Returns.json_response`:
-
-```ocaml
-Spindle.Returns.json_response claim_json
-  ~statuses:
-    [
-      (`Created, "The name was free, and is now claimed.");
-      (`OK, "The name was claimed already.");
-    ]
-```
+with `Returns.json_response`, as `sql_transaction.ml` below does.
 
 ```console
 $ curl -i -X PUT localhost:8080/names/ada
@@ -140,11 +120,9 @@ HTTP/1.1 200 OK
 ```
 
 <details>
-<summary>The whole app</summary>
+<summary>The rest of the app: its route and its server</summary>
 
-```ocaml
---8<-- "sql_transaction.ml"
-```
+<Code code={sql_transaction} lang="ocaml" title="sql_transaction.ml" />
 
 </details>
 

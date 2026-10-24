@@ -2,6 +2,10 @@
 title: Logging
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import billing from "@examples/billing.ml?raw";
+import logging from "@examples/logging.ml?raw";
+
 Spindle logs every request for you, and every line your code logs during a
 request carries that request's id, so one search finds everything it did.
 
@@ -10,16 +14,12 @@ request carries that request's id, so one search finds everything it did.
 Logging is [logs](https://erratique.ch/software/logs). Make a source per
 part of your app, and log with fields of your own:
 
-```ocaml
---8<-- "logging.ml:line"
-```
+<Code code={billing} lang="ocaml" title="billing.ml" />
 
 Set the levels and the format from wherever you keep your settings -- here
 two environment variables. Spindle reads no environment variable itself:
 
-```ocaml
---8<-- "logging.ml:setup"
-```
+<Code code={logging} lang="ocaml" title="logging.ml" />
 
 ```sh
 APP_LOG='info,shop.billing=debug' APP_LOG_FORMAT=pretty dune exec ./bin/main.exe
@@ -67,15 +67,6 @@ Spindle.Log.setup ~level:(Some Logs.Info)
 
 It also takes `?format`, and `?out`, a function that receives each line in
 place of stderr: a test's way to keep them.
-
-<details>
-<summary>The whole app</summary>
-
-```ocaml
---8<-- "logging.ml"
-```
-
-</details>
 
 ## What each line contains
 

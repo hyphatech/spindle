@@ -2,15 +2,16 @@
 title: Middleware
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import middleware from "@examples/middleware.ml?raw";
+
 A middleware is a function from a handler to a handler. It wraps every route
 and the not-found answer, for what applies to everything: headers, a
 maintenance page, timing.
 
 ## Example: counting requests
 
-```ocaml
---8<-- "middleware.ml"
-```
+<Code code={middleware} lang="ocaml" />
 
 ```console
 $ curl localhost:8080/

@@ -2,6 +2,10 @@
 title: Cookies, sessions and CORS
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import cookie from "@examples/cookie.ml?raw";
+import session from "@examples/session.ml?raw";
+
 Cookies, sessions, and what Spindle checks on a request before your route
 runs.
 
@@ -10,9 +14,7 @@ runs.
 Declare a cookie once, by name and codec, and use it to read and to set.
 This page counts your visits:
 
-```ocaml
---8<-- "cookie.ml"
-```
+<Code code={cookie} lang="ocaml" />
 
 ```console
 $ curl -i -c jar -b jar localhost:8080/
@@ -101,9 +103,7 @@ let () =
 a random id. A session is a [dependency](/spindle/tutorial/dependencies/): a
 route reads it, and is handed the session its request's cookie names.
 
-```ocaml
---8<-- "session.ml"
-```
+<Code code={session} lang="ocaml" />
 
 ```console
 $ curl -c jar -b jar -X POST localhost:8080/sign-in/kim

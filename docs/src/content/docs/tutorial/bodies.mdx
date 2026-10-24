@@ -2,6 +2,9 @@
 title: Request bodies, responses and errors
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import json_body from "@examples/json_body.ml?raw";
+
 This page reads a JSON body, answers with JSON, and says no. Each is a value
 declared on the route, so the API's document always matches what the route
 does.
@@ -12,9 +15,7 @@ An order is a record whose quantity has bounds. What was placed is another
 record, answered at `201`. An item that is sold out is a refusal the
 application declares:
 
-```ocaml
---8<-- "json_body.ml:app"
-```
+<Code code={json_body} lang="ocaml" />
 
 ```console
 $ curl -i localhost:8080/orders -H 'content-type: application/json' \
@@ -57,22 +58,13 @@ What happened:
   `placed_json`. The same value decodes the body, encodes the answer and
   describes the shape in the API's document. A shape the deriver cannot
   describe is written with
-  [`wiretype`'s combinators](https://github.com/hyphatech/wiretype#by-hand).
+  [`wiretype`'s combinators](https://hyphatech.github.io/wiretype/guide/by-hand/).
 - `Spindle.json order_json` reads the body. Types, required fields and bounds
   like `[@min 1]` are checked for you; a body that fails is a `400`.
 - ``Returns.json ~status:`Created placed_json`` declares the answer. The
   handler returns the plain record and the framework encodes it.
 - `sold_out` is a refusal code, declared once with its status. The route
   lists it in `~refuses`.
-
-<details>
-<summary>The whole app</summary>
-
-```ocaml
---8<-- "json_body.ml"
-```
-
-</details>
 
 ## Response types
 

@@ -2,6 +2,9 @@
 title: Client schemas
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import api_cli from "@examples/api_cli.ml?raw";
+
 Your front end's types come from the same routes as the server: a
 TypeScript module of [Zod](https://zod.dev) schemas for every body, answer
 and error, or, for a front end written in OCaml, a
@@ -240,9 +243,7 @@ check-wire: ## fail when either is not what the routes make
 <details>
 <summary>The whole command line, routes included, in one file</summary>
 
-```ocaml
---8<-- "api_cli.ml"
-```
+<Code code={api_cli} lang="ocaml" />
 
 </details>
 

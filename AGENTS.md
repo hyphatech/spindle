@@ -13,7 +13,7 @@ make setup   # once: the switch hypha-spindle, every dependency
 make test    # starts the test Postgres in Podman, runs every suite
 make lint    # formatting, odoc, the release build, and the opam files
 make fmt     # format in place
-make docs    # the documentation site into site/, as Pages publishes it; docs-serve serves it
+make docs    # the documentation site into _build/docs, as Pages publishes it; docs-serve serves it
 ```
 
 `make test` needs `podman compose` and Bun 1.3 or later, which runs the
@@ -43,9 +43,10 @@ mcp/        spindle-mcp: an MCP server, routes a battery adds, on spindle's
 mcp-client/ spindle-mcp-client: calling another server's tools, on client/
             alone, and MCP's messages in protocol/, which both ends share
 docs/       the documentation site, a Starlight site in Hypha's look, from
-            starlight-theme-hypha: its pages in src/content/docs/, every
-            program included from examples/ by snippets.mjs
-examples/   the programs the site shows, each built and run
+            starlight-theme-hypha: its pages in src/content/docs/, each
+            importing the examples it shows as @examples/<file>?raw into
+            Starlight's <Code>
+examples/   the programs the site shows, each a whole file, built and run
 test/       the suites: the framework, HTTP and WebSocket rows by RFC
             section, OAuth's by RFC and MCP's by the specification's
             section, the wire, the Postgres and SQLite kits, and test_docs,
@@ -63,7 +64,7 @@ module.
 |---|---|
 | A module's contract | its `.mli`, in odoc markup |
 | What a contributor must not break | *Rules that must hold* below: an instruction, its reason in a clause and how you find out you broke it |
-| How to use it | the documentation site, [docs/](docs/src/content/docs/index.mdx), every program included from `examples/` |
+| How to use it | the documentation site, [docs/](docs/src/content/docs/index.mdx), every program imported whole from `examples/` |
 | Why it changed | the commit message |
 
 Code cites no document.

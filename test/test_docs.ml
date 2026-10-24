@@ -1,6 +1,7 @@
 (* An example is built so a page cannot show code that does not compile, and
-   one no page includes is code nobody reads: every name examples/dune
-   builds is included by some page of the site. *)
+   one no page imports is code nobody reads: every name examples/dune builds,
+   and every module beside them, is imported whole by some page of the site,
+   as @examples/<file>.ml?raw. *)
 
 let read path = In_channel.with_open_bin path In_channel.input_all
 
@@ -30,6 +31,13 @@ let every_example_is_on_a_page () =
     | [] -> []
   in
   let built = names words in
+  let modules =
+    Sys.readdir "../examples" |> Array.to_list
+    |> List.filter_map (fun f -> Filename.chop_suffix_opt ~suffix:".ml" f)
+    (* dune writes the preprocessed x.pp.ml beside each, which no page shows. *)
+    |> List.filter (fun m -> not (String.contains m '.'))
+  in
+  let shown = List.sort_uniq String.compare (built @ modules) in
   let rec pages dir =
     Sys.readdir dir |> Array.to_list
     |> List.concat_map (fun f ->
@@ -46,8 +54,9 @@ let every_example_is_on_a_page () =
   Alcotest.(check (list string))
     "built, and on no page" []
     (List.filter
-       (fun name -> not (contains docs (Printf.sprintf {|--8<-- "%s.ml|} name)))
-       built)
+       (fun name ->
+         not (contains docs (Printf.sprintf {|"@examples/%s.ml?raw"|} name)))
+       shown)
 
 let () =
   Alcotest.run "docs"

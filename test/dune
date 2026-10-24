@@ -87,7 +87,8 @@
  (modules serve_app)
  (libraries spindle eio_main))
 
-; Every example the build makes is on a page of the documentation site.
+; Every example the build makes, and every module beside it, is imported by
+; a page of the documentation site.
 
 (test
  (name test_docs)
@@ -96,6 +97,7 @@
  (libraries alcotest)
  (deps
   ../examples/dune
+  (glob_files ../examples/*.ml)
   (glob_files_rec ../docs/src/content/*.{md,mdx})))
 
 ; The SQLite kit, against files of each case's own, which needs no server.

@@ -2,6 +2,9 @@
 title: Static files
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import static_dir from "@examples/static.ml?raw";
+
 Serve a directory beside your API: a built front end, its scripts and
 stylesheets, a favicon. One route does it:
 
@@ -15,9 +18,7 @@ are read once when the server starts; for files that change while it runs
 
 ## Serving a directory
 
-```ocaml
---8<-- "static.ml:app"
-```
+<Code code={static_dir} lang="ocaml" />
 
 `"public"` is a folder next to where you start the program. The example's is
 `examples/public`, so start it from `examples/` and ask for a file:

@@ -10,7 +10,6 @@
 
 open Spindle.Syntax
 
-(* --8<-- [start:app] *)
 (* The shape and its bounds are the description's: a quantity of 0 is a 400
    at body.quantity before the handler runs. *)
 type order = { item : string; quantity : int [@min 1] [@max 20] }
@@ -43,7 +42,6 @@ let routes =
       (let+ order = Spindle.json order_json in
        place order);
   ]
-(* --8<-- [end:app] *)
 
 let () =
   Spindle.Log.setup ();

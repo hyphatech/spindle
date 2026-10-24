@@ -6,7 +6,6 @@
 
 open Spindle.Syntax
 
-(* --8<-- [start:routes] *)
 let user_id = Spindle.Path.int64 "user_id"
 let name = Spindle.Path.string "name"
 
@@ -32,7 +31,6 @@ let routes =
       (let+ id = Spindle.param user_id and+ name = Spindle.param name in
        user_answer id name);
   ]
-(* --8<-- [end:routes] *)
 
 let () =
   Spindle.Log.setup ();

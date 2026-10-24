@@ -19,9 +19,9 @@ it as a module (`Spindle_http`).
 | `spindle-sqlite` | `spindle-sqlite` | A server's SQLite: a pool of one file in WAL mode, a transaction per borrow, sessions |
 | `spindle-postgres` | `spindle-postgres` | A server's Postgres: bounded connections, a pool, a transaction per borrow, sessions |
 | `spindle-cli` | `spindle-cli` | An application's command line: its API's document, Zod schemas and Melange client |
-| [`wiretype`, `ppx_wiretype`](https://github.com/hyphatech/wiretype) | `wiretype`, `ppx_wiretype` | JSON as descriptions, and the deriver that writes one, released on their own; installed with `spindle` |
-| [`rowtype`, `rowtype-sqlite`, `rowtype-postgres`, `rowtype-migrate`](https://github.com/hyphatech/rowtype) | the same | A statement described once, its SQLite and Postgres backends, and migrations, released on their own; `spindle-sqlite` and `spindle-postgres` each install `rowtype` and their backend, and `rowtype-migrate` is installed beside them (`opam install rowtype-migrate`), which builds the dialect of each backend installed |
-| [`postgres-eio`](https://github.com/hyphatech/postgres-eio) | `postgres-eio` | The Postgres driver, released on its own |
+| [`wiretype`, `ppx_wiretype`](https://hyphatech.github.io/wiretype/) | `wiretype`, `ppx_wiretype` | JSON as descriptions, and the deriver that writes one, released on their own; installed with `spindle` |
+| [`rowtype`, `rowtype-sqlite`, `rowtype-postgres`, `rowtype-migrate`](https://hyphatech.github.io/rowtype/) | the same | A statement described once, its SQLite and Postgres backends, and migrations, released on their own; `spindle-sqlite` and `spindle-postgres` each install `rowtype` and their backend, and `rowtype-migrate` is installed beside them (`opam install rowtype-migrate`), which builds the dialect of each backend installed |
+| [`postgres-eio`](https://hyphatech.github.io/postgres-eio/) | `postgres-eio` | The Postgres driver, released on its own |
 
 ## Spindle
 
@@ -50,13 +50,13 @@ it as a module (`Spindle_http`).
 
 ## What it is built on
 
-- [`Wiretype`](https://github.com/hyphatech/wiretype) -- JSON as
-  descriptions, and what `[@@deriving wiretype]` writes, documented in its
-  own repository.
+- [`Wiretype`](https://hyphatech.github.io/wiretype/) -- JSON as
+  descriptions, and what `[@@deriving wiretype]` writes, documented on its
+  own site.
 - [`Rowtype`, `Rowtype_sqlite`, `Rowtype_postgres`, `Rowtype_migrate`,
   `Rowtype_migrate_sqlite` and
-  `Rowtype_migrate_postgres`](https://github.com/hyphatech/rowtype) -- a
+  `Rowtype_migrate_postgres`](https://hyphatech.github.io/rowtype/) -- a
   statement described once, running one on each database, and migrations and
-  each database's way of running them, documented in their own repository.
-- [`Postgres_eio`](https://github.com/hyphatech/postgres-eio) -- the driver,
-  documented in its own repository.
+  each database's way of running them, documented on their own site.
+- [`Postgres_eio`](https://hyphatech.github.io/postgres-eio/) -- the driver,
+  documented on its own site.

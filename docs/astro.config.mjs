@@ -1,27 +1,25 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
-import { satteri } from "@astrojs/markdown-satteri";
 import links from "starlight-links-validator";
 import hypha from "starlight-theme-hypha";
-import consoleCommands from "./console.mjs";
-import snippets from "./snippets.mjs";
 
 // Spindle's documentation site, published to GitHub Pages by
-// .github/workflows/docs.yml. `make docs` builds it into site/, odoc's
+// .github/workflows/docs.yml. `make docs` builds it into _build/docs, odoc's
 // reference from the .mli files into public/reference/ first.
 //
-// Every program a page shows is a file under examples/, built with the
-// repository, and included by snippets.mjs -- so a page cannot show code
-// that does not compile. A missing one, or a link to a page or a heading
-// that is not there, fails the build.
+// Every program a page shows is a whole file under examples/, built with
+// the repository, which the page imports with Vite's `?raw` into Starlight's
+// <Code> -- so a page cannot show code that does not compile. A missing
+// file, or a link to a page or a heading that is not there, fails the build.
 const repository = fileURLToPath(new URL("..", import.meta.url));
 
 export default defineConfig({
   site: "https://hyphatech.github.io",
   base: "/spindle",
-  outDir: `${repository}site`,
-  markdown: { processor: satteri({ mdastPlugins: [snippets({ base: `${repository}examples` })] }) },
+  outDir: `${repository}_build/docs`,
+  // A page imports an example as @examples/<file>?raw, from any depth.
+  vite: { resolve: { alias: { "@examples": `${repository}examples` } } },
   integrations: [
     starlight({
       title: "spindle",
@@ -43,7 +41,6 @@ export default defineConfig({
           exclude: ["**/reference/spindle*/**"],
         }),
       ],
-      expressiveCode: { plugins: [consoleCommands()] },
       sidebar: [
         {
           label: "Tutorial",

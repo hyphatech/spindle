@@ -2,6 +2,9 @@
 title: Multicore and shared state
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import multidomain from "@examples/multidomain.ml?raw";
+
 Spindle serves on every core: by default it runs
 `Domain.recommended_domain_count ()` domains, and your handlers run on all of
 them in parallel. So anything a handler touches must be one of:
@@ -22,9 +25,7 @@ two effects needs no lock.
 Each visit to `/pages/<name>` counts one, in a `Hashtbl` behind an
 `Eio.Mutex`; with `--one-domain` it runs on one domain with no lock:
 
-```ocaml
---8<-- "multidomain.ml"
-```
+<Code code={multidomain} lang="ocaml" />
 
 ```sh
 dune exec examples/multidomain.exe

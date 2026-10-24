@@ -2,6 +2,10 @@
 title: Databases
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import sql_postgres from "@examples/sql_postgres.ml?raw";
+import databases_routes from "@examples/databases_routes.ml?raw";
+
 `spindle-sqlite` and `spindle-postgres` wire a database into a server: a
 pool, a readiness check, metrics, sessions, and the refusal a failure
 answers. Both have the same calls, under `Spindle_sqlite` and
@@ -122,9 +126,7 @@ docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:18-alpine
 `Pool.run` takes a connection string, a `postgres://` URL or a keyword
 list:
 
-```ocaml
---8<-- "sql_postgres.ml:pool"
-```
+<Code code={sql_postgres} lang="ocaml" title="sql_postgres.ml" />
 
 ```console
 $ dune exec examples/sql_postgres.exe
@@ -133,11 +135,9 @@ $ curl localhost:8080/
 ```
 
 <details>
-<summary>The whole app</summary>
+<summary>The route it serves</summary>
 
-```ocaml
---8<-- "sql_postgres.ml"
-```
+<Code code={databases_routes} lang="ocaml" title="databases_routes.ml" />
 
 </details>
 

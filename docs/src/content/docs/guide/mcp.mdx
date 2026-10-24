@@ -2,6 +2,11 @@
 title: MCP servers
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import forecast_tool from "@examples/forecast_tool.ml?raw";
+import mcp from "@examples/mcp.ml?raw";
+import mcp_client from "@examples/mcp_client.ml?raw";
+
 Give an agent tools to call. `spindle-mcp` serves the
 [Model Context Protocol](https://modelcontextprotocol.io/specification/2026-07-28),
 revision 2026-07-28, over HTTP: one `POST` endpoint, added to your routes as
@@ -13,9 +18,7 @@ opam install spindle-mcp
 
 ## A tool
 
-```ocaml
---8<-- "mcp.ml:tool"
-```
+<Code code={forecast_tool} lang="ocaml" title="forecast_tool.ml" />
 
 A tool is a name, the description of its arguments, the description of its
 result, and a [dependency](/spindle/tutorial/dependencies/) giving the
@@ -33,9 +36,7 @@ the function a probe runs.
 
 ## Serving it
 
-```ocaml
---8<-- "mcp.ml:serve"
-```
+<Code code={mcp} lang="ocaml" title="mcp.ml" />
 
 `Spindle_mcp.routes` is `POST /mcp` (or `~path`), serving
 `server/discover`, `tools/list` and `tools/call`:
@@ -180,9 +181,7 @@ tools installs and links no framework.
 opam install spindle-mcp-client
 ```
 
-```ocaml
---8<-- "mcp_client.ml:call"
-```
+<Code code={mcp_client} lang="ocaml" />
 
 - `create client ~url` names the server and does no I/O. `~headers` go with
   every call, a bearer token among them.

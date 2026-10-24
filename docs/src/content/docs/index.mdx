@@ -8,6 +8,8 @@ import Landing from "starlight-theme-hypha/components/Landing.astro";
 import Features from "starlight-theme-hypha/components/Features.astro";
 import Feature from "starlight-theme-hypha/components/Feature.astro";
 import logo from "../../assets/logo-dark.svg";
+import { Code } from "@astrojs/starlight/components";
+import greeting from "@examples/greeting.ml?raw";
 
 <Landing
   title="The Eio-native web framework for modern OCaml."
@@ -26,9 +28,7 @@ opam install spindle
 
 <Fragment slot="aside">
 
-```ocaml
---8<-- "greeting.ml:app"
-```
+<Code code={greeting} lang="ocaml" />
 
 </Fragment>
 </Landing>

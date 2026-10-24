@@ -36,6 +36,6 @@ jobs:
       - run: make docs OPAM="opam exec --"
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: _build/docs
       - uses: actions/deploy-pages@v4
         id: deployment

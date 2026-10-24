@@ -10,7 +10,6 @@
        -d '{"title": "Learn OCaml properly"}'
      curl -X DELETE localhost:8080/todos/1 *)
 
-(* --8<-- [start:app] *)
 open Spindle.Syntax
 
 type todo = { id : int; title : string } [@@deriving wiretype]
@@ -59,4 +58,3 @@ let routes =
   ]
 
 let () = Eio_main.run @@ fun env -> Spindle.serve env routes
-(* --8<-- [end:app] *)

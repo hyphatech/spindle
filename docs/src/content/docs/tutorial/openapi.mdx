@@ -2,6 +2,11 @@
 title: OpenAPI
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import openapi from "@examples/openapi.ml?raw";
+import split from "@examples/split.ml?raw";
+import greetings from "@examples/greetings.ml?raw";
+
 Spindle reads your API's OpenAPI 3.2 document from the routes themselves:
 what each route reads, what it answers and every error it may refuse with
 are already values on it. You write nothing beside the routes, so the
@@ -12,9 +17,7 @@ document never drifts from them.
 `Spindle.Openapi.routes` serves an OpenAPI document of the routes you give
 it at `/openapi.json`, and Scalar's interactive reference over it at `/docs`:
 
-```ocaml
---8<-- "openapi.ml:docs"
-```
+<Code code={openapi} lang="ocaml" title="openapi.ml" />
 
 Open `http://localhost:8080/docs` for an interactive OpenAPI reference
 ([Scalar](https://scalar.com)) generated from your routes: every route, its
@@ -30,9 +33,7 @@ what it means.*
 <details>
 <summary>The app in the screenshot</summary>
 
-```ocaml
---8<-- "split.ml:app"
-```
+<Code code={split} lang="ocaml" />
 
 </details>
 
@@ -53,11 +54,9 @@ what it means.*
   instead.
 
 <details>
-<summary>The whole app</summary>
+<summary>The routes it describes</summary>
 
-```ocaml
---8<-- "openapi.ml"
-```
+<Code code={greetings} lang="ocaml" title="greetings.ml" />
 
 </details>
 

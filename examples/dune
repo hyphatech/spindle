@@ -51,3 +51,13 @@
   logs)
  (preprocess
   (pps ppx_wiretype)))
+
+; @all builds only the modules a program links, so @all asks for this
+; directory's @check, which compiles every module, a piece no program
+; links among them.
+
+(rule
+ (alias all)
+ (deps
+  (alias check))
+ (action (progn)))

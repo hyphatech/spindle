@@ -2,7 +2,12 @@
 title: HTML pages and templates
 ---
 
-import { Tabs, TabItem } from "@astrojs/starlight/components";
+import { Code, Tabs, TabItem } from "@astrojs/starlight/components";
+import htmlit_page from "@examples/pages/htmlit_page.ml?raw";
+import tyxml_page from "@examples/pages/tyxml_page.ml?raw";
+import jsx_page from "@examples/pages/jsx_page.mlx?raw";
+import jingoo_page from "@examples/pages/jingoo_page.ml?raw";
+import greeting_template from "@examples/pages/templates/greeting.jingoo?raw";
 
 A page is a string. `Returns.html` answers it at `200` as
 `text/html; charset=utf-8`; `Response.html` does the same under any status.
@@ -22,23 +27,17 @@ Each program serves the same page at `/hello/{name}`:
 <Tabs>
 <TabItem label="htmlit">
 
-```ocaml
---8<-- "pages/htmlit_page.ml"
-```
+<Code code={htmlit_page} lang="ocaml" />
 
 </TabItem>
 <TabItem label="TyXML">
 
-```ocaml
---8<-- "pages/tyxml_page.ml"
-```
+<Code code={tyxml_page} lang="ocaml" />
 
 </TabItem>
 <TabItem label="html_of_jsx">
 
-```ocaml
---8<-- "pages/jsx_page.mlx"
-```
+<Code code={jsx_page} lang="ocaml" />
 
 dune reads mlx through a dialect, declared once in your
 `dune-project` with `mlx-pp` from the `mlx` package:
@@ -55,13 +54,9 @@ dune reads mlx through a dialect, declared once in your
 </TabItem>
 <TabItem label="jingoo">
 
-```ocaml
---8<-- "pages/jingoo_page.ml"
-```
+<Code code={jingoo_page} lang="ocaml" />
 
-```jinja title="templates/greeting.jingoo"
---8<-- "pages/templates/greeting.jingoo"
-```
+<Code code={greeting_template} lang="jinja" title="templates/greeting.jingoo" />
 
 jingoo raises on a template it cannot read, so load it when the program
 starts, as above, not per request.

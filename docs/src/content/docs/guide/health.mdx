@@ -2,6 +2,9 @@
 title: Health checks
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import health from "@examples/health.ml?raw";
+
 `Spindle.Health.routes` adds the two routes an orchestrator or a load
 balancer probes:
 
@@ -38,9 +41,7 @@ cache in fun () -> Cache.ping cache)`. Return `Error`, never raise: a check
 that raises is a bug, and is answered `500`, not `503 not_ready`. This
 server is taken out of service while a file named `maintenance` exists:
 
-```ocaml
---8<-- "health.ml"
-```
+<Code code={health} lang="ocaml" />
 
 ```console
 $ curl localhost:8080/readyz

@@ -2,6 +2,10 @@
 title: Routes
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import methods from "@examples/methods.ml?raw";
+import path_params from "@examples/path_params.ml?raw";
+
 A route says *when somebody sends this method to this path, read these
 inputs from the request and pass them to this function*. An app is a list of
 routes.
@@ -37,9 +41,7 @@ with `let*` for a handler's `result`.
 
 A small API over a list of todos:
 
-```ocaml
---8<-- "methods.ml:app"
-```
+<Code code={methods} lang="ocaml" />
 
 ```console
 $ curl localhost:8080/todos
@@ -118,9 +120,7 @@ Path.root                                        (* / *)
 
 One parameter, read by two routes, one answering text and one JSON:
 
-```ocaml
---8<-- "path_params.ml:routes"
-```
+<Code code={path_params} lang="ocaml" />
 
 ```console
 $ curl localhost:8080/users/7

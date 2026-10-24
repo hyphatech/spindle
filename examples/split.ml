@@ -3,7 +3,6 @@
    refused with every problem at once before [split] runs, and /docs shows
    them on the request's schema. *)
 
-(* --8<-- [start:app] *)
 open Spindle.Syntax
 
 type bill = {
@@ -32,4 +31,3 @@ let () =
   Spindle.Log.setup ();
   Eio_main.run @@ fun env ->
   Spindle.serve env (routes @ Spindle.Openapi.routes routes)
-(* --8<-- [end:app] *)

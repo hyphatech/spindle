@@ -4,7 +4,6 @@
      dune exec examples/mcp.exe &
      dune exec examples/mcp_client.exe *)
 
-(* --8<-- [start:call] *)
 type query = { city : string } [@@deriving wiretype]
 type forecast = { city : string; celsius : int } [@@deriving wiretype]
 
@@ -26,4 +25,3 @@ let () =
       with
       | Ok f -> Printf.printf "%s: %d°C\n" f.city f.celsius
       | Error e -> prerr_endline (Spindle_mcp_client.error_to_string e))
-(* --8<-- [end:call] *)

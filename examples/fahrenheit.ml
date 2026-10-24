@@ -3,7 +3,6 @@
    arithmetic and nothing else; /fahrenheit?celsius=warm and a missing one
    are refused at [query.celsius] before it runs. *)
 
-(* --8<-- [start:app] *)
 open Spindle.Syntax
 
 type reading = { fahrenheit : float } [@@deriving wiretype]
@@ -24,4 +23,3 @@ let () =
   Spindle.Log.setup ();
   Eio_main.run @@ fun env ->
   Spindle.serve env (routes @ Spindle.Openapi.routes routes)
-(* --8<-- [end:app] *)

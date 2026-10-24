@@ -2,13 +2,16 @@
 title: OAuth bearer tokens
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import notes_auth from "@examples/notes_auth.ml?raw";
+import notes_routes from "@examples/notes_routes.ml?raw";
+import oauth from "@examples/oauth.ml?raw";
+
 Protect routes with OAuth 2.0 access tokens that an authorization server
 elsewhere issues -- Auth0, Okta, WorkOS, your company's. Spindle is the
 *resource server*: it checks each token and never issues one.
 
-```ocaml
---8<-- "oauth.ml:auth"
-```
+<Code code={notes_auth} lang="ocaml" title="notes_auth.ml" />
 
 `issuer` is the authorization server's identifier, exactly as its tokens
 write it in `iss`. `resource` is your server's own URL, which a token must
@@ -17,9 +20,7 @@ anything else raises `Invalid_argument` where you wrote it.
 
 ## Reading the token
 
-```ocaml
---8<-- "oauth.ml:routes"
-```
+<Code code={notes_routes} lang="ocaml" title="notes_routes.ml" />
 
 - `Bearer.claims auth` is the checked token: `subject`, `client_id`,
   `scopes`, `expires`, `issued`, `token_id`, and `payload`, every claim, for
@@ -81,9 +82,7 @@ resource's path if it has one: `https://api.example.com/mcp`'s is at
 
 ## The issuer's keys
 
-```ocaml
---8<-- "oauth.ml:serve"
-```
+<Code code={oauth} lang="ocaml" title="oauth.ml" />
 
 `Spindle_client.Oauth.keys` finds the issuer's metadata at its well-known
 URL ([RFC 8414](https://www.rfc-editor.org/rfc/rfc8414), then OpenID Connect

@@ -2,15 +2,17 @@
 title: WebSockets
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import websocket_server from "@examples/websocket_server.ml?raw";
+import websocket_client from "@examples/websocket_client.ml?raw";
+
 You declare a WebSocket **protocol** once -- what the client sends and what
 the server sends -- and serve it from a route or open it from a client. Each
 end gets a socket typed from its own side.
 
 ## An echo server
 
-```ocaml
---8<-- "websocket_server.ml"
-```
+<Code code={websocket_server} lang="ocaml" />
 
 - `Ws.protocol ~client ~server ()` says what each side sends: `Ws.json` of a
   wiretype description, `Ws.text` or `Ws.binary` (each a `string`). Add
@@ -41,9 +43,7 @@ upgrade: websocket
 
 ## Connecting as a client
 
-```ocaml
---8<-- "websocket_client.ml"
-```
+<Code code={websocket_client} lang="ocaml" />
 
 ```console
 $ dune exec examples/websocket_client.exe

@@ -2,6 +2,9 @@
 title: Your first app
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import hello from "@examples/hello.ml?raw";
+
 Make a project, write a server that answers one request, and run it. This
 assumes [Spindle is installed](/spindle/install/).
 
@@ -43,9 +46,7 @@ page on:
 
 `bin/main.ml` is the server:
 
-```ocaml title="bin/main.ml"
---8<-- "hello.ml:app"
-```
+<Code code={hello} lang="ocaml" title="bin/main.ml" />
 
 ## 2. Run it
 
@@ -57,7 +58,7 @@ Listening on http://localhost:8080 (127.0.0.1 and [::1])
 ```
 
 `dune exec` compiles, reports any mistake with its file and line, and runs.
-Open <http://localhost:8080>, or from another terminal:
+Open [http://localhost:8080](http://localhost:8080), or from another terminal:
 
 ```console
 $ curl localhost:8080

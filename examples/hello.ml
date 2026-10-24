@@ -5,7 +5,6 @@
    so each reads on its own, and a handler is plain OCaml a test can call
    without a server. *)
 
-(* --8<-- [start:app] *)
 let good_morning = Ok "Good morning, world!"
 
 let routes =
@@ -15,4 +14,3 @@ let routes =
   ]
 
 let () = Eio_main.run @@ fun env -> Spindle.serve env routes
-(* --8<-- [end:app] *)

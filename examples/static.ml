@@ -10,10 +10,8 @@
    a restart, and a path that was not there is never a file, whatever it
    spells. *)
 
-(* --8<-- [start:app] *)
 let routes = [ Spindle.Static.directory "public" ]
 
 let () =
   Spindle.Log.setup ();
   Eio_main.run @@ fun env -> Spindle.serve env routes
-(* --8<-- [end:app] *)

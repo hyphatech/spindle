@@ -2,6 +2,13 @@
 title: Dependencies
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import fahrenheit from "@examples/fahrenheit.ml?raw";
+import paging from "@examples/paging.ml?raw";
+import dependencies from "@examples/dependencies.ml?raw";
+import bearer_token from "@examples/bearer_token.ml?raw";
+import bearer_auth from "@examples/bearer_auth.ml?raw";
+
 A handler needs things from the request: a path parameter, a query string,
 a header, a cookie, the body -- and things built from them, like who is
 signed in or which page of a list was asked for. Each of these is a
@@ -42,9 +49,7 @@ a `Ptime.t`.
 A query parameter is read with the codec of its type, so the handler is
 handed a `float` and is arithmetic and nothing else:
 
-```ocaml
---8<-- "fahrenheit.ml:app"
-```
+<Code code={fahrenheit} lang="ocaml" />
 
 ```console
 $ curl 'localhost:8080/fahrenheit?celsius=21'
@@ -66,15 +71,11 @@ $ curl localhost:8080/fahrenheit
 
 A page of a list is two query parameters, read as one value and checked:
 
-```ocaml
---8<-- "dependencies.ml:paging"
-```
+<Code code={paging} lang="ocaml" title="paging.ml" />
 
 A route lists it like any built-in:
 
-```ocaml
---8<-- "dependencies.ml:route"
-```
+<Code code={dependencies} lang="ocaml" title="dependencies.ml" />
 
 ```console
 $ curl 'localhost:8080/books?page=2&per_page=2'
@@ -109,24 +110,13 @@ $ curl 'localhost:8080/books?page=two&per_page=x'
   request of any other `Content-Type` is answered `415` before its body is
   read.
 
-<details>
-<summary>The whole app</summary>
-
-```ocaml
---8<-- "dependencies.ml"
-```
-
-</details>
-
 ## Custom error codes
 
 For a refusal that isn't "this input is wrong", declare a code and list it
 with `~refuses`, so the route's document names it. A bearer token read from
 the `Authorization` header:
 
-```ocaml
---8<-- "bearer_auth.ml:bearer"
-```
+<Code code={bearer_token} lang="ocaml" title="bearer_token.ml" />
 
 - The header is `optional`: a missing token should be a `401`, not a `400`.
 - A `401` code needs a `~challenge` (the `WWW-Authenticate` value);
@@ -140,11 +130,9 @@ the `Authorization` header:
   ([why](/spindle/tutorial/database/#6-open-the-transaction-in-the-handler)).
 
 <details>
-<summary>The whole app: a bearer token, and two routes that need it</summary>
+<summary>The rest of the app: two routes that need the token</summary>
 
-```ocaml
---8<-- "bearer_auth.ml"
-```
+<Code code={bearer_auth} lang="ocaml" title="bearer_auth.ml" />
 
 </details>
 

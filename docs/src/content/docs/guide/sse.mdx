@@ -2,6 +2,9 @@
 title: Server-Sent Events (SSE)
 ---
 
+import { Code } from "@astrojs/starlight/components";
+import sse from "@examples/sse.ml?raw";
+
 A Server-Sent Events stream sends events until it is done. `Broadcast`
 sends one event to everyone listening.
 
@@ -10,9 +13,7 @@ sends one event to everyone listening.
 `GET /count` sends a number a second, and a client that reconnects carries
 on where it left off:
 
-```ocaml
---8<-- "sse.ml"
-```
+<Code code={sse} lang="ocaml" />
 
 ```console
 $ curl -N localhost:8080/count

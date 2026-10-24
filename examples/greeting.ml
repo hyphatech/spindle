@@ -1,8 +1,3 @@
-(* The landing page's program: a type, a handler, a route and a server, each
-   on its own so a reader new to OCaml can see how they fit together.
-   /hello/Ada answers {"text":"Hello, Ada!"}, and /docs describes it. *)
-
-(* --8<-- [start:app] *)
 open Spindle.Syntax
 
 type greeting = { text : string } [@@deriving wiretype]
@@ -23,4 +18,3 @@ let () =
   Spindle.Log.setup ();
   Eio_main.run @@ fun env ->
   Spindle.serve env (routes @ Spindle.Openapi.routes routes)
-(* --8<-- [end:app] *)
