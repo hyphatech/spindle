@@ -1,7 +1,6 @@
 # Bounded inputs: a parameter's range in its codec
 
-**Status: Draft** — the shape below is proposed; nothing in it is accepted,
-nothing is built.
+**Status: Accepted** — the whole shape is signed off; nothing is built.
 Date: 2026-10-25
 
 ## The problem
@@ -183,7 +182,19 @@ through its codec's check, and refuses the route table where one fails, with
 a sentence naming the route and the input, as it refuses a route table that
 is wrong in any other way.
 
+### One name, one code, one meaning
+
+Settled with the owner on 2026-10-25: "api must remain coherent and
+consistent". A bound reads the same on a body's member and on a parameter:
+wiretype's names, wiretype's codes, and a value its bounds refuse is one its
+codec refused, `~unparsed` and all.
+
 ### Alternatives rejected
+
+- **Names of Spindle's own**, `int_between`: a second word for wiretype's
+  `int_bounded`.
+- **`malformed` for every refused parameter**: a client would branch on
+  `too_large` for a member and on something else for a parameter.
 
 - **Bounds as labels on the input**, `Query.optional ~min:1 "page"
   Codec.int`. Five input modules, each with a label for every bound of every
@@ -226,20 +237,6 @@ source, so a program that starts never meets one.
 document and client written again unchanged. By hand, the dependencies
 example served and asked with `curl` for `per_page` of `0`, `101`, `abc` and
 `50`, and its document read in Scalar, showing both bounds.
-
-## Open
-
-- **The names.** `int_bounded` is wiretype's word, and the proposal's, so one
-  spelling holds across the stack; `int_between` or `int_in` reads better
-  alone at a call site. Blocks the stage.
-- **The codes.** Wiretype's five codes, as proposed, so a client branching
-  on `too_large` handles a member and a parameter alike; or `malformed` for
-  every refused parameter, as today, which needs no check apart from the
-  parse. Blocks the stage.
-- **`Next_route` and a bound.** Proposed: a bound refused is unparsed, so
-  `/posts/0` under `int_bounded ~min:1` with `~unparsed:Next_route` goes on
-  to the slug route. The other reading is that a number the route
-  recognises is its own, in range or not. Blocks the stage's path rows.
 
 ## Where the facts go
 
