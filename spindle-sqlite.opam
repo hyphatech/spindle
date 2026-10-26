@@ -19,7 +19,7 @@ depends: [
   "logs" {>= "0.10.0"}
   "alcotest" {with-test & >= "1.9.1"}
   "eio_main" {with-test & >= "1.6"}
-  "wiretype" {with-test & >= "0.6.0" & < "0.7.0"}
+  "wiretype" {with-test & >= "0.6.1" & < "0.7.0"}
   "odoc" {with-doc}
 ]
 build: [

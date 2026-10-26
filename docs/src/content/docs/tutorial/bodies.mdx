@@ -128,7 +128,7 @@ To set a cookie or a header, take `Spindle.set_cookie` or
 `Spindle.add_header` as an input -- each is a function -- and call it:
 
 ```ocaml
-let visits = Spindle.Cookie.named "visits" Spindle.Codec.int
+let visits = Spindle.Cookie.named "visits" Wiretype.int
 
 Spindle.get Path.(s "welcome") Returns.text
   (let+ set_cookie = Spindle.set_cookie
@@ -203,7 +203,7 @@ A form's fields are typed inputs, read like query parameters. A wrong one is
 a problem at `form.<name>`:
 
 ```ocaml
-let email = Spindle.Form.required "email" Spindle.Codec.string
+let email = Spindle.Form.required "email" Wiretype.string
 let remember = Spindle.Form.checked "remember"
 
 Spindle.post Path.(s "sign-up") (Spindle.Returns.json account_json)
@@ -211,7 +211,7 @@ Spindle.post Path.(s "sign-up") (Spindle.Returns.json account_json)
    sign_up ~email ~remember)
 ```
 
-- `Form.required`, `optional` and `list` take a codec. `checked` is `true`
+- `Form.required`, `optional` and `list` take a wiretype description, as a query parameter does. `checked` is `true`
   when the field was sent at all, since an unticked box is not sent.
 - The body is read once, however many fields you read, as
   `application/x-www-form-urlencoded` or `multipart/form-data`, up to the

@@ -37,17 +37,12 @@ type body =
 
 type located = In_path | In_query | In_header | In_cookie
 
-(** A default as the JSON its schema reads. *)
-type default =
-  | Bare of string  (** a number or a boolean, as its codec prints it *)
-  | Quoted of string  (** anything else, a string *)
-
 type parameter = {
   name : string;
   located : located;
   required : bool;
   schema : Wiretype.Schema.t;
-  default : default option;
+  default : Wiretype.Value.t option;  (** as its description writes it *)
 }
 (** An input the route reads beside its body: its path's, a query parameter, a
     header, a cookie. A credential is none, since it is its scheme. *)
@@ -85,7 +80,3 @@ type t = {
 }
 
 val of_app : App.t -> t
-
-val of_shape : Codec.shape -> Wiretype.Schema.t
-(** A route input's codec: a path parameter, a query parameter, a header, a
-    cookie. *)

@@ -40,9 +40,7 @@ let note =
 type lang = En | Fr
 
 let lang =
-  Spindle.Codec.enum ~kind:"lang"
-    (function En -> "en" | Fr -> "fr")
-    [ En; Fr ]
+  Wiretype.enum ~kind:"lang" (function En -> "en" | Fr -> "fr") [ En; Fr ]
 
 type ticks
 
@@ -77,7 +75,7 @@ let routes =
     Spindle.get
       Spindle.Path.(s "items")
       (Spindle.Returns.json (Wiretype.list item))
-      (let+ tags = Spindle.Query.list "tag" Spindle.Codec.string in
+      (let+ tags = Spindle.Query.list "tag" Wiretype.string in
        Ok (List.mapi (fun i name -> { id = i + 1; name; size = Large }) tags));
     Spindle.post
       Spindle.Path.(s "items")
@@ -92,12 +90,12 @@ let routes =
     Spindle.get
       Spindle.Path.(s "hello")
       Spindle.Returns.text
-      (let+ name = Spindle.Header.required "x-name" Spindle.Codec.string in
+      (let+ name = Spindle.Header.required "x-name" Wiretype.string in
        Ok ("Good morning, " ^ name ^ "."));
     Spindle.post
       Spindle.Path.(s "notes")
       (Spindle.Returns.json note)
-      (let+ title = Spindle.Form.required "title" Spindle.Codec.string
+      (let+ title = Spindle.Form.required "title" Wiretype.string
        and+ file = Spindle.Form.File.optional "attachment" in
        Ok
          {
@@ -120,7 +118,7 @@ let routes =
     Spindle.get
       Spindle.Path.(s "ticks")
       (Spindle.Returns.events Spindle.Event.[ declare tick; declare line ])
-      (let+ count = Spindle.Query.required "count" Spindle.Codec.int in
+      (let+ count = Spindle.Query.required "count" Wiretype.int in
        Ok
          (fun send ->
            let rec from i =

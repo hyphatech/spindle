@@ -8,9 +8,10 @@ type t
 (** A cookie to set. *)
 
 type 'a named
-(** A cookie declared once, its name and its codec, read and written by it. *)
+(** A cookie declared once, its name and its description, read and written by
+    it. *)
 
-val named : string -> 'a Codec.t -> 'a named
+val named : string -> 'a Wiretype.t -> 'a named
 (** As {!Cookie.named}. Raises [Invalid_argument] for a name no cookie can
     carry. *)
 
@@ -18,15 +19,15 @@ val whole_seconds : Mtime.Span.t -> int
 (** The span in whole seconds, rounded up: a cookie's [Max-Age] is never shorter
     than what it was declared with. *)
 
-val signed : max_age:Mtime.Span.t -> string -> 'a Codec.t -> 'a named
+val signed : max_age:Mtime.Span.t -> string -> 'a Wiretype.t -> 'a named
 (** As {!Cookie.signed}. *)
 
-val encrypted : max_age:Mtime.Span.t -> string -> 'a Codec.t -> 'a named
+val encrypted : max_age:Mtime.Span.t -> string -> 'a Wiretype.t -> 'a named
 (** As {!Cookie.encrypted}. *)
 
 module Named : sig
   val name : 'a named -> string
-  val codec : 'a named -> 'a Codec.t
+  val description : 'a named -> 'a Wiretype.t
   val sealed : 'a named -> bool
 
   val unseal :
@@ -51,7 +52,7 @@ val clear : ?path:string -> 'a named -> t
 (** As {!Cookie.clear}. Raises as {!make} does, for a path. *)
 
 val unescape : string -> string option
-(** A plain cookie's value as its codec printed it: every escape decoded, in
+(** A plain cookie's value as its description wrote it: every escape decoded, in
     either case, and [None] for a [%] not followed by two hex digits. *)
 
 val encode : string -> string

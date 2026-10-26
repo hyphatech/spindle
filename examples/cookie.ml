@@ -3,7 +3,7 @@
 
 open Spindle.Syntax
 
-let visits = Spindle.Cookie.named "visits" Spindle.Codec.int
+let visits = Spindle.Cookie.named "visits" Wiretype.int
 
 let count seen set_cookie =
   let n = Option.value seen ~default:0 + 1 in

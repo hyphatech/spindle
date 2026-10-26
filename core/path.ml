@@ -5,15 +5,15 @@ type 'a param = ('a, [ `Param ]) t
 type path = (unit, [ `Path ]) t
 type unparsed = Path_repr.unparsed = Invalid | Next_route
 
-let param ?(unparsed = Invalid) name codec =
-  R.Param { name; codec; unparsed; rest = false }
+let param ?(unparsed = Invalid) name description =
+  R.Param { name; description; unparsed; rest = false }
 
-let string ?unparsed name = param ?unparsed name Codec.string
-let int ?unparsed name = param ?unparsed name Codec.int
-let int64 ?unparsed name = param ?unparsed name Codec.int64
+let string ?unparsed name = param ?unparsed name Wiretype.string
+let int ?unparsed name = param ?unparsed name Wiretype.int
+let int64 ?unparsed name = param ?unparsed name Wiretype.int64
 
 let rest name =
-  R.Param { name; codec = R.rest_codec; unparsed = Invalid; rest = true }
+  R.Param { name; description = R.rest; unparsed = Invalid; rest = true }
 
 let spec : type a. a param -> a R.spec = function R.Param p -> p
 let name p = (spec p).name
@@ -36,7 +36,14 @@ type arg = Arg : 'a param * 'a -> arg
 let arg p v = Arg (p, v)
 let encode = R.encode
 let arg_name (Arg (p, _)) = name p
-let print_arg (Arg (p, v)) = Codec.print (spec p).codec v
+
+(* A value its description will not write -- one outside its bounds -- is
+   no URL. *)
+let print_arg (Arg (p, v)) =
+  Result.map_error
+    (fun (u : Wiretype.Unwritable.t) ->
+      Printf.sprintf "%s cannot be written: %s" (name p) u.message)
+    (Wiretype.to_text (spec p).description v)
 
 let url p args =
   let ( let* ) = Result.bind in
@@ -71,22 +78,24 @@ let url p args =
            slashes in it, and may be no segment at all. *)
         | Some a when q.rest -> (
             match print_arg a with
-            | "" -> build acc rest
-            | v when List.exists (String.equal "") (String.split_on_char '/' v)
-              ->
+            | Error m -> Error (Printf.sprintf "%s: %s" (pattern p) m)
+            | Ok "" -> build acc rest
+            | Ok v
+              when List.exists (String.equal "") (String.split_on_char '/' v) ->
                 Error
                   (Printf.sprintf
                      "%s: %s has an empty segment, which no URL can hold"
                      (pattern p) q.name)
-            | v -> build (v :: acc) rest)
+            | Ok v -> build (v :: acc) rest)
         | Some a -> (
             match print_arg a with
-            | "" ->
+            | Error m -> Error (Printf.sprintf "%s: %s" (pattern p) m)
+            | Ok "" ->
                 Error
                   (Printf.sprintf
                      "%s: %s printed as nothing, which no URL can hold"
                      (pattern p) q.name)
-            | v -> build (encode v :: acc) rest)
+            | Ok v -> build (encode v :: acc) rest)
         | None ->
             Error (Printf.sprintf "%s: no argument for %s" (pattern p) q.name))
   in

@@ -23,7 +23,7 @@ Each input is a value of type `'a Spindle.Dep.t`. A handler lists them with
 open Spindle.Syntax
 
 (let+ id = Spindle.param user_id
- and+ page = Spindle.Query.optional "page" Spindle.Codec.int
+ and+ page = Spindle.Query.optional "page" Wiretype.int
  and+ now = Spindle.now in
  answer id ~page ~now)
 ```
@@ -46,8 +46,8 @@ a `Ptime.t`.
 
 ## A query parameter
 
-A query parameter is read with the codec of its type, so the handler is
-handed a `float` and is arithmetic and nothing else:
+A query parameter is read by the wiretype description of its type -- the
+one a JSON body's member would be -- so the handler is handed a `float` and is arithmetic and nothing else:
 
 <Code code={fahrenheit} lang="ocaml" />
 
@@ -56,7 +56,7 @@ $ curl 'localhost:8080/fahrenheit?celsius=21'
 {"fahrenheit":69.8}
 
 $ curl 'localhost:8080/fahrenheit?celsius=warm'
-{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.celsius","code":"malformed","message":"This is not a number."}]}
+{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.celsius","code":"unexpected_type","message":"This must be a number."}]}
 
 $ curl localhost:8080/fahrenheit
 {"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.celsius","code":"required","message":"This is required."}]}
@@ -69,7 +69,8 @@ $ curl localhost:8080/fahrenheit
 
 ## Custom dependencies
 
-A page of a list is two query parameters, read as one value and checked:
+A page of a list is two query parameters, read as one value, each held to
+its bounds by its description:
 
 <Code code={paging} lang="ocaml" title="paging.ml" />
 
@@ -81,23 +82,26 @@ A route lists it like any built-in:
 $ curl 'localhost:8080/books?page=2&per_page=2'
 ["Persuasion","Ulysses"]
 
-$ curl 'localhost:8080/books?page=0'
-{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.page","code":"too_small","message":"This is 1 or more."}]}
+$ curl 'localhost:8080/books?page=0&per_page=500'
+{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.page","code":"too_small","message":"This must be at least 1."},{"at":"query.per_page","code":"too_large","message":"This must be at most 100."}]}
 
 $ curl 'localhost:8080/books?page=two&per_page=x'
-{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.page","code":"malformed","message":"This is not a whole number."},{"at":"query.per_page","code":"malformed","message":"This is not a whole number."}]}
+{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.page","code":"unexpected_type","message":"This must be a whole number."},{"at":"query.per_page","code":"unexpected_type","message":"This must be a whole number."}]}
 ```
 
-- `Dep.join` makes a dependency that may refuse, as `paging` above does:
-  write a `let+` block that answers `Ok` or `Error`, and wrap it. `Ok v`
-  gives `v`; `Error` refuses the request. `~refuses` names the codes it may
-  refuse with, so the document lists them; a `400` about an input, like
-  `paging`'s, needs none.
+- A bound is the description's, as it is a body member's:
+  `Wiretype.int_bounded`, `number_bounded`, `string_bounded` and the rest,
+  refused with wiretype's code -- `too_small`, `too_large`,
+  `not_a_multiple`, `too_short`, `too_long` -- and said in the document.
+- `Dep.join` makes a dependency that may refuse: write a `let+` block that
+  answers `Ok` or `Error`, and wrap it. `Ok v` gives `v`; `Error` refuses
+  the request. `~refuses` names the codes it may refuse with, so the
+  document lists them; a `400` about an input needs none.
 
   ```ocaml
   let bearer =
     Spindle.Dep.join ~refuses:[ signed_out ]
-      (let+ token = Spindle.Header.optional "authorization" Spindle.Codec.string in
+      (let+ token = Spindle.Header.optional "authorization" Wiretype.string in
        Option.to_result ~none:(Spindle.Refusal.make signed_out "Sign in.") token)
   ```
 - `Dep.problem ~at ~code message` reports a wrong value at its place,
@@ -138,17 +142,18 @@ the `Authorization` header:
 
 ## Query, header and cookie inputs
 
-Query parameters, headers and cookies are read by a codec from
-`Spindle.Codec` -- the same codecs a path parameter uses:
+Query parameters, headers and cookies are read by a wiretype description
+-- the one a JSON body's member is read by, and a path parameter too -- as
+`Wiretype.of_text` reads one: a scalar's text is its JSON, and a string's is
+itself:
 
 ```ocaml
-module Codec = Spindle.Codec
-
-Spindle.Query.optional "page" Codec.int          (* int option *)
-Spindle.Query.default "limit" Codec.int 20       (* int: 20 when absent *)
-Spindle.Query.required "q" Codec.string          (* string, or a 400 *)
-Spindle.Query.list "tag" Codec.string            (* ?tag=a&tag=b *)
-Spindle.Header.optional "x-count" Codec.int      (* name matched without case *)
+Spindle.Query.optional "page" Wiretype.int                    (* int option *)
+Spindle.Query.default "limit" (Wiretype.int_bounded ~max:100 ()) 20
+Spindle.Query.required "q" Wiretype.string                    (* or a 400 *)
+Spindle.Query.list "tag" Wiretype.string                      (* ?tag=a&tag=b *)
+Spindle.Header.optional "x-count" Wiretype.int     (* matched without case *)
+Spindle.Header.joined "accept" Spindle.Header.accept   (* every line, joined *)
 ```
 
 - **A parameter sent twice** (`?role=viewer&role=admin`) is read by its
@@ -157,24 +162,25 @@ Spindle.Header.optional "x-count" Codec.int      (* name matched without case *)
   route. A form's field is read the same way. A header is the exception: one
   that holds a single value sent twice is an invalid message by RFC 9110, and
   is refused.
-- **Codecs**: `string`, `int`, `int64`, `float`, `bool`, `uuid` (a
-  `Uuidm.t`, as a JSON body's and a row's), `date`, `instant` (a
-  `Ptime.t`), `enum ~kind to_string values`, and `custom` for a type of
-  your own.
-- **Structured headers** have codecs that parse them: `media_type`,
-  `accept`, `weighted`, `credentials`, `cache_control`, `forwarded`, and
-  `structured_item`, `structured_list`, `structured_dictionary`.
-- **A header sent on several lines** is read whole by a codec of a list --
-  `accept`, `weighted`, `cache_control`, `forwarded`, `structured_list`,
-  `structured_dictionary`, and a `custom ~list:true` of your own -- its
-  lines joined by `, `. To any other codec
-  it is malformed, a `400`: a value sent twice is no message HTTP allows.
+- **Any scalar description**: `Wiretype.string`, `int`, `int64`, `number`,
+  `bool`, `uuid ()` (a `Uuidm.t`, as a row's), `date`, `instant` (a
+  `Ptime.t`), their bounded forms, `enum`, and `kind` for a type of your own.
+  Its problems are wiretype's, as a body's are; one of no scalar -- an
+  object, a list -- is refused when the app is made.
+- **Structured headers** have descriptions that parse them, in
+  `Spindle.Header`: `media_type`, `credentials`, `accept`, `weighted`,
+  `cache_control`, `forwarded`, and `structured_item`, `structured_list`,
+  `structured_dictionary`.
+- **A header sent on several lines** is read whole by `Header.joined`, its
+  lines joined by `, `, for a field HTTP defines as a list. To any other
+  reader it is malformed, a `400`: a value sent twice is no message HTTP
+  allows.
 
-**A cookie is declared once**, with its name and codec. That one value reads
+**A cookie is declared once**, with its name and description. That one value reads
 it and sets it:
 
 ```ocaml
-let visits = Spindle.Cookie.named "visits" Codec.int
+let visits = Spindle.Cookie.named "visits" Wiretype.int
 
 Spindle.Cookie.optional visits                   (* an input: int option *)
 Spindle.Cookie.make visits 3                     (* a cookie to set *)

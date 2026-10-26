@@ -129,7 +129,7 @@ let inputs =
         name;
         required = false;
         many = true;
-        shape = Codec.shape Codec.string;
+        schema = Parameter.schema Wiretype.string;
         kind = None;
         default = None;
       }

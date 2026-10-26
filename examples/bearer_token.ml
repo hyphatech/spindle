@@ -23,7 +23,7 @@ let bearer =
   Spindle.Dep.credential ~scheme:"bearer"
     (Spindle.Dep.join ~refuses:[ signed_out ]
        (let+ credentials =
-          Spindle.Header.optional "authorization" Spindle.Codec.credentials
+          Spindle.Header.optional "authorization" Spindle.Header.credentials
         in
         match credentials with
         | Some { scheme = "bearer"; value = Token68 token } -> Ok token

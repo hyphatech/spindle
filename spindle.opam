@@ -13,7 +13,7 @@ depends: [
   "ocaml" {>= "5.5"}
   "spindle-http" {= version}
   "spindle-client" {= version}
-  "wiretype" {>= "0.6.0" & < "0.7.0"}
+  "wiretype" {>= "0.6.1" & < "0.7.0"}
   "uuidm" {>= "0.9.10"}
   "ppx_wiretype" {>= "0.6.0" & < "0.7.0"}
   "eio" {>= "1.6"}

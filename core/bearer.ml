@@ -164,7 +164,7 @@ let check ~issuer ~resource ~now ~(keys : keys) token =
       payload;
     }
 
-let authorization = Header.optional "authorization" Codec.string
+let authorization = Header.optional "authorization" Wiretype.string
 let now = Dep.of_request ~needs:[] (fun r -> Ok (Request.now r))
 
 let claims_of ~issuer ~resource ~metadata_url ~keys =

@@ -132,7 +132,7 @@ let test_unknown_path_is_404_or_the_not_found_answer () =
 let test_the_not_found_answer_reads_dependencies () =
   let database : string Spindle.Dep.t = Spindle.Dep.of_resource "database" in
   let page =
-    let+ who = Spindle.Header.default "x-who" Spindle.Codec.string "nobody"
+    let+ who = Spindle.Header.default "x-who" Wiretype.string "nobody"
     and+ shelf = database in
     Ok
       (Spindle.Response.html ~status:`Not_found
@@ -178,7 +178,7 @@ let test_head_is_get_without_the_body () =
 (* Nothing is an answer of its own: no body and no type, at 204 unless the
    route says otherwise, and a cookie the endpoint set still goes with it. *)
 let test_nothing_is_an_answer () =
-  let flag = Spindle.Cookie.named "flag" Spindle.Codec.string in
+  let flag = Spindle.Cookie.named "flag" Wiretype.string in
   let quiet =
     Spindle.post
       Spindle.Path.(s "quiet")
@@ -608,11 +608,10 @@ let database : string Spindle.Dep.t = Spindle.Dep.of_resource "database"
 
 let test_a_dependency_says_what_it_reads () =
   let listed =
-    let+ _ = Spindle.Query.optional "page" Spindle.Codec.int
+    let+ _ = Spindle.Query.optional "page" Wiretype.int
     and+ _ = Spindle.json greeting_json
     and+ _ =
-      Spindle.Cookie.optional
-        (Spindle.Cookie.named "session" Spindle.Codec.string)
+      Spindle.Cookie.optional (Spindle.Cookie.named "session" Wiretype.string)
     and+ _ = Spindle.now
     and+ _ = Spindle.Dep.uncached database in
     ()
@@ -644,7 +643,7 @@ let test_a_dependency_says_what_it_reads () =
     "a bind may read more" true
     (Spindle.Dep.opaque
        (Spindle.Dep.bind Spindle.now (fun _ ->
-            Spindle.Query.optional "q" Spindle.Codec.string)));
+            Spindle.Query.optional "q" Wiretype.string)));
   Alcotest.(check bool)
     "as may a dependency that did not say" true
     (Spindle.Dep.opaque (Spindle.Dep.of_request (fun _ -> Ok ())))
@@ -726,7 +725,7 @@ let test_a_body_dependency_is_read_once () =
   check_int "parsed once" 1 !parsed
 
 let test_an_input_read_twice_is_one_input () =
-  let page = Spindle.Query.required "page" Spindle.Codec.int in
+  let page = Spindle.Query.required "page" Wiretype.int in
   let next = Spindle.Dep.map succ page in
   let inputs =
     let+ p = page and+ n = next in
@@ -782,10 +781,10 @@ let test_query_header_cookie_and_clock () =
     Spindle.get
       Spindle.Path.(s "who")
       Spindle.Returns.response
-      (let+ q = Spindle.Query.optional "q" Spindle.Codec.string
-       and+ h = Spindle.Header.optional "X-Thing" Spindle.Codec.string
+      (let+ q = Spindle.Query.optional "q" Wiretype.string
+       and+ h = Spindle.Header.optional "X-Thing" Wiretype.string
        and+ c =
-         Spindle.Cookie.optional (Spindle.Cookie.named "b" Spindle.Codec.string)
+         Spindle.Cookie.optional (Spindle.Cookie.named "b" Wiretype.string)
        and+ now = Spindle.now in
        Ok
          (Spindle.Response.json
@@ -813,8 +812,8 @@ let test_an_input_that_is_not_utf_8_is_refused () =
       Spindle.Path.(s "echo" / string "name")
       (Spindle.Returns.json Wiretype.(list string))
       (let+ name = Spindle.param (Spindle.Path.string "name")
-       and+ q = Spindle.Query.optional "q" Spindle.Codec.string
-       and+ h = Spindle.Header.optional "x-name" Spindle.Codec.string in
+       and+ q = Spindle.Query.optional "q" Wiretype.string
+       and+ h = Spindle.Header.optional "x-name" Wiretype.string in
        Ok [ name; Option.value q ~default:"-"; Option.value h ~default:"-" ])
   in
   let app = Spindle.Test.app [ route ] in
@@ -841,8 +840,8 @@ let test_a_query_is_read_as_a_form () =
     Spindle.get
       Spindle.Path.(s "search")
       (Spindle.Returns.json Wiretype.(list string))
-      (let+ q = Spindle.Query.optional "q" Spindle.Codec.string
-       and+ t = Spindle.Query.list "t" Spindle.Codec.string in
+      (let+ q = Spindle.Query.optional "q" Wiretype.string
+       and+ t = Spindle.Query.list "t" Wiretype.string in
        Ok (Option.fold q ~none:"-" ~some:(fun q -> "q=" ^ q) :: t))
   in
   let app = Spindle.Test.app [ route ] in
@@ -859,27 +858,26 @@ let test_a_query_is_read_as_a_form () =
    message, refused rather than read by its first line or its last. *)
 let test_a_header_sent_on_several_lines () =
   let tags =
-    Spindle.Codec.custom ~kind:"tags" ~list:true
+    Wiretype.kind ~kind:"tags"
       ~parse:(fun s -> Ok (List.map String.trim (String.split_on_char ',' s)))
-      ~print:(String.concat ", ") ()
+      ~print:(String.concat ", ") Wiretype.string
   in
+  let text d v = Result.value (Wiretype.to_text d v) ~default:"" in
   let route =
     Spindle.get
       Spindle.Path.(s "lines")
       (Spindle.Returns.json Wiretype.(list string))
       (let+ language =
-         Spindle.Header.optional "accept-language" Spindle.Codec.weighted
+         Spindle.Header.joined "accept-language" Spindle.Header.weighted
        and+ cache =
-         Spindle.Header.optional "cache-control" Spindle.Codec.cache_control
-       and+ size = Spindle.Header.default "x-size" Spindle.Codec.int 20
-       and+ name = Spindle.Header.optional "x-name" Spindle.Codec.string
-       and+ tags = Spindle.Header.optional "x-tags" tags in
+         Spindle.Header.joined "cache-control" Spindle.Header.cache_control
+       and+ size = Spindle.Header.default "x-size" Wiretype.int 20
+       and+ name = Spindle.Header.optional "x-name" Wiretype.string
+       and+ tags = Spindle.Header.joined "x-tags" tags in
        Ok
          [
-           Option.fold language ~none:"-"
-             ~some:(Spindle.Codec.print Spindle.Codec.weighted);
-           Option.fold cache ~none:"-"
-             ~some:(Spindle.Codec.print Spindle.Codec.cache_control);
+           Option.fold language ~none:"-" ~some:(text Spindle.Header.weighted);
+           Option.fold cache ~none:"-" ~some:(text Spindle.Header.cache_control);
            string_of_int size;
            Option.value name ~default:"-";
            Option.fold tags ~none:"-" ~some:(String.concat "|");
@@ -924,8 +922,8 @@ let test_a_default_stands_in_for_an_absent_input () =
     Spindle.get
       Spindle.Path.(s "page")
       Spindle.Returns.text
-      (let+ page = Spindle.Query.default "page" Spindle.Codec.int 1
-       and+ size = Spindle.Header.default "x-size" Spindle.Codec.int 20 in
+      (let+ page = Spindle.Query.default "page" Wiretype.int 1
+       and+ size = Spindle.Header.default "x-size" Wiretype.int 20 in
        Ok (Printf.sprintf "%d %d" page size))
   in
   let app = Spindle.Test.app [ route ] in
@@ -949,7 +947,7 @@ let with_cookie =
              ~cookies:
                [
                  Spindle.Cookie.make ~path:"/in" ~max_age_s:60
-                   (Spindle.Cookie.named "k" Spindle.Codec.string)
+                   (Spindle.Cookie.named "k" Wiretype.string)
                    "v";
                ]
              ())))
@@ -989,12 +987,12 @@ let test_cookie_is_secure_except_on_loopback () =
 let test_a_cookie_refuses_a_name_it_cannot_hold () =
   List.iter
     (fun name ->
-      match Spindle.Cookie.named name Spindle.Codec.string with
+      match Spindle.Cookie.named name Wiretype.string with
       | _ -> Alcotest.failf "%S was declared" name
       | exception Invalid_argument _ -> ())
     [ "a b"; ""; "a;b" ];
   ignore
-    (Spindle.Cookie.clear (Spindle.Cookie.named "k" Spindle.Codec.string)
+    (Spindle.Cookie.clear (Spindle.Cookie.named "k" Wiretype.string)
       : Spindle.Cookie.t)
 
 (* The Set-Cookie line a route writes for [cookie]. *)
@@ -1030,7 +1028,7 @@ let utf8_text =
               ])))
 
 (* A plain cookie of any text, set from the path and read back. *)
-let plain = Spindle.Cookie.named "k" Spindle.Codec.string
+let plain = Spindle.Cookie.named "k" Wiretype.string
 
 let plain_app =
   Spindle.Test.app
@@ -1199,7 +1197,7 @@ let test_what_key_signs_is_never_a_cookie () =
   in
   let signed =
     sealed_app ~keys:ring
-      (Spindle.Cookie.signed ~max_age:Mtime.Span.hour "who" Spindle.Codec.string)
+      (Spindle.Cookie.signed ~max_age:Mtime.Span.hour "who" Wiretype.string)
   in
   let mac =
     Spindle.Key.sign ring (String.concat "\000" [ "who"; "0"; "admin" ])
@@ -1209,8 +1207,7 @@ let test_what_key_signs_is_never_a_cookie () =
        ("who=" ^ String.concat "." [ "0"; b64 "admin"; b64 mac ]));
   let encrypted =
     sealed_app ~keys:ring
-      (Spindle.Cookie.encrypted ~max_age:Mtime.Span.hour "prefs"
-         Spindle.Codec.string)
+      (Spindle.Cookie.encrypted ~max_age:Mtime.Span.hour "prefs" Wiretype.string)
   in
   check_string "a seal of an encrypted cookie's" "absent"
     (read_with encrypted
@@ -1244,19 +1241,15 @@ let test_a_sealed_cookie_reads_only_as_it_was_made make =
 
 let test_a_signed_cookie_reads_only_as_it_was_made () =
   test_a_sealed_cookie_reads_only_as_it_was_made (fun name ->
-      Spindle.Cookie.signed
-        ~max_age:Mtime.Span.(60 * s)
-        name Spindle.Codec.string)
+      Spindle.Cookie.signed ~max_age:Mtime.Span.(60 * s) name Wiretype.string)
 
 let test_an_encrypted_cookie_reads_only_as_it_was_made () =
   test_a_sealed_cookie_reads_only_as_it_was_made (fun name ->
-      Spindle.Cookie.encrypted
-        ~max_age:Mtime.Span.(60 * s)
-        name Spindle.Codec.string);
+      Spindle.Cookie.encrypted ~max_age:Mtime.Span.(60 * s) name Wiretype.string);
   let c =
     Spindle.Cookie.encrypted
       ~max_age:Mtime.Span.(60 * s)
-      "prefs" Spindle.Codec.string
+      "prefs" Wiretype.string
   in
   Alcotest.(check bool)
     "and nothing of its value is on the wire" false
@@ -1266,7 +1259,7 @@ let test_an_encrypted_cookie_reads_only_as_it_was_made () =
    holds it to as well as the browser: one without would replay for ever. *)
 let test_a_sealed_cookie_ages make =
   let ring = Spindle.Key.ring new_key [] in
-  let c = make ~max_age:Mtime.Span.(60 * s) "who" Spindle.Codec.string in
+  let c = make ~max_age:Mtime.Span.(60 * s) "who" Wiretype.string in
   let app = sealed_app c in
   let made = 1_000_000 in
   let cookie = issued ~now:(Instants.of_ms made) app "kim" in
@@ -1305,7 +1298,7 @@ let test_a_sealed_cookie_ages make =
       .status;
   (* Whole seconds, rounded up: the cookie never ends before its span. *)
   let brief =
-    sealed_app (make ~max_age:Mtime.Span.(1500 * ms) "who" Spindle.Codec.string)
+    sealed_app (make ~max_age:Mtime.Span.(1500 * ms) "who" Wiretype.string)
   in
   Alcotest.(check bool)
     "a span between seconds is the next" true
@@ -1324,7 +1317,7 @@ let test_a_sealed_cookie_ages make =
 let test_the_server_holds_the_keys () =
   Eio_main.run @@ fun env ->
   let who =
-    Spindle.Cookie.signed ~max_age:Mtime.Span.hour "who" Spindle.Codec.string
+    Spindle.Cookie.signed ~max_age:Mtime.Span.hour "who" Wiretype.string
   in
   let reads =
     Spindle.get
@@ -1399,7 +1392,7 @@ let test_the_server_holds_the_keys () =
    sealed under it as it is read under it. *)
 let test_keys_supplied_as_a_resource_seal () =
   let c =
-    Spindle.Cookie.signed ~max_age:Mtime.Span.hour "who" Spindle.Codec.string
+    Spindle.Cookie.signed ~max_age:Mtime.Span.hour "who" Wiretype.string
   in
   let app =
     Spindle.Test.app
@@ -1688,7 +1681,7 @@ type theme = Light | Dark
 
 let theme =
   Spindle.Cookie.named "theme"
-    (Spindle.Codec.enum
+    (Wiretype.enum
        (function Light -> "light" | Dark -> "dark")
        [ Light; Dark ])
 
@@ -1821,8 +1814,7 @@ let test_clearing_a_cookie () =
   check_string "no value, no lifetime"
     "session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"
     (written
-       (Spindle.Cookie.clear
-          (Spindle.Cookie.named "session" Spindle.Codec.string)))
+       (Spindle.Cookie.clear (Spindle.Cookie.named "session" Wiretype.string)))
 
 (* ------------------------------------------------------------------ *)
 (* Forgery *)
@@ -1941,9 +1933,9 @@ let profile =
   Spindle.post
     Spindle.Path.(s "profile")
     Spindle.Returns.text
-    (let+ email = Spindle.Form.required "email" Spindle.Codec.string
-     and+ age = Spindle.Form.optional "age" Spindle.Codec.int
-     and+ tags = Spindle.Form.list "tag" Spindle.Codec.string
+    (let+ email = Spindle.Form.required "email" Wiretype.string
+     and+ age = Spindle.Form.optional "age" Wiretype.int
+     and+ tags = Spindle.Form.list "tag" Wiretype.string
      and+ remember = Spindle.Form.checked "remember" in
      Ok
        (Printf.sprintf "%s %s [%s] %b" email
@@ -1961,25 +1953,25 @@ let test_a_value_sent_twice_is_read_by_its_first () =
     Spindle.Test.app
       [
         reads `GET "required"
-          (let+ v = Spindle.Query.required "role" Spindle.Codec.string in
+          (let+ v = Spindle.Query.required "role" Wiretype.string in
            Ok v);
         reads `GET "optional"
-          (let+ v = Spindle.Query.optional "role" Spindle.Codec.string in
+          (let+ v = Spindle.Query.optional "role" Wiretype.string in
            Ok (Option.value v ~default:"-"));
         reads `GET "default"
-          (let+ v = Spindle.Query.default "role" Spindle.Codec.string "-" in
+          (let+ v = Spindle.Query.default "role" Wiretype.string "-" in
            Ok v);
         reads `GET "list"
-          (let+ v = Spindle.Query.list "role" Spindle.Codec.string in
+          (let+ v = Spindle.Query.list "role" Wiretype.string in
            Ok (String.concat "," v));
         reads `POST "required"
-          (let+ v = Spindle.Form.required "role" Spindle.Codec.string in
+          (let+ v = Spindle.Form.required "role" Wiretype.string in
            Ok v);
         reads `POST "optional"
-          (let+ v = Spindle.Form.optional "role" Spindle.Codec.string in
+          (let+ v = Spindle.Form.optional "role" Wiretype.string in
            Ok (Option.value v ~default:"-"));
         reads `POST "list"
-          (let+ v = Spindle.Form.list "role" Spindle.Codec.string in
+          (let+ v = Spindle.Form.list "role" Wiretype.string in
            Ok (String.concat "," v));
       ]
   in
@@ -2056,7 +2048,7 @@ let test_a_form_is_read_once_and_only_as_a_form () =
     Spindle.post
       Spindle.Path.(s "count")
       Spindle.Returns.text
-      (let+ _ = Spindle.Form.optional "a" Spindle.Codec.string in
+      (let+ _ = Spindle.Form.optional "a" Wiretype.string in
        incr ran;
        Ok "ran")
   in
@@ -2078,8 +2070,7 @@ let test_a_form_is_read_once_and_only_as_a_form () =
         Spindle.post
           Spindle.Path.(s "x")
           Spindle.Returns.text
-          (let+ _ = Spindle.Form.optional "a" Spindle.Codec.string
-           and+ _ = body in
+          (let+ _ = Spindle.Form.optional "a" Wiretype.string and+ _ = body in
            Ok "");
       ]
   in
@@ -2095,7 +2086,7 @@ let test_a_form_is_read_once_and_only_as_a_form () =
     "and two fields are one body" true
     (Result.is_ok
        (beside
-          (Spindle.Form.required "b" Spindle.Codec.int |> Spindle.Dep.map ignore)))
+          (Spindle.Form.required "b" Wiretype.int |> Spindle.Dep.map ignore)))
 
 let test_a_form_is_described () =
   match
@@ -2220,7 +2211,7 @@ let test_an_upload_is_read_a_part_at_a_time () =
 let test_a_form's_files_are_inputs () =
   let avatar = Spindle.Form.File.optional "avatar"
   and docs = Spindle.Form.File.list "doc"
-  and name = Spindle.Form.required "name" Spindle.Codec.string in
+  and name = Spindle.Form.required "name" Wiretype.string in
   let route =
     Spindle.post
       Spindle.Path.(s "profile")
@@ -2815,15 +2806,14 @@ let test_a_test_browser_keeps_what_the_app_set () =
          and+ set_cookie = Spindle.set_cookie in
          set_cookie
            (Spindle.Cookie.make ~path:("/games/" ^ g) ~max_age_s:60
-              (Spindle.Cookie.named "seat" Spindle.Codec.string)
+              (Spindle.Cookie.named "seat" Wiretype.string)
               g);
          Ok "seated");
       Spindle.get
         Spindle.Path.(s "games" / Spindle.Path.string "g" / s "seat")
         Spindle.Returns.text
         (let+ seat =
-           Spindle.Cookie.optional
-             (Spindle.Cookie.named "seat" Spindle.Codec.string)
+           Spindle.Cookie.optional (Spindle.Cookie.named "seat" Wiretype.string)
          in
          Ok (Option.value seat ~default:"none"));
     ]
@@ -4752,9 +4742,7 @@ let test_the_client_reads_as_it_arrives () =
     Spindle.get
       Spindle.Path.(s "events")
       Spindle.Returns.response
-      (let+ last =
-         Spindle.Header.optional "last-event-id" Spindle.Codec.string
-       in
+      (let+ last = Spindle.Header.optional "last-event-id" Wiretype.string in
        Ok
          (Spindle.Response.events (fun send ->
               let* () =
@@ -7030,7 +7018,7 @@ let test_a_bad_parameter_is_a_problem () =
       let r = Spindle.Test.call a `GET target in
       check_status target 400 r.status;
       check_string target
-        {|{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"path.order_id","code":"malformed","message":"This is not a whole number."}]}|}
+        {|{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"path.order_id","code":"unexpected_type","message":"This must be a whole number."}]}|}
         r.body)
     [ "/orders/abc"; "/orders/0x1f"; "/orders/1_000"; "/orders/%2B3" ];
   check_status "an empty segment is no parameter" 404
@@ -7041,12 +7029,12 @@ let test_a_bad_parameter_is_a_problem () =
 let test_a_custom_segment_is_a_problem_or_not_the_route () =
   let even ?unparsed () =
     Spindle.Path.param ?unparsed "n"
-      (Spindle.Codec.custom ~kind:"even number" ~print:string_of_int
+      (Wiretype.kind ~kind:"even number" ~print:string_of_int
          ~parse:(fun s ->
            match int_of_string_opt s with
            | Some n when n mod 2 = 0 -> Ok n
            | Some _ | None -> Error "This is not an even number.")
-         ())
+         Wiretype.string)
   in
   let half p =
     Spindle.get
@@ -7076,13 +7064,13 @@ type colour = Red | Green
 
 let colour =
   Spindle.Path.param "colour"
-    (Spindle.Codec.custom ~kind:"colour"
+    (Wiretype.kind ~kind:"colour"
        ~print:(function Red -> "red/ish" | Green -> "green")
        ~parse:(function
          | "red/ish" -> Ok Red
          | "green" -> Ok Green
          | _ -> Error "This is not a colour.")
-       ())
+       Wiretype.string)
 
 let count = Spindle.Path.int "count"
 let place = Spindle.Path.(s "place" / name / count / colour / s "end")
@@ -8421,16 +8409,16 @@ let test_a_printed_rest_parses_back =
       | Error m -> QCheck.Test.fail_report m)
 
 (* A 64-bit key past what a float holds exactly is read exactly, and a
-   custom codec's refusal reads as a sentence whatever its kind. *)
+   custom kind's refusal reads as a sentence whatever its kind. *)
 let test_int64_and_a_custom_kind_read_as_sentences () =
   let id = Spindle.Path.int64 "id" in
   let tile =
     Spindle.Path.param "tile"
-      (Spindle.Codec.custom ~kind:"int64"
+      (Wiretype.kind ~kind:"int64"
          ~parse:(fun s ->
            Option.to_result ~none:"This is not a tile's number."
              (Int64.of_string_opt s))
-         ~print:Int64.to_string ())
+         ~print:Int64.to_string Wiretype.string)
   in
   let a =
     Spindle.Test.app
@@ -8451,7 +8439,7 @@ let test_int64_and_a_custom_kind_read_as_sentences () =
     (Spindle.Test.call a `GET "/users/9007199254740993").body;
   Alcotest.(check bool)
     "a whole number" true
-    (contains ~sub:"This is not a whole number."
+    (contains ~sub:"This must be a whole number."
        (Spindle.Test.call a `GET "/users/0x1f").body);
   Alcotest.(check bool)
     "a custom codec's own sentence" true
@@ -8472,9 +8460,7 @@ let test_an_answer_encodes_what_the_route_returns () =
       (let+ g = Spindle.json greeting_json
        and+ set_cookie = Spindle.set_cookie in
        set_cookie
-         (Spindle.Cookie.make
-            (Spindle.Cookie.named "seen" Spindle.Codec.string)
-            "1");
+         (Spindle.Cookie.make (Spindle.Cookie.named "seen" Wiretype.string) "1");
        Ok g)
   in
   let r =
@@ -8584,12 +8570,12 @@ let test_what_an_endpoint_sets_goes_with_its_answer () =
         Spindle.get ~refuses:[ gone ]
           Spindle.Path.(s "set")
           Spindle.Returns.text
-          (let+ fail = Spindle.Query.required "fail" Spindle.Codec.bool
+          (let+ fail = Spindle.Query.required "fail" Wiretype.bool
            and+ set_cookie = Spindle.set_cookie
            and+ add_header = Spindle.add_header in
            set_cookie
              (Spindle.Cookie.make
-                (Spindle.Cookie.named "seen" Spindle.Codec.string)
+                (Spindle.Cookie.named "seen" Wiretype.string)
                 "1");
            add_header ("x-seen", "yes");
            if fail then Error (Spindle.Refusal.make gone "It went.")
@@ -8660,7 +8646,7 @@ let test_a_call_after_the_answer_changes_nothing () =
           (fun f ->
             f
               (Spindle.Cookie.make
-                 (Spindle.Cookie.named "late" Spindle.Codec.string)
+                 (Spindle.Cookie.named "late" Wiretype.string)
                  "1"))
           !kept)
   in
@@ -8771,7 +8757,7 @@ let test_a_route_answers_the_status_it_chose () =
       (Spindle.Returns.empty_response
          ~statuses:
            [ (`Created, "Subscribed."); (`No_content, "Already subscribed.") ])
-      (let+ again = Spindle.Query.optional "again" Spindle.Codec.bool in
+      (let+ again = Spindle.Query.optional "again" Wiretype.bool in
        match again with
        | Some true -> Ok `No_content
        | Some false | None -> Ok `Created)
@@ -8963,6 +8949,287 @@ let test_a_middlewares_codes_are_declared () =
         (contains ~sub:"challenge" m)
   | Ok _ -> Alcotest.fail "a middleware's 401 with no challenge was accepted"
 
+(* A bound is the value's, so it is held wherever the value is read, and
+   refused with the code and the sentence a body's member gets. *)
+let test_a_bound_is_a_problem_at_its_place () =
+  let book_id = Spindle.Path.param "book_id" (Wiretype.int_bounded ~min:1 ()) in
+  let listed =
+    Spindle.get
+      Spindle.Path.(s "books" / book_id)
+      Spindle.Returns.text
+      (let+ id = Spindle.param book_id
+       and+ per_page =
+         Spindle.Query.default "per_page"
+           (Wiretype.int_bounded ~min:1 ~max:100 ())
+           10
+       and+ steps =
+         Spindle.Query.list "step" (Wiretype.int_bounded ~multiple_of:5 ())
+       and+ ratio =
+         Spindle.Query.optional "ratio"
+           (Wiretype.number_bounded ~above:0. ~below:1. ())
+       and+ tag =
+         Spindle.Header.optional "x-tag"
+           (Wiretype.string_bounded ~min_length:2 ~max_length:4 ())
+       in
+       Ok
+         (Printf.sprintf "%d %d [%s] %s %s" id per_page
+            (String.concat "," (List.map string_of_int steps))
+            (match ratio with Some r -> string_of_float r | None -> "-")
+            (Option.value tag ~default:"-")))
+  in
+  let app = Spindle.Test.app [ listed ] in
+  let problem path ?(headers = []) () =
+    (Spindle.Test.call app `GET path ~headers).body
+  in
+  check_string "within every bound, read" "7 100 [5,10] 0.5 éééé"
+    (problem "/books/7?per_page=100&step=5&step=10&ratio=0.5"
+       ~headers:[ ("x-tag", "éééé") ]
+       ());
+  check_string "the default stands in" "1 10 [] - -" (problem "/books/1" ());
+  List.iter
+    (fun (what, path, headers, expected) ->
+      check_string what
+        ({|{"error":"invalid","message":"Some of that request is not what it should be.","problems":[|}
+       ^ expected ^ "]}")
+        (problem path ~headers ()))
+    [
+      ( "a path segment below its least",
+        "/books/0",
+        [],
+        {|{"at":"path.book_id","code":"too_small","message":"This must be at least 1."}|}
+      );
+      ( "a query parameter above its most",
+        "/books/1?per_page=101",
+        [],
+        {|{"at":"query.per_page","code":"too_large","message":"This must be at most 100."}|}
+      );
+      ( "a list's value that is no multiple",
+        "/books/1?step=5&step=7",
+        [],
+        {|{"at":"query.step","code":"not_a_multiple","message":"This must be a multiple of 5."}|}
+      );
+      ( "a float at an open bound",
+        "/books/1?ratio=1",
+        [],
+        {|{"at":"query.ratio","code":"too_large","message":"This must be less than 1."}|}
+      );
+      ( "a header too long, by code points",
+        "/books/1",
+        [ ("x-tag", "ééééé") ],
+        {|{"at":"header.x-tag","code":"too_long","message":"This must be at most 4 characters long."}|}
+      );
+      ( "a header too short",
+        "/books/1",
+        [ ("x-tag", "é") ],
+        {|{"at":"header.x-tag","code":"too_short","message":"This must be at least 2 characters long."}|}
+      );
+      ( "text that is no number is still malformed",
+        "/books/1?per_page=many",
+        [],
+        {|{"at":"query.per_page","code":"unexpected_type","message":"This must be a whole number."}|}
+      );
+      ( "every problem at once",
+        "/books/0?per_page=500",
+        [],
+        {|{"at":"path.book_id","code":"too_small","message":"This must be at least 1."},{"at":"query.per_page","code":"too_large","message":"This must be at most 100."}|}
+      );
+    ]
+
+(* A form's field is read by its description as a query parameter is; a cookie
+   that does not read is absent, out of its bounds as much as unparsed. *)
+let test_a_bound_holds_in_a_form_and_a_cookie () =
+  let quantity =
+    Spindle.post
+      Spindle.Path.(s "order")
+      Spindle.Returns.text
+      (let+ n =
+         Spindle.Form.required "quantity" (Wiretype.int_bounded ~max:9 ())
+       in
+       Ok (string_of_int n))
+  in
+  let visits = Spindle.Cookie.named "visits" (Wiretype.int_bounded ~min:0 ()) in
+  let counted =
+    Spindle.get
+      Spindle.Path.(s "visits")
+      Spindle.Returns.text
+      (let+ n = Spindle.Cookie.optional visits in
+       Ok (match n with Some n -> string_of_int n | None -> "none"))
+  in
+  let app = Spindle.Test.app [ quantity; counted ] in
+  check_string "a field within its bound" "9"
+    (Spindle.Test.call app `POST "/order" ~headers:form_headers
+       ~body:"quantity=9")
+      .body;
+  check_string "a field above it"
+    {|{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"form.quantity","code":"too_large","message":"This must be at most 9."}]}|}
+    (Spindle.Test.call app `POST "/order" ~headers:form_headers
+       ~body:"quantity=10")
+      .body;
+  check_string "a cookie within its bound" "3"
+    (Spindle.Test.call app `GET "/visits" ~headers:[ ("cookie", "visits=3") ])
+      .body;
+  check_string "a cookie out of it is absent" "none"
+    (Spindle.Test.call app `GET "/visits" ~headers:[ ("cookie", "visits=-1") ])
+      .body
+
+(* A segment out of its bounds is one its description did not read, so a route
+   that declines what it cannot read declines it too. *)
+let test_a_segment_out_of_bounds_goes_to_the_next_route () =
+  let by_number =
+    Spindle.get
+      Spindle.Path.(
+        s "posts"
+        / Spindle.Path.param ~unparsed:Next_route "key"
+            (Wiretype.int_bounded ~min:1 ()))
+      Spindle.Returns.response (says "number")
+  in
+  let by_slug =
+    Spindle.get
+      Spindle.Path.(s "posts" / Spindle.Path.string "key")
+      Spindle.Returns.response (says "slug")
+  in
+  let a = Spindle.Test.app [ by_number; by_slug ] in
+  check_string "within" "number" (Spindle.Test.call a `GET "/posts/5").body;
+  check_string "out of bounds" "slug" (Spindle.Test.call a `GET "/posts/0").body
+
+let raises_invalid what f =
+  match f () with
+  | exception Invalid_argument m -> m
+  | _ -> Alcotest.failf "%s did not raise" what
+
+(* Bounds no value meets, and a default its own bounds refuse, are constants
+   written in source, refused before any request. *)
+let test_a_bound_no_value_meets_is_refused () =
+  ignore
+    (raises_invalid "min above max" (fun () ->
+         Wiretype.int_bounded ~min:10 ~max:1 ())
+      : string);
+  ignore
+    (raises_invalid "a negative length" (fun () ->
+         Wiretype.string_bounded ~min_length:(-1) ())
+      : string);
+  ignore
+    (raises_invalid "a multiple that is not positive" (fun () ->
+         Wiretype.int64_bounded ~multiple_of:0L ())
+      : string);
+  ignore
+    (raises_invalid "a bound that is no number" (fun () ->
+         Wiretype.number_bounded ~min:Float.nan ())
+      : string);
+  let m =
+    raises_invalid "a default out of bounds" (fun () ->
+        Spindle.Query.default "per_page" (Wiretype.int_bounded ~max:100 ()) 1000)
+  in
+  Alcotest.(check bool)
+    ("names the input and the bound: " ^ m)
+    true
+    (contains ~sub:"query.per_page" m
+    && contains ~sub:"This must be at most 100." m);
+  ignore
+    (raises_invalid "a header's default out of bounds" (fun () ->
+         Spindle.Header.default "x-tag"
+           (Wiretype.string_bounded ~max_length:2 ())
+           "long")
+      : string)
+
+(* Two reads of one input that bound it differently are two inputs, which
+   the app refuses as it refuses two of different types. *)
+let test_two_reads_that_bound_one_input_apart_are_refused () =
+  let m =
+    refused
+      [
+        Spindle.get
+          Spindle.Path.(s "a")
+          Spindle.Returns.response
+          (let+ _ = Spindle.Query.optional "n" (Wiretype.int_bounded ~max:10 ())
+           and+ _ =
+             Spindle.Query.optional "n" (Wiretype.int_bounded ~max:20 ())
+           in
+           Ok (Spindle.Response.make "ok"));
+      ]
+  in
+  Alcotest.(check bool) ("names the input: " ^ m) true (contains ~sub:"n" m);
+  match
+    Spindle.App.make
+      [
+        Spindle.get
+          Spindle.Path.(s "a")
+          Spindle.Returns.response
+          (let+ _ = Spindle.Query.optional "n" (Wiretype.int_bounded ~max:10 ())
+           and+ _ =
+             Spindle.Query.optional "n" (Wiretype.int_bounded ~max:10 ())
+           in
+           Ok (Spindle.Response.make "ok"));
+      ]
+  with
+  | Ok _ -> ()
+  | Error m -> Alcotest.failf "two reads that agree were refused: %s" m
+
+(* A whole number is read exactly when its text is one and it is within its
+   bounds, whatever the bounds. *)
+let test_a_value_is_read_exactly_within_its_bounds =
+  QCheck_alcotest.to_alcotest
+    (QCheck.Test.make ~count:500
+       ~name:"a value is read exactly within its bounds"
+       QCheck.(
+         triple (int_range (-50) 50) (int_range (-50) 50)
+           (pair (int_range (-60) 60) (int_range 1 7)))
+       (fun (a, b, (n, step)) ->
+         let lo = Int.min a b and hi = Int.max a b in
+         let description =
+           Wiretype.int_bounded ~min:lo ~max:hi ~multiple_of:step ()
+         in
+         Bool.equal
+           (Result.is_ok (Wiretype.of_text description (string_of_int n)))
+           (lo <= n && n <= hi && n mod step = 0)))
+
+(* A description of no scalar reads no text, so a route that reads an input
+   by one is refused before it could refuse every request. *)
+let test_an_input_of_no_scalar_is_refused () =
+  let m =
+    refused
+      [
+        Spindle.get
+          Spindle.Path.(s "a")
+          Spindle.Returns.response
+          (let+ _ = Spindle.Query.optional "ids" Wiretype.(list int) in
+           Ok (Spindle.Response.make "ok"));
+      ]
+  in
+  Alcotest.(check bool)
+    ("names the input: " ^ m) true
+    (contains ~sub:"the query parameter ids" m)
+
+(* A value its cookie's description will not write is the route's bug,
+   answered 500 as a sealed cookie with no keys is. *)
+let test_a_cookie_its_description_will_not_write_is_a_500 () =
+  let count = Spindle.Cookie.named "count" (Wiretype.int_bounded ~max:9 ()) in
+  let n = Spindle.Path.int "n" in
+  let set =
+    Spindle.get
+      Spindle.Path.(s "set" / n)
+      Spindle.Returns.response
+      (let+ set_cookie = Spindle.set_cookie and+ n = Spindle.param n in
+       set_cookie (Spindle.Cookie.make count n);
+       Ok (Spindle.Response.make "set"))
+  in
+  let a = Spindle.Test.app [ set ] in
+  check_status "within its bounds" 200
+    (Spindle.Test.call a `GET "/set/9").status;
+  check_status "outside them" 500 (Spindle.Test.call a `GET "/set/10").status
+
+(* A link is built from what its parameters' descriptions write, so one
+   outside its bounds is no URL. *)
+let test_a_url_from_an_argument_out_of_bounds_is_refused () =
+  let page = Spindle.Path.param "page" (Wiretype.int_bounded ~min:1 ()) in
+  let path = Spindle.Path.(s "pages" / page) in
+  Alcotest.(check (result string string))
+    "within" (Ok "/pages/2")
+    (Spindle.Path.url path [ Spindle.Path.arg page 2 ]);
+  Alcotest.(check bool)
+    "outside" true
+    (Result.is_error (Spindle.Path.url path [ Spindle.Path.arg page 0 ]))
+
 (* Every problem with the request's inputs is told at once, each at its
    place -- and a refusal about something else ends the request with none
    of them. *)
@@ -8972,8 +9239,8 @@ let test_every_problem_is_told_at_once () =
       Spindle.Path.(s "orders" / order_id)
       Spindle.Returns.response
       (let+ _ = Spindle.param order_id
-       and+ _ = Spindle.Query.required "page" Spindle.Codec.int
-       and+ _ = Spindle.Header.optional "x-count" Spindle.Codec.int in
+       and+ _ = Spindle.Query.required "page" Wiretype.int
+       and+ _ = Spindle.Header.optional "x-count" Wiretype.int in
        Ok (Spindle.Response.make "ok"))
   in
   let r =
@@ -8984,7 +9251,7 @@ let test_every_problem_is_told_at_once () =
   in
   check_status "one 400" 400 r.status;
   check_string "with all three"
-    {|{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"path.order_id","code":"malformed","message":"This is not a whole number."},{"at":"query.page","code":"malformed","message":"This is not a whole number."},{"at":"header.x-count","code":"malformed","message":"This is not a whole number."}]}|}
+    {|{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"path.order_id","code":"unexpected_type","message":"This must be a whole number."},{"at":"query.page","code":"unexpected_type","message":"This must be a whole number."},{"at":"header.x-count","code":"unexpected_type","message":"This must be a whole number."}]}|}
     r.body;
   check_string "a missing one says so" {|"code":"required"|}
     (let r = Spindle.Test.call (Spindle.Test.app [ listed ]) `GET "/orders/7" in
@@ -8996,7 +9263,7 @@ let test_every_problem_is_told_at_once () =
     Spindle.get
       Spindle.Path.(s "guarded")
       Spindle.Returns.response
-      (let+ _ = Spindle.Query.required "page" Spindle.Codec.int
+      (let+ _ = Spindle.Query.required "page" Wiretype.int
        and+ () =
          Spindle.Dep.of_request ~needs:[] ~refuses:[ signed_out ] (fun _ ->
              Error (Spindle.Refusal.make signed_out "Sign in."))
@@ -9010,7 +9277,7 @@ let test_every_problem_is_told_at_once () =
 type shade = Blue | Gold
 
 let colour_codec =
-  Spindle.Codec.enum ~kind:"colour"
+  Wiretype.enum ~kind:"colour"
     (function Blue -> "blue" | Gold -> "gold")
     [ Blue; Gold ]
 
@@ -9022,9 +9289,9 @@ let test_typed_inputs () =
       Spindle.Path.(s "typed")
       (Spindle.Returns.json Wiretype.(list string))
       (let+ tags = Spindle.Query.list "tag" colour_codec
-       and+ loud = Spindle.Query.optional "loud" Spindle.Codec.bool
+       and+ loud = Spindle.Query.optional "loud" Wiretype.bool
        and+ n =
-         Spindle.Cookie.optional (Spindle.Cookie.named "n" Spindle.Codec.int)
+         Spindle.Cookie.optional (Spindle.Cookie.named "n" Wiretype.int)
        in
        Ok
          (List.map (function Blue -> "b" | Gold -> "g") tags
@@ -9043,8 +9310,9 @@ let test_typed_inputs () =
   let r = Spindle.Test.call a `GET "/typed?tag=red&loud=yes" in
   check_status "a word not in the set" 400 r.status;
   Alcotest.(check bool)
-    "says which it takes" true
-    (contains ~sub:"This is not one of blue, gold." r.body);
+    ("says which it takes: " ^ r.body)
+    true
+    (contains ~sub:{|This must be one of \"blue\" or \"gold\".|} r.body);
   Alcotest.(check bool)
     "and a bool is true or false" true
     (contains ~sub:{|"at":"query.loud"|} r.body)
@@ -9347,8 +9615,7 @@ let test_an_app_lists_its_routes () =
   let signed_out = code "signed_out" `Unauthorized in
   let session =
     Spindle.Dep.credential ~scheme:"session"
-      (Spindle.Cookie.optional
-         (Spindle.Cookie.named "session" Spindle.Codec.string)
+      (Spindle.Cookie.optional (Spindle.Cookie.named "session" Wiretype.string)
       |> Spindle.Dep.map (Option.to_result ~none:())
       |> Spindle.Dep.map
            (Result.map_error (fun () ->
@@ -9363,7 +9630,7 @@ let test_an_app_lists_its_routes () =
       (Spindle.Returns.json ~status:`Created greeting_json)
       (let+ _ = Spindle.param order_id
        and+ _ = session
-       and+ _ = Spindle.Query.optional "page" Spindle.Codec.int
+       and+ _ = Spindle.Query.optional "page" Wiretype.int
        and+ g = Spindle.json greeting_json in
        Ok g)
   in
@@ -9385,8 +9652,8 @@ let test_an_app_lists_its_routes () =
            (fun (p : Spindle.Route.param) ->
              p.name ^ ": "
              ^
-             match p.shape with
-             | Spindle.Codec.Integer -> "integer"
+             match p.schema with
+             | Wiretype.Schema.Integer _ -> "integer"
              | _ -> "?")
            i.params);
       Alcotest.(check (list string))
@@ -9790,11 +10057,11 @@ let test_an_event_reaches_every_domain () =
 (* ------------------------------------------------------------------ *)
 (* Codecs *)
 
-(* A codec, the text it reads and the text it refuses. *)
+(* A description, the text it reads and the text it refuses. *)
 type codec_case =
   | Codec_case : {
       name : string;
-      codec : 'a Spindle.Codec.t;
+      codec : 'a Wiretype.t;
       reads : string list;
       refuses : string list;
     }
@@ -9805,9 +10072,9 @@ let codec_cases =
     Codec_case { name; codec; reads; refuses }
   in
   [
-    case "int" Spindle.Codec.int [ "42"; "-7"; "0" ]
-      [ ""; "0x1f"; "1_000"; "+3"; "1e3"; " 4"; "99999999999999999999" ];
-    case "float" Spindle.Codec.float
+    case "int" Wiretype.int [ "42"; "-7"; "0"; "1e3" ]
+      [ ""; "0x1f"; "1_000"; "+3"; "007"; "2.5"; " 4"; "99999999999999999999" ];
+    case "float" Wiretype.number
       [ "21"; "-7.5"; "0.1"; "1e3"; "2.5E-4"; "-0"; "1e308" ]
       [
         "";
@@ -9823,7 +10090,7 @@ let codec_cases =
         " 4";
         "4 ";
       ];
-    case "uuid" Spindle.Codec.uuid
+    case "uuid" (Wiretype.uuid ())
       [
         "0190f8a4-6d2e-7c3b-9a1f-2b4c6d8e0f12";
         "0190F8A4-6D2E-7C3B-9A1F-2B4C6D8E0F12";
@@ -9835,7 +10102,7 @@ let codec_cases =
         "0190f8a4-6d2e-7c3b-9a1f";
         "0190f8a46d2e7c3b9a1f2b4c6d8e0f12";
       ];
-    case "date" Spindle.Codec.date
+    case "date" Wiretype.date
       [ "2026-10-08"; "2024-02-29" ]
       [
         "";
@@ -9845,60 +10112,61 @@ let codec_cases =
         "08/10/2026";
         "2026-10-08T00:00:00Z";
       ];
-    case "instant" Spindle.Codec.instant
+    case "instant" Wiretype.instant
       [
         "2026-10-08T12:00:00.000Z";
         "2026-10-08T13:00:00+01:00";
         "2026-10-08T12:00:00Z";
       ]
       [ ""; "2026-10-08"; "yesterday"; "2026-10-08 12:00:00"; "1759924800000" ];
-    case "int64" Spindle.Codec.int64
+    case "int64" Wiretype.int64
       [ "9223372036854775807"; "-9223372036854775808" ]
       [ "9223372036854775808"; "+1"; "0x1"; "" ];
-    case "media_type" Spindle.Codec.media_type
+    case "media_type" Spindle.Header.media_type
       [ "text/html; charset=utf-8"; "application/json" ]
       [ "text"; "text/"; "/html"; "" ];
-    case "credentials" Spindle.Codec.credentials
+    case "credentials" Spindle.Header.credentials
       [ "Bearer abc.def"; "Basic dXNlcjpwYXNz" ]
       [ ""; "Bearer abc def" ];
-    case "accept" Spindle.Codec.accept
+    case "accept" Spindle.Header.accept
       [ "text/html, application/json;q=0.9"; "*/*" ]
       [ "text/html;q=2"; "text/html;q=abc" ];
-    case "weighted" Spindle.Codec.weighted
+    case "weighted" Spindle.Header.weighted
       [ "gzip, br;q=0.5"; "en-GB, en;q=0.8" ]
       [ "gzip;q=1.5"; "gzip;q=x" ];
-    case "cache_control" Spindle.Codec.cache_control
+    case "cache_control" Spindle.Header.cache_control
       [ "no-cache"; "max-age=60, private" ]
       [ {|max-age="60|}; "=60" ];
-    case "forwarded" Spindle.Codec.forwarded
+    case "forwarded" Spindle.Header.forwarded
       [ "for=192.0.2.60;proto=https;by=203.0.113.43"; {|for="[2001:db8::1]"|} ]
       [ "=x"; "for=" ];
-    case "structured_item" Spindle.Codec.structured_item
+    case "structured_item" Spindle.Header.structured_item
       [ "1"; "?1"; {|"hello"|}; "token;a=1" ]
       [ {|"unterminated|}; "1.2345" ];
-    case "structured_list" Spindle.Codec.structured_list [ "a, b, (c d)" ]
+    case "structured_list" Spindle.Header.structured_list [ "a, b, (c d)" ]
       [ "a,"; "(a" ];
-    case "structured_dictionary" Spindle.Codec.structured_dictionary
+    case "structured_dictionary" Spindle.Header.structured_dictionary
       [ "a=1, b, c=?0" ] [ "a="; "A=1" ];
   ]
 
-(* What a codec reads, it prints as text it reads again to the same
-   printing; what it refuses, it refuses. *)
+(* What a description reads as text, it writes as text it reads again to
+   the same writing; what it refuses, it refuses. *)
+let text_of d v = Result.value (Wiretype.to_text d v) ~default:""
+
 let test_a_codec_reads_and_refuses_as_its_grammar () =
   List.iter
     (fun (Codec_case { name; codec; reads; refuses }) ->
       List.iter
         (fun text ->
-          match Spindle.Codec.parse codec text with
+          match Wiretype.of_text codec text with
           | Error _ -> Alcotest.failf "%s refused %S" name text
           | Ok v -> (
-              let printed = Spindle.Codec.print codec v in
-              match Spindle.Codec.parse codec printed with
+              let printed = text_of codec v in
+              match Wiretype.of_text codec printed with
               | Ok again ->
                   check_string
                     (Printf.sprintf "%s prints %S as it reads back" name text)
-                    printed
-                    (Spindle.Codec.print codec again)
+                    printed (text_of codec again)
               | Error _ ->
                   Alcotest.failf "%s printed %S as %S, which it refuses" name
                     text printed))
@@ -9908,7 +10176,7 @@ let test_a_codec_reads_and_refuses_as_its_grammar () =
           Alcotest.(check bool)
             (Printf.sprintf "%s refuses %S" name text)
             true
-            (Result.is_error (Spindle.Codec.parse codec text)))
+            (Result.is_error (Wiretype.of_text codec text)))
         refuses)
     codec_cases
 
@@ -9918,10 +10186,7 @@ let test_a_float_comes_back_as_itself =
   QCheck.Test.make ~count:1000 ~name:"a float comes back as itself" QCheck.float
     (fun v ->
       QCheck.assume (Float.is_finite v);
-      match
-        Spindle.Codec.parse Spindle.Codec.float
-          (Spindle.Codec.print Spindle.Codec.float v)
-      with
+      match Wiretype.of_text Wiretype.number (text_of Wiretype.number v) with
       | Ok again -> Float.equal again v
       | Error _ -> false)
 
@@ -9938,7 +10203,7 @@ let test_a_header_is_read_by_its_codec () =
               Spindle.Path.(s "h")
               Spindle.Returns.text
               (let+ v = Spindle.Header.required "x-value" codec in
-               Ok (Spindle.Codec.print codec v));
+               Ok (text_of codec v));
           ]
       in
       let call text =
@@ -10553,6 +10818,23 @@ let () =
             test_a_retry_after_is_at_least_a_second;
           Alcotest.test_case "a code's status is a failure" `Quick
             test_a_codes_status_is_a_failure;
+          Alcotest.test_case "a bound is a problem at its place" `Quick
+            test_a_bound_is_a_problem_at_its_place;
+          Alcotest.test_case "a bound holds in a form and a cookie" `Quick
+            test_a_bound_holds_in_a_form_and_a_cookie;
+          Alcotest.test_case "a segment out of bounds goes to the next route"
+            `Quick test_a_segment_out_of_bounds_goes_to_the_next_route;
+          Alcotest.test_case "a bound no value meets is refused" `Quick
+            test_a_bound_no_value_meets_is_refused;
+          Alcotest.test_case "two reads that bound one input apart are refused"
+            `Quick test_two_reads_that_bound_one_input_apart_are_refused;
+          test_a_value_is_read_exactly_within_its_bounds;
+          Alcotest.test_case "an input of no scalar is refused" `Quick
+            test_an_input_of_no_scalar_is_refused;
+          Alcotest.test_case "a cookie its description will not write is a 500"
+            `Quick test_a_cookie_its_description_will_not_write_is_a_500;
+          Alcotest.test_case "a url from an argument out of bounds is refused"
+            `Quick test_a_url_from_an_argument_out_of_bounds_is_refused;
           Alcotest.test_case "every problem is told at once" `Quick
             test_every_problem_is_told_at_once;
           Alcotest.test_case "typed inputs" `Quick test_typed_inputs;

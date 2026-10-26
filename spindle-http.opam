@@ -12,7 +12,7 @@ bug-reports: "https://github.com/hyphatech/spindle/issues"
 depends: [
   "dune" {>= "3.18"}
   "ocaml" {>= "5.5"}
-  "wiretype" {>= "0.6.0" & < "0.7.0"}
+  "wiretype" {>= "0.6.1" & < "0.7.0"}
   "eio" {>= "1.6"}
   "angstrom" {>= "0.16.1"}
   "logs" {>= "0.10.0"}

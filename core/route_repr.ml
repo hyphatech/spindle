@@ -4,11 +4,10 @@
 
 module Meth = Spindle_http.Meth
 module Code = Refusal.Code
-module Shape = Wiretype.Shape
 
 type param = {
   name : string;
-  shape : Codec.shape;
+  schema : Wiretype.Schema.t;
   kind : string option;
   unparsed : Path_repr.unparsed;
   rest : bool;
@@ -63,13 +62,13 @@ let handle t req ~resources ~params ~body = t.run req ~resources ~params ~body
 let params_of_segments segments =
   List.filter_map
     (function
-      | Path_repr.Parameter { name; shape; kind; unparsed; parses = _ } ->
-          Some { name; shape; kind; unparsed; rest = false }
+      | Path_repr.Parameter { name; schema; kind; unparsed; parses = _ } ->
+          Some { name; schema; kind; unparsed; rest = false }
       | Path_repr.Rest name ->
           Some
             {
               name;
-              shape = Codec.String;
+              schema = Parameter.schema Path_repr.rest;
               kind = Some "path";
               unparsed = Path_repr.Invalid;
               rest = true;
@@ -88,47 +87,23 @@ let input_key = function
   | Dep.File f -> Some ("the form's field", f.name)
   | Dep.Path _ | Dep.Body _ | Dep.Custom _ | Dep.Resource _ -> None
 
-let same_shape a b =
-  match (a, b) with
-  | Codec.String, Codec.String
-  | Codec.Integer, Codec.Integer
-  | Codec.Number, Codec.Number
-  | Codec.Boolean, Codec.Boolean ->
-      true
-  | Codec.Format f, Codec.Format g -> (
-      match (f, g) with
-      | Shape.Date_time, Shape.Date_time
-      | Shape.Date, Shape.Date
-      | Shape.Duration, Shape.Duration
-      | Shape.Base64, Shape.Base64
-      | Shape.Base64url, Shape.Base64url
-      | Shape.Uri, Shape.Uri
-      | Shape.Ipv4, Shape.Ipv4
-      | Shape.Ipv6, Shape.Ipv6 ->
-          true
-      | Shape.Uuid v, Shape.Uuid w ->
-          (* A version is a constant constructor: plain data. *)
-          Option.equal (fun (v : Shape.uuid_version) w -> v = w) v w
-      | ( ( Shape.Date_time | Date | Duration | Uuid _ | Base64 | Base64url
-          | Uri | Ipv4 | Ipv6 ),
-          _ ) ->
-          false)
-  | Codec.Enum a, Codec.Enum b -> List.equal String.equal a b
-  | ( ( Codec.String | Codec.Format _ | Codec.Integer | Codec.Number
-      | Codec.Boolean | Codec.Enum _ ),
-      _ ) ->
-      false
+(* Two reads are one input where the document would say the same of
+   both. *)
+let same_schema a b =
+  let said s = Wiretype.Value.to_string (Wiretype.Schema.Json_schema.of_t s) in
+  String.equal (said a) (said b)
 
 (* Two reads that agree are one input, required where either is; one that
    stands in a default where the other may not is still that default. *)
 let merge_input (a : Dep.input) (b : Dep.input) =
   let agree =
-    same_shape a.shape b.shape
+    same_schema a.schema b.schema
     && Option.equal String.equal a.kind b.kind
     && Bool.equal a.many b.many
     &&
     match (a.default, b.default) with
-    | Some x, Some y -> String.equal x y
+    | Some x, Some y ->
+        String.equal (Wiretype.Value.to_string x) (Wiretype.Value.to_string y)
     | Some _, None | None, Some _ | None, None -> true
   in
   if not agree then None

@@ -332,7 +332,7 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
         Dep.map (fun (f, rest) -> (t, f) :: rest) (Dep.both t.run acc))
       tools (Dep.return [])
   in
-  let header h = Spindle.Header.optional h Spindle.Codec.string in
+  let header h = Spindle.Header.optional h Wiretype.string in
   let grants (t : tool) (claims : Bearer.claims option) =
     match (t.scope, claims) with
     | Some s, Some c -> List.exists (String.equal s) c.scopes

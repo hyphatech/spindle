@@ -24,14 +24,13 @@ type body =
   | Raw_body of string list
 
 type located = In_path | In_query | In_header | In_cookie
-type default = Bare of string | Quoted of string
 
 type parameter = {
   name : string;
   located : located;
   required : bool;
   schema : S.t;
-  default : default option;
+  default : Wiretype.Value.t option;
 }
 
 type route = {
@@ -55,14 +54,6 @@ type t = {
   loose : string list;
   errors : string list;
 }
-
-let of_shape = function
-  | Codec.String -> S.String S.Text.any
-  | Codec.Format f -> S.String { S.Text.any with format = Some f }
-  | Codec.Integer -> S.Integer S.Number.any
-  | Codec.Number -> S.Number S.Number.any
-  | Codec.Boolean -> S.Boolean
-  | Codec.Enum words -> S.String { S.Text.any with words = Some words }
 
 let operation_id (i : Route.info) =
   let word =
@@ -148,7 +139,7 @@ let form_schema (i : Route.info) =
         List.filter_map
           (function
             | Dep.Field (f : Dep.input) ->
-                let one = of_shape f.shape in
+                let one = f.schema in
                 Some
                   {
                     S.name = f.name;
@@ -225,7 +216,7 @@ let is_credential i need =
     (credential_reads i)
 
 let input_parameter located (i : Dep.input) =
-  let one = of_shape i.shape in
+  let one = i.schema in
   if i.many then
     {
       name = i.name;
@@ -240,13 +231,7 @@ let input_parameter located (i : Dep.input) =
       located;
       required = i.required;
       schema = one;
-      default =
-        Option.map
-          (fun text ->
-            match i.shape with
-            | Codec.Integer | Codec.Number | Codec.Boolean -> Bare text
-            | Codec.String | Codec.Format _ | Codec.Enum _ -> Quoted text)
-          i.default;
+      default = i.default;
     }
 
 let parameters_of (i : Route.info) =
@@ -256,7 +241,7 @@ let parameters_of (i : Route.info) =
         name = p.name;
         located = In_path;
         required = true;
-        schema = of_shape p.shape;
+        schema = p.schema;
         default = None;
       })
     i.params
@@ -328,11 +313,10 @@ let equal_located a b =
   | (In_path | In_query | In_header | In_cookie), _ -> false
 
 let equal_default a b =
-  match (a, b) with
-  | Some (Bare x), Some (Bare y) | Some (Quoted x), Some (Quoted y) ->
-      String.equal x y
-  | None, None -> true
-  | (Some (Bare _ | Quoted _) | None), _ -> false
+  Option.equal
+    (fun x y ->
+      String.equal (Wiretype.Value.to_string x) (Wiretype.Value.to_string y))
+    a b
 
 let same_input (p : parameter) (q : parameter) =
   equal_located p.located q.located && String.equal p.name q.name

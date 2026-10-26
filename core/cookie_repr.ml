@@ -5,7 +5,9 @@ type same_site = Strict | Lax
 
 type t = {
   name : string;
-  value : string;
+  value : (string, string) result;
+      (** [Error] for a value its description would not write, said where the
+          answer is, which is then [500] *)
   path : string;
   max_age : int option;
   http_only : bool;
@@ -92,7 +94,7 @@ type sealer = {
    value is never printed by hand. *)
 type 'a named = {
   cookie : string;
-  codec : 'a Codec.t;
+  description : 'a Wiretype.t;
   sealer : sealer option;
   age : int option;
       (** a signed or encrypted cookie's, which it always has, in seconds *)
@@ -102,12 +104,12 @@ let checked_name name =
   if is_token name then name
   else invalid_arg (Printf.sprintf "Cookie.named: %S is not a cookie name" name)
 
-let named name codec =
-  { cookie = checked_name name; codec; sealer = None; age = None }
+let named name description =
+  { cookie = checked_name name; description; sealer = None; age = None }
 
 module Named = struct
   let name n = n.cookie
-  let codec n = n.codec
+  let description n = n.description
   let sealed n = Option.is_some n.sealer
 
   let unseal n ~keys ~now raw =
@@ -124,7 +126,8 @@ let make_cookie ?(path = "/") ?max_age ?(http_only = true) ?(same_site = Lax)
     invalid_arg
       (Printf.sprintf "Cookie.make: cookie %s has a path no cookie can hold"
          name)
-  else { name; value; path; max_age; http_only; same_site; seal = None }
+  else
+    { name; value = Ok value; path; max_age; http_only; same_site; seal = None }
 
 (* Base64url with no padding: every character of it is a cookie-octet. *)
 let encode s =
@@ -145,17 +148,19 @@ let make ?path ?max_age_s ?http_only ?same_site n v =
     | Some a, None | None, Some a -> Some a
     | None, None -> None
   in
+  let written =
+    Result.map_error
+      (fun (u : Wiretype.Unwritable.t) ->
+        Printf.sprintf "the cookie %s's value cannot be written: %s" n.cookie
+          u.message)
+      (Wiretype.to_text n.description v)
+  in
+  let cookie = make_cookie ?path ?max_age ?http_only ?same_site n.cookie "" in
   match n.sealer with
-  | None ->
-      make_cookie ?path ?max_age ?http_only ?same_site n.cookie
-        (escape (Codec.print n.codec v))
+  | None -> { cookie with value = Result.map escape written }
   | Some s ->
       (* Sealed as base64url, which any cookie holds. *)
-      {
-        (make_cookie ?path ?max_age ?http_only ?same_site n.cookie "") with
-        value = Codec.print n.codec v;
-        seal = Some s.seal;
-      }
+      { cookie with value = written; seal = Some s.seal }
 
 (* Signed: stamp, value and a MAC over the name, stamp and value, joined by
    dots, so a value cannot move to another cookie or change its stamp.
@@ -178,7 +183,7 @@ let whole_seconds span =
        (Int64.add (Mtime.Span.to_uint64_ns span) 999_999_999L)
        1_000_000_000L)
 
-let signed ~max_age name codec =
+let signed ~max_age name description =
   let max_age_s = whole_seconds max_age in
   let cookie = checked_name name in
   let signed_payload stamp v = String.concat "\000" [ cookie; stamp; v ] in
@@ -202,9 +207,9 @@ let signed ~max_age name codec =
         | _ -> None)
     | _ -> None
   in
-  { cookie; codec; sealer = Some { seal; unseal }; age = Some max_age_s }
+  { cookie; description; sealer = Some { seal; unseal }; age = Some max_age_s }
 
-let encrypted ~max_age name codec =
+let encrypted ~max_age name description =
   let max_age_s = whole_seconds max_age in
   let cookie = checked_name name in
   let seal ring ~now v =
@@ -224,7 +229,7 @@ let encrypted ~max_age name codec =
                 Some (String.sub opened (i + 1) (String.length opened - i - 1))
             | Some _ | None -> None))
   in
-  { cookie; codec; sealer = Some { seal; unseal }; age = Some max_age_s }
+  { cookie; description; sealer = Some { seal; unseal }; age = Some max_age_s }
 
 let clear ?path n = make_cookie ?path ~max_age:0 n.cookie ""
 
@@ -249,15 +254,16 @@ let header ~secure (t : t) value =
        ])
 
 let to_header ~secure ~now ~keys (t : t) =
-  match (t.seal, keys) with
-  | None, _ -> Ok (header ~secure t t.value)
-  | Some seal, Some ring -> Ok (header ~secure t (seal ring ~now t.value))
-  | Some _, None ->
-      Error
-        (Printf.sprintf
-           "the cookie %s is signed or encrypted, and the server was given no \
-            ~keys to seal it with"
-           t.name)
+  Result.bind t.value (fun value ->
+      match (t.seal, keys) with
+      | None, _ -> Ok (header ~secure t value)
+      | Some seal, Some ring -> Ok (header ~secure t (seal ring ~now value))
+      | Some _, None ->
+          Error
+            (Printf.sprintf
+               "the cookie %s is signed or encrypted, and the server was given \
+                no ~keys to seal it with"
+               t.name))
 
 let parse header =
   List.filter_map

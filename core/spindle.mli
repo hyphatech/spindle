@@ -31,7 +31,6 @@
 
 module Status = Spindle_http.Status
 module Meth = Spindle_http.Meth
-module Codec = Codec
 
 (** Cookies: the ones a response sets ({!Cookie.make}), and the ones a request
     carries, read as typed inputs like {!Query}'s, at [cookie.<name>]. *)
@@ -257,7 +256,7 @@ val set_cookie : (Cookie.t -> unit) Dep.t
     Whether the cookie is [Secure] is the framework's to say ({!Cookie}).
 
     {[
-    let theme = Spindle.Cookie.named "theme" Spindle.Codec.string
+    let theme = Spindle.Cookie.named "theme" Wiretype.string
 
     let save_theme =
       Spindle.post

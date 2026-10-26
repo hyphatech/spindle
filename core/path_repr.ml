@@ -1,14 +1,14 @@
 (* A path as the framework reads it: its segments and each parameter's
-   codec. *)
+   description. *)
 
 type unparsed = Invalid | Next_route
 
-(* [rest] takes every remaining segment. Its codec reads them as the matcher
+(* [rest] takes every remaining segment. Its description reads them as the matcher
    hands them over, each encoded again and joined by "/", so a segment
    holding an encoded "/" stays one segment. *)
 type 'a spec = {
   name : string;
-  codec : 'a Codec.t;
+  description : 'a Wiretype.t;
   unparsed : unparsed;
   rest : bool;
 }
@@ -31,7 +31,7 @@ type segment =
       name : string;
       unparsed : unparsed;
       parses : string -> bool;
-      shape : Codec.shape;
+      schema : Wiretype.Schema.t;
       kind : string option;
     }
   | Rest of string
@@ -46,9 +46,10 @@ let segments p =
             {
               name = p.name;
               unparsed = p.unparsed;
-              parses = (fun s -> Result.is_ok (Codec.parse p.codec s));
-              shape = Codec.shape p.codec;
-              kind = Codec.kind p.codec;
+              parses =
+                (fun s -> Result.is_ok (Wiretype.of_text p.description s));
+              schema = Parameter.schema p.description;
+              kind = Parameter.kind p.description;
             })
     (parts_of p)
 
@@ -72,9 +73,9 @@ let encode = function
 (* What the matcher hands a rest parameter. *)
 let join_rest segments = String.concat "/" (List.map encode segments)
 
-let rest_codec =
-  Codec.custom ~kind:"path"
+let rest =
+  Wiretype.kind ~kind:"path"
     ~parse:(function
       | "" -> Ok []
       | s -> Ok (List.map Uri.pct_decode (String.split_on_char '/' s)))
-    ~print:join_rest ()
+    ~print:join_rest Wiretype.string

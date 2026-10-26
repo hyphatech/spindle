@@ -20,9 +20,8 @@ let json_content s = Obj [ ("application/json", Obj [ ("schema", s) ]) ]
 
 let with_default (p : D.parameter) s =
   match (p.default, s) with
-  | Some (D.Bare text), Obj members -> Obj (members @ [ ("default", Raw text) ])
-  | Some (D.Quoted text), Obj members ->
-      Obj (members @ [ ("default", String text) ])
+  | Some value, Obj members ->
+      Obj (members @ [ ("default", Out.of_value value) ])
   | Some _, _ | None, _ -> s
 
 let located = function

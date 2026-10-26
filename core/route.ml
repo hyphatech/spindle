@@ -19,23 +19,25 @@ let info t = t.info
 (* ------------------------------------------------------------------ *)
 (* Printing *)
 
-let shape_to_string = function
-  | Codec.String -> "string"
-  | Codec.Format _ -> "string"
-  | Codec.Integer -> "integer"
-  | Codec.Number -> "number"
-  | Codec.Boolean -> "boolean"
-  | Codec.Enum words -> String.concat " | " words
+let rec schema_to_string (s : Wiretype.Schema.t) =
+  match s with
+  | String { words = Some words; _ } -> String.concat " | " words
+  | String _ -> "string"
+  | Integer _ -> "integer"
+  | Number _ -> "number"
+  | Boolean -> "boolean"
+  | Described { schema; _ } -> schema_to_string schema
+  | _ -> "value"
 
-let type_to_string shape kind =
+let type_to_string schema kind =
   match kind with
-  | Some k -> Printf.sprintf "%s (%s)" (shape_to_string shape) k
-  | None -> shape_to_string shape
+  | Some k -> Printf.sprintf "%s (%s)" (schema_to_string schema) k
+  | None -> schema_to_string schema
 
 let input_to_string where (i : Dep.input) =
   Printf.sprintf "%s %s%s: %s%s" where i.name
     (if i.required then "" else "?")
-    (type_to_string i.shape i.kind)
+    (type_to_string i.schema i.kind)
     (if i.many then ", repeated" else "")
 
 let need_to_string = function
@@ -91,7 +93,7 @@ let pp_info ppf i =
     (List.map
        (fun p ->
          Printf.sprintf "%s: %s%s" p.name
-           (type_to_string p.shape p.kind)
+           (type_to_string p.schema p.kind)
            (match p.unparsed with
            | Path_repr.Next_route -> ", or not this route"
            | Path_repr.Invalid ->

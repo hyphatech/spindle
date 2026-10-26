@@ -93,7 +93,9 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   is no https URL with a path), `Spindle_mcp.routes` (for two tools of one name, a name MCP
   refuses, arguments whose description is no object, a scope with no
   `~auth`, a question that is no form or two of one key on a tool, or a
-  tool whose dependency may refuse, which would refuse every call), `Spindle.Server.Limits.make` (for
+  tool whose dependency may refuse, which would refuse every call), 
+  `Spindle.Query.default` and `Spindle.Header.default` (for a default its
+  description will not write), `Spindle.Server.Limits.make` (for
   a limit out of its range), `Spindle.Server.run`, `serve_on` and
   `Spindle.serve` (for fewer than one domain, or a trusted proxy that is no
   address), `Spindle.serve` and
@@ -151,8 +153,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   signed-in person read twice from the database, or an input listed twice
   in the document; `test_spindle` counts both.
 - **A cookie that does not read is absent, never an error** -- one that
-  fails its signature, its seal or its age, or a plain one its codec does not
-  read -- and a sealed one's age is held by the server as well as the
+  fails its signature, its seal or its age, or a plain one its description does
+  not read -- and a sealed one's age is held by the server as well as the
   browser: a browser holding one from a retired key, an old visit or an
   older deploy did nothing wrong,
   and a copied one would otherwise replay for ever. A signed or sealed value
@@ -225,6 +227,17 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   an ID token, or one signed with a key both ends hold is the confused
   deputy RFC 8707 and RFC 9068 §4 guard against. Test: `test_oauth_rfc`'s
   rows refuse each, and the issuer's token for another resource.
+- **A value is validated by its wiretype description.** A path segment, a
+  query parameter, a header, a cookie and a form's field are each read by a
+  `Wiretype.t`, through `Wiretype.of_text`, and written through `to_text`:
+  a scalar's grammar, a bound, an enum's words and a kind are wiretype's, so
+  a parameter and a body's member cannot disagree, as FastAPI hands
+  pydantic its parameters; what stays Spindle's is HTTP's own -- a header's
+  lines, and its structured values, each a `Wiretype.kind` over
+  `spindle_http`'s parser. Symptom: `rg -n -w
+  'int_of_string_opt|float_of_string_opt' core/input.ml core/form.ml
+  core/path_repr.ml core/query.ml core/header.ml` finds a grammar of
+  Spindle's, or `007` is read in a query and refused in a body.
 - **A value with structure is read by its parser.** Inside Spindle,
   a header whose value has a structure `spindle_http` reads -- a list, a
   media type, credentials, `Accept`, `Cache-Control`, `Forwarded`, a

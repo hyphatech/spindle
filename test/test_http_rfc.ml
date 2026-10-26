@@ -259,23 +259,25 @@ let routes =
       Spindle.Path.(s "x-id")
       Spindle.Returns.response
       (let+ _ = Spindle.body
-       and+ v = Spindle.Header.optional "x-id" Spindle.Codec.string in
+       and+ v = Spindle.Header.optional "x-id" Wiretype.string in
        Ok (Spindle.Response.make (Option.value v ~default:"none")));
-    (* A list field and a singleton one, each as its codec reads it. *)
+    (* A list field and a singleton one, each as its description reads it. *)
     Spindle.get
       Spindle.Path.(s "languages")
       Spindle.Returns.response
       (let+ v =
-         Spindle.Header.optional "accept-language" Spindle.Codec.weighted
+         Spindle.Header.joined "accept-language" Spindle.Header.weighted
        in
        Ok
          (Spindle.Response.make
-            (Option.fold v ~none:"none"
-               ~some:(Spindle.Codec.print Spindle.Codec.weighted))));
+            (Option.fold v ~none:"none" ~some:(fun v ->
+                 Result.value
+                   (Wiretype.to_text Spindle.Header.weighted v)
+                   ~default:""))));
     Spindle.get
       Spindle.Path.(s "count")
       Spindle.Returns.response
-      (let+ v = Spindle.Header.optional "x-count" Spindle.Codec.int in
+      (let+ v = Spindle.Header.optional "x-count" Wiretype.int in
        Ok
          (Spindle.Response.make
             (Option.fold v ~none:"none" ~some:string_of_int)));
@@ -4415,9 +4417,9 @@ let test_a_compressed_representation_answers_as_the_rfc_says () =
     Spindle.get
       Spindle.Path.(s "seen")
       Spindle.Returns.response
-      (let+ if_match = Spindle.Header.optional "if-match" Spindle.Codec.string
+      (let+ if_match = Spindle.Header.optional "if-match" Wiretype.string
        and+ if_none_match =
-         Spindle.Header.optional "if-none-match" Spindle.Codec.string
+         Spindle.Header.optional "if-none-match" Wiretype.string
        in
        Ok
          (Spindle.Response.make

@@ -25,7 +25,7 @@ type path = (unit, [ `Path ]) t
 
 (** {1 Parameters} *)
 
-(** What a segment its codec cannot read makes of the request. *)
+(** What a segment its description does not read makes of the request. *)
 type unparsed = Path_repr.unparsed =
   | Invalid
       (** the default: a problem with the request, [400] at [path.<name>]
@@ -44,21 +44,23 @@ type unparsed = Path_repr.unparsed =
           Such routes give the parameter one name, since the API's document
           describes them as one operation ({!Openapi.document}). *)
 
-val param : ?unparsed:unparsed -> string -> 'a Codec.t -> 'a param
-(** [param name codec]: a segment read by [codec], percent-decoded first --
-    [param "colour" colour] for a codec of the application's own -- and
-    [unparsed] what one it cannot read makes of the request. An empty segment is
-    never a parameter. *)
-
-val string : ?unparsed:unparsed -> string -> string param
-(** [param name Codec.string]: any segment -- [/users/Kim%20Li] is ["Kim Li"].
+val param : ?unparsed:unparsed -> string -> 'a Wiretype.t -> 'a param
+(** [param name description]: a segment read by [description], as
+    [Wiretype.of_text] reads one, percent-decoded first --
+    [param "year" (Wiretype.int_bounded ~min:1900 ())], or a kind of the
+    application's own -- and [unparsed] what one it does not read, outside its
+    bounds or not, makes of the request. An empty segment is never a parameter.
 *)
 
+val string : ?unparsed:unparsed -> string -> string param
+(** [param name Wiretype.string]: any segment -- [/users/Kim%20Li] is
+    ["Kim Li"]. *)
+
 val int : ?unparsed:unparsed -> string -> int param
-(** [param name Codec.int]. *)
+(** [param name Wiretype.int]. *)
 
 val int64 : ?unparsed:unparsed -> string -> int64 param
-(** [param name Codec.int64]. *)
+(** [param name Wiretype.int64]. *)
 
 val rest : string -> string list param
 (** Every remaining segment, zero or more, each percent-decoded:

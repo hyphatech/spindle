@@ -1,15 +1,15 @@
-(** A path as the framework reads it: its segments and each parameter's codec.
-    What {!Path} is, underneath, and what the router matches. *)
+(** A path as the framework reads it: its segments and each parameter's
+    description. What {!Path} is, underneath, and what the router matches. *)
 
 type unparsed =
   | Invalid
   | Next_route
-      (** What a segment its codec cannot read makes of a request:
+      (** What a segment its description cannot read makes of a request:
           {!Path.unparsed}. *)
 
 type 'a spec = {
   name : string;
-  codec : 'a Codec.t;
+  description : 'a Wiretype.t;
   unparsed : unparsed;
   rest : bool;
       (** every remaining segment, read as the matcher hands them over: each
@@ -34,7 +34,7 @@ type segment =
       name : string;
       unparsed : unparsed;
       parses : string -> bool;
-      shape : Codec.shape;
+      schema : Wiretype.Schema.t;
       kind : string option;
     }
   | Rest of string
@@ -49,5 +49,5 @@ val join_rest : string list -> string
 (** What the matcher hands a rest parameter: each segment encoded, joined by
     ["/"]. *)
 
-val rest_codec : string list Codec.t
-(** A rest parameter's codec: the joined segments, each decoded. *)
+val rest : string list Wiretype.t
+(** A rest parameter's description: the joined segments, each decoded. *)

@@ -30,7 +30,7 @@ let note name id =
   | Some _ | None ->
       Error (Spindle.Refusal.make no_such_note "There is no such note.")
 
-let note_id = Spindle.Path.param "note_id" Spindle.Codec.int
+let note_id = Spindle.Path.param "note_id" Wiretype.int
 
 let routes =
   [

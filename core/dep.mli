@@ -94,10 +94,12 @@ type input = Dep_repr.input = {
   name : string;
   required : bool;
   many : bool;  (** a query parameter given any number of times *)
-  shape : Codec.shape;
-  kind : string option;  (** the codec's name, if it has one *)
-  default : string option;
-      (** what stands in for it when it is absent, as its codec prints it *)
+  schema : Wiretype.Schema.t;  (** what its description says of it *)
+  kind : string option;
+      (** the name of its description's kind or enum, if it has one *)
+  default : Wiretype.Value.t option;
+      (** what stands in for it when it is absent, as its description writes it
+      *)
 }
 (** A query parameter, a header, a cookie or a form's field, as a typed input
     reads it. *)

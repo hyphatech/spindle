@@ -8,7 +8,7 @@ open Spindle.Syntax
 type reading = { fahrenheit : float } [@@deriving wiretype]
 
 let to_fahrenheit celsius = Ok { fahrenheit = (celsius *. 9. /. 5.) +. 32. }
-let celsius = Spindle.Query.required "celsius" Spindle.Codec.float
+let celsius = Spindle.Query.required "celsius" Wiretype.number
 
 let routes =
   [

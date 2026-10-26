@@ -12,7 +12,7 @@ depends: [
   "dune" {>= "3.18"}
   "ocaml" {>= "5.5"}
   "spindle-http" {= version}
-  "wiretype" {>= "0.6.0" & < "0.7.0"}
+  "wiretype" {>= "0.6.1" & < "0.7.0"}
   "eio" {>= "1.6"}
   "cstruct" {>= "6.2.0"}
   "iomux" {>= "0.4"}

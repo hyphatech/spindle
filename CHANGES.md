@@ -1,5 +1,31 @@
 # Changes
 
+## Unreleased
+
+- A request's text inputs are read by wiretype descriptions, as a body is:
+  `Query`, `Header`, `Form`, `Cookie.named`, `signed` and `encrypted`, and
+  `Path.param` take a `'a Wiretype.t`, read through `Wiretype.of_text`, so a
+  parameter takes a body member's bounds, enums and kinds, and its problems
+  are wiretype's. `Spindle.Codec` is gone: `Codec.int`, `int64`, `string`,
+  `bool`, `date`, `instant` and `enum` are `Wiretype`'s of the same name,
+  `Codec.float` is `Wiretype.number`, `Codec.uuid` is `Wiretype.uuid ()`,
+  `Codec.custom ~kind ~parse ~print ()` is
+  `Wiretype.kind ~kind ~parse ~print Wiretype.string`, and `Codec.parse` and
+  `print` are `Wiretype.of_text` and `to_text`. HTTP's values --
+  `media_type`, `credentials`, `accept`, `weighted`, `cache_control`,
+  `forwarded` and the structured fields -- are descriptions in
+  `Spindle.Header`, and a list field is read with `Header.joined`, which
+  replaces `Codec.custom ~list:true`. A text a description cannot read is
+  `unexpected_type`, "This must be a whole number.", where it was
+  `malformed`, "This is not a whole number."; a number has JSON's grammar, so
+  `1e3` is a whole number and `007` is none. `Dep.input` and `Route.param`
+  carry the input's `schema` where they carried a `shape`, and a default as
+  the JSON its description writes. A route reading an input by a
+  description of no scalar is refused when the app is made; a default its
+  description will not write raises `Invalid_argument` where it is written;
+  a cookie value it will not write is answered `500`, logged, and a
+  `Path.url` argument is refused. Needs wiretype 0.6.1.
+
 ## 0.11.0 (2026-10-24)
 
 - The client and HTTP are packages of their own, `spindle-client` and

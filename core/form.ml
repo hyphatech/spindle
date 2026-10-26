@@ -117,43 +117,44 @@ let values_named name list =
     (fun (k, v) -> if String.equal k name then Some v else None)
     list
 
-let field name codec ~required ~many read =
+let field name description ~required ~many read =
   let need =
     Dep.Field
       {
         name;
         required;
         many;
-        shape = Codec.shape codec;
-        kind = Codec.kind codec;
+        schema = Parameter.schema description;
+        kind = Parameter.kind description;
         default = None;
       }
   in
   from_body ~need (fun p -> values_named name p.fields) read
 
-let parse_value name codec v = Input.parse ~at:(field_path name) codec v
+let parse_value name description v =
+  Input.parse ~at:(field_path name) description v
 
-let optional name codec =
-  field name codec ~required:false ~many:false (function
+let optional name description =
+  field name description ~required:false ~many:false (function
     | [] -> Ok None
-    | v :: _ -> Result.map Option.some (parse_value name codec v))
+    | v :: _ -> Result.map Option.some (parse_value name description v))
 
-let required name codec =
-  field name codec ~required:true ~many:false (function
+let required name description =
+  field name description ~required:true ~many:false (function
     | [] -> Error (Input.missing ~at:(field_path name))
-    | v :: _ -> parse_value name codec v)
+    | v :: _ -> parse_value name description v)
 
-let list name codec =
-  field name codec ~required:false ~many:true (fun vs ->
+let list name description =
+  field name description ~required:false ~many:true (fun vs ->
       List.fold_right
         (fun v acc ->
-          match (parse_value name codec v, acc) with
+          match (parse_value name description v, acc) with
           | Ok x, Ok l -> Ok (x :: l)
           | Error e, _ | _, Error e -> Error e)
         vs (Ok []))
 
 let checked name =
-  field name Codec.string ~required:false ~many:false (fun vs ->
+  field name Wiretype.string ~required:false ~many:false (fun vs ->
       Ok (match vs with [] -> false | _ :: _ -> true))
 
 module File = struct

@@ -15,7 +15,7 @@ depends: [
   "spindle" {= version}
   "spindle-http" {= version}
   "spindle-mcp-client" {= version}
-  "wiretype" {>= "0.6.0" & < "0.7.0"}
+  "wiretype" {>= "0.6.1" & < "0.7.0"}
   "ptime" {>= "1.2.0"}
   "base64" {>= "3.5.2"}
   "logs" {>= "0.10.0"}

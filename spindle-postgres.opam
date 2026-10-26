@@ -23,7 +23,7 @@ depends: [
   "qcheck-core" {with-test & >= "0.91"}
   "qcheck-alcotest" {with-test & >= "0.91"}
   "eio_main" {with-test & >= "1.6"}
-  "wiretype" {with-test & >= "0.6.0" & < "0.7.0"}
+  "wiretype" {with-test & >= "0.6.1" & < "0.7.0"}
   "uri" {with-test & >= "4.4.0"}
   "angstrom" {with-test & >= "0.16.1"}
   "ipaddr" {with-test & >= "5.6.2"}

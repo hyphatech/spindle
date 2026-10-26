@@ -1,6 +1,5 @@
 module Status = Spindle_http.Status
 module Meth = Spindle_http.Meth
-module Codec = Codec
 
 module Cookie = struct
   include Cookie
@@ -9,9 +8,10 @@ module Cookie = struct
      it and the browser only kept it, so one from a retired key, an older
      deploy or a script that broke its escape is no mistake of the person's.
      A sealed one is described as the string the browser holds, and reads
-     the server's keys; a plain one is described by its codec. *)
+     the server's keys; a plain one is described by its description. *)
   let input ~required c =
-    let name = Cookie.Named.name c and codec = Cookie.Named.codec c in
+    let name = Cookie.Named.name c
+    and description = Cookie.Named.description c in
     let sealed = Cookie.Named.sealed c in
     let at = "cookie." ^ name in
     let carried =
@@ -23,8 +23,10 @@ module Cookie = struct
                 name;
                 required;
                 many = false;
-                shape = (if sealed then Codec.String else Codec.shape codec);
-                kind = (if sealed then None else Codec.kind codec);
+                schema =
+                  (if sealed then Parameter.schema Wiretype.string
+                   else Parameter.schema description);
+                kind = (if sealed then None else Parameter.kind description);
                 default = None;
               };
           ]
@@ -49,7 +51,7 @@ module Cookie = struct
                in
                match
                  Option.bind opened (fun v ->
-                     Result.to_option (Input.parse ~at codec v))
+                     Result.to_option (Input.parse ~at description v))
                with
                | Some v -> Ok (Some v)
                | None ->

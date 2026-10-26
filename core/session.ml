@@ -126,7 +126,7 @@ let request_now = Dep.of_request ~needs:[] (fun r -> Ok (Request.now r))
 
 let create ?(cookie = "session") ~store ~idle ~absolute description =
   let sessions =
-    { named = Cookie.named cookie Codec.string; idle; absolute; description }
+    { named = Cookie.named cookie Wiretype.string; idle; absolute; description }
   in
   let id =
     Dep.credential
@@ -134,7 +134,7 @@ let create ?(cookie = "session") ~store ~idle ~absolute description =
       ~doc:"A session the server keeps, by the id its cookie holds."
       (Input.optional Input.cookie
          (Cookie.Named.name sessions.named)
-         Codec.string)
+         Wiretype.string)
   in
   let next_sweep =
     Dep_repr.kept ~make:(fun () -> Atomic.make Mtime.min_stamp)

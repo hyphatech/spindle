@@ -1,10 +1,9 @@
-(** A form's fields, typed:
-    [Spindle.Form.required "email" Spindle.Codec.string].
+(** A form's fields, typed: [Spindle.Form.required "email" Wiretype.string].
 
-    A field is an input as a query parameter is, read with a {!Codec}, and a
-    problem with one is {!Refusal.invalid} at [form.<name>], reported with every
-    other problem of the request at once. The body is read once, as a form,
-    however many fields a route reads ({!Dep}'s sharing):
+    A field is an input as a query parameter is, read by its wiretype
+    description, and a problem with one is {!Refusal.invalid} at [form.<name>],
+    reported with every other problem of the request at once. The body is read
+    once, as a form, however many fields a route reads ({!Dep}'s sharing):
     [application/x-www-form-urlencoded], what a browser posts from a form with
     no file, and what a body with no [Content-Type] is read as, or
     [multipart/form-data], what it posts from one with a file (below). A body of
@@ -24,7 +23,7 @@
     nothing else, so there is no token to put in one.
 
     {[
-    let email = Spindle.Form.required "email" Spindle.Codec.string
+    let email = Spindle.Form.required "email" Wiretype.string
     let remember = Spindle.Form.checked "remember"
 
     let sign_up_route =
@@ -35,12 +34,12 @@
          sign_up ~email ~remember)
     ]} *)
 
-val optional : string -> 'a Codec.t -> 'a option Dep.t
+val optional : string -> 'a Wiretype.t -> 'a option Dep.t
 (** The first value given, if any. *)
 
-val required : string -> 'a Codec.t -> 'a Dep.t
+val required : string -> 'a Wiretype.t -> 'a Dep.t
 
-val list : string -> 'a Codec.t -> 'a list Dep.t
+val list : string -> 'a Wiretype.t -> 'a list Dep.t
 (** Every value given, in order: a group of checkboxes of one name. *)
 
 val checked : string -> bool Dep.t

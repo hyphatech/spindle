@@ -20,9 +20,9 @@ type input = {
   name : string;
   required : bool;
   many : bool;
-  shape : Codec.shape;
+  schema : Wiretype.Schema.t;
   kind : string option;
-  default : string option;
+  default : Wiretype.Value.t option;
 }
 
 type file = { name : string; required : bool; many : bool }

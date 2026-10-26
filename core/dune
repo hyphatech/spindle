@@ -17,7 +17,7 @@
   deadline
   body_repr
   input
-  codec_repr
+  parameter
   path_repr
   dep_repr
   request_repr

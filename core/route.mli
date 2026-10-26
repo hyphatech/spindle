@@ -45,8 +45,9 @@ type ('r, 'a, 'k) maker =
 
 type param = Route_repr.param = {
   name : string;
-  shape : Codec.shape;
-  kind : string option;  (** the codec's name, if it has one *)
+  schema : Wiretype.Schema.t;  (** what its description says of it *)
+  kind : string option;
+      (** the name of its description's kind or enum, if it has one *)
   unparsed : Path.unparsed;
       (** what a segment it cannot read makes of a request *)
   rest : bool;  (** whether it takes the rest of the path ({!Path.rest}) *)

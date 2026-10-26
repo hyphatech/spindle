@@ -36,7 +36,7 @@ let routes =
       Spindle.Path.(s "count")
       (Spindle.Returns.events Spindle.Event.[ declare count ])
       (let+ mono_clock = clock
-       and+ last = Spindle.Header.optional "last-event-id" Spindle.Codec.int in
+       and+ last = Spindle.Header.optional "last-event-id" Wiretype.int in
        Ok (count_from ~mono_clock (Option.fold ~none:1 ~some:succ last)));
   ]
 

@@ -4,7 +4,7 @@
 
 type param = {
   name : string;
-  shape : Codec.shape;
+  schema : Wiretype.Schema.t;
   kind : string option;
   unparsed : Path_repr.unparsed;
   rest : bool;

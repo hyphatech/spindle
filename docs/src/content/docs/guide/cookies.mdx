@@ -11,7 +11,7 @@ runs.
 
 ## Reading and setting cookies
 
-Declare a cookie once, by name and codec, and use it to read and to set.
+Declare a cookie once, by name and wiretype description, and use it to read and to set.
 This page counts your visits:
 
 <Code code={cookie} lang="ocaml" />
@@ -57,10 +57,10 @@ read them are values like any other:
 
 ```ocaml
 let prefs =
-  Spindle.Cookie.encrypted ~max_age:Mtime.Span.(30 * day) "prefs" prefs_codec
+  Spindle.Cookie.encrypted ~max_age:Mtime.Span.(30 * day) "prefs" prefs_json
 
 let who =
-  Spindle.Cookie.signed ~max_age:Mtime.Span.(8 * hour) "who" Spindle.Codec.string
+  Spindle.Cookie.signed ~max_age:Mtime.Span.(8 * hour) "who" Wiretype.string
 
 let () =
   match Sys.getenv_opt "COOKIE_SECRET" with
@@ -88,7 +88,7 @@ let () =
   expires. `Cookie.make` writes it as `Max-Age`, rounded up to whole
   seconds; passing `~max_age_s` to `make` can make that shorter, never
   longer.
-- **A signed or encrypted cookie holds any value its codec prints**, since
+- **A signed or encrypted cookie holds any value its description writes**, since
   what is sent is encoded as base64url, as a plain cookie holds any text,
   percent-encoded.
 - `Key.sign`/`Key.verify` and `Key.seal`/`Key.unseal` do the same for

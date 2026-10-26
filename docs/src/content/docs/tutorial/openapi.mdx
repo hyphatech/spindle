@@ -75,7 +75,7 @@ What OCaml cannot read from the types, you write on the route:
 ```ocaml
 let session =
   Spindle.Dep.credential ~scheme:"session"
-    (Spindle.Cookie.optional (Spindle.Cookie.named "session" Spindle.Codec.string))
+    (Spindle.Cookie.optional (Spindle.Cookie.named "session" Wiretype.string))
 ```
 
 You can also print what each route reads and answers, without running any

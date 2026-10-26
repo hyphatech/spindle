@@ -56,8 +56,7 @@ let gone =
 
 let session =
   Spindle.Dep.credential ~scheme:"session" ~doc:"Who is signed in."
-    (Spindle.Cookie.optional
-       (Spindle.Cookie.named "session" Spindle.Codec.string))
+    (Spindle.Cookie.optional (Spindle.Cookie.named "session" Wiretype.string))
 
 let order_id = Spindle.Path.int "order_id"
 
@@ -69,12 +68,12 @@ let add =
        item_json)
     (let+ _ = Spindle.param order_id
      and+ _ = session
-     and+ _ = Spindle.Query.optional "page" Spindle.Codec.int
-     and+ _ = Spindle.Query.optional "weight" Spindle.Codec.float
-     and+ _ = Spindle.Query.default "limit" Spindle.Codec.int 20
-     and+ _ = Spindle.Query.optional "since" Spindle.Codec.date
-     and+ _ = Spindle.Query.optional "after" Spindle.Codec.instant
-     and+ _ = Spindle.Header.optional "x-request" Spindle.Codec.uuid
+     and+ _ = Spindle.Query.optional "page" Wiretype.int
+     and+ _ = Spindle.Query.optional "weight" Wiretype.number
+     and+ _ = Spindle.Query.default "limit" Wiretype.int 20
+     and+ _ = Spindle.Query.optional "since" Wiretype.date
+     and+ _ = Spindle.Query.optional "after" Wiretype.instant
+     and+ _ = Spindle.Header.optional "x-request" (Wiretype.uuid ())
      and+ i = Spindle.json item_json in
      Ok i)
 
@@ -168,8 +167,8 @@ let test_a_credential_is_said_once () =
       Spindle.Returns.response
       (let+ _ =
          Spindle.Dep.credential ~scheme:"key"
-           (Spindle.Query.optional "key" Spindle.Codec.string)
-       and+ _ = Spindle.Header.optional "key" Spindle.Codec.string in
+           (Spindle.Query.optional "key" Wiretype.string)
+       and+ _ = Spindle.Header.optional "key" Wiretype.string in
        Ok (Spindle.Response.empty ()))
   in
   let j = json_of_doc (made [ keyed ]) in
@@ -194,9 +193,7 @@ let test_a_credential_says_whether_it_is_needed () =
   let bearer =
     Spindle.Dep.credential ~scheme:"bearer"
       (Spindle.Dep.join ~refuses:[ signed_out ]
-         (let+ h =
-            Spindle.Header.optional "authorization" Spindle.Codec.string
-          in
+         (let+ h = Spindle.Header.optional "authorization" Wiretype.string in
           Option.to_result ~none:(Spindle.Refusal.make signed_out "Sign in.") h))
   in
   let needs =
@@ -281,10 +278,10 @@ let test_two_reads_of_one_input_are_one_parameter () =
     Spindle.get
       Spindle.Path.(s "pages")
       Spindle.Returns.text
-      (let+ _ = Spindle.Query.optional "page" Spindle.Codec.int
-       and+ _ = Spindle.Query.required "page" Spindle.Codec.int
-       and+ _ = Spindle.Header.optional "X-Trace" Spindle.Codec.string
-       and+ _ = Spindle.Header.optional "x-trace" Spindle.Codec.string in
+      (let+ _ = Spindle.Query.optional "page" Wiretype.int
+       and+ _ = Spindle.Query.required "page" Wiretype.int
+       and+ _ = Spindle.Header.optional "X-Trace" Wiretype.string
+       and+ _ = Spindle.Header.optional "x-trace" Wiretype.string in
        Ok "")
   in
   let params =
@@ -311,22 +308,22 @@ let test_two_reads_of_one_input_are_one_parameter () =
     (Spindle.get
        Spindle.Path.(s "q")
        Spindle.Returns.text
-       (let+ _ = Spindle.Query.optional "page" Spindle.Codec.int
-        and+ _ = Spindle.Query.optional "page" Spindle.Codec.string in
+       (let+ _ = Spindle.Query.optional "page" Wiretype.int
+        and+ _ = Spindle.Query.optional "page" Wiretype.string in
         Ok ""));
   refused "a header read as two things" ~says:"x-size"
     (Spindle.get
        Spindle.Path.(s "h")
        Spindle.Returns.text
-       (let+ _ = Spindle.Header.optional "X-Size" Spindle.Codec.int
-        and+ _ = Spindle.Header.optional "x-size" Spindle.Codec.bool in
+       (let+ _ = Spindle.Header.optional "X-Size" Wiretype.int
+        and+ _ = Spindle.Header.optional "x-size" Wiretype.bool in
         Ok ""));
   refused "a form's field read as two things" ~says:"count"
     (Spindle.post
        Spindle.Path.(s "f")
        Spindle.Returns.text
-       (let+ _ = Spindle.Form.optional "count" Spindle.Codec.int
-        and+ _ = Spindle.Form.list "count" Spindle.Codec.int in
+       (let+ _ = Spindle.Form.optional "count" Wiretype.int
+        and+ _ = Spindle.Form.list "count" Wiretype.int in
         Ok ""))
 
 (* OpenAPI 3.2 §4.8.13.1: a request body is optional unless it says
@@ -419,7 +416,7 @@ let test_routes_told_apart_by_a_type_are_one_operation () =
     Spindle.get ~summary:"Items by their name" ~refuses:[ gone ]
       Spindle.Path.(s "items" / Spindle.Path.string "key")
       (Spindle.Returns.json (Wiretype.list item_json))
-      (let+ _ = Spindle.Query.required "lang" Spindle.Codec.string in
+      (let+ _ = Spindle.Query.required "lang" Wiretype.string in
        Error Spindle.Refusal.not_found)
   in
   let a = made [ by_number; by_name ] in
@@ -654,7 +651,7 @@ let test_a_socket_reading_a_header_has_no_function () =
         Spindle.get
           Spindle.Path.(s "chat")
           (Spindle.Returns.websocket chat)
-          (let+ _ = Spindle.Header.required "x-room" Spindle.Codec.string in
+          (let+ _ = Spindle.Header.required "x-room" Wiretype.string in
            Ok (fun _ -> Ok ()));
         Spindle.get
           Spindle.Path.(s "open")
@@ -675,7 +672,7 @@ let test_two_labels_of_one_name_are_refused () =
          Spindle.get
            Spindle.Path.(s "things")
            (Spindle.Returns.json item_json)
-           (let+ _ = Spindle.Query.optional "body" Spindle.Codec.string
+           (let+ _ = Spindle.Query.optional "body" Wiretype.string
             and+ i = Spindle.json item_json in
             Ok i);
        ])
@@ -732,8 +729,8 @@ let test_a_body_refused_for_its_type_says_415 () =
       ( "form",
         true,
         route "form"
-          (Spindle.Form.required "x" Spindle.Codec.string
-          |> Spindle.Dep.map ignore) );
+          (Spindle.Form.required "x" Wiretype.string |> Spindle.Dep.map ignore)
+      );
       ( "parts",
         true,
         route "parts" (Spindle.Dep.map ignore (Spindle.multipart ~max:1024 ()))

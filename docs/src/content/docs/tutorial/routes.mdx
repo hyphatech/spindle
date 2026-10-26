@@ -63,7 +63,7 @@ HTTP/1.1 204 No Content
 ...
 
 $ curl localhost:8080/todos/seven
-{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"path.id","code":"malformed","message":"This is not a whole number."}]}
+{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"path.id","code":"unexpected_type","message":"This must be a whole number."}]}
 ```
 
 - **`GET /todos`** reads nothing, so its input is `Spindle.Dep.return ()`.
@@ -84,22 +84,26 @@ for real is the [database](/spindle/tutorial/database/) page.
 
 ## Path parameters
 
-Below, `Path` is `Spindle.Path` and `Codec` is `Spindle.Codec`.
+Below, `Path` is `Spindle.Path`. A parameter is read by a wiretype
+description, the one a JSON body's member is read by.
 
 ```ocaml
 let order_id = Path.string "order_id"               (* any segment *)
 let page = Path.int "page"                       (* an int *)
 let user_id = Path.int64 "user_id"               (* an int64 *)
 let file = Path.rest "file"                      (* every segment left *)
-let invoice = Path.param "invoice" Codec.uuid    (* a UUID, as a Uuidm.t *)
+let invoice = Path.param "invoice" (Wiretype.uuid ())  (* a Uuidm.t *)
+let year =
+  Path.param "year"
+    (Wiretype.int_bounded ~min:1900 ~max:2100 ())  (* an int, within bounds *)
 let colour =
   Path.param "colour"
-    (Codec.enum ~kind:"colour" colour_to_string
+    (Wiretype.enum ~kind:"colour" colour_to_string
        [ Red; Green; Blue ])                     (* one of a set of words *)
 let sku =
   Path.param "sku"
-    (Codec.custom ~kind:"sku" ~parse:Sku.of_string
-       ~print:Sku.to_string ())                  (* a type of your own *)
+    (Wiretype.kind ~kind:"sku" ~parse:Sku.of_string
+       ~print:Sku.to_string Wiretype.string)     (* a type of your own *)
 
 Path.(s "orders" / order_id / s "items")         (* /orders/{order_id}/items *)
 Path.(s "static" / file)                         (* /static/{file*} *)
@@ -109,11 +113,13 @@ Path.root                                        (* / *)
 - Make each parameter once and use it in every path that has it. Read it in
   a route with `Spindle.param order_id`: you pass the parameter, never the
   path built from it.
-- `Codec` also has `float`, `bool` and `date` (`2026-09-30`, read as
-  `(year, month, day)`).
+- Any scalar description reads a segment: `Wiretype.number`, `bool`, `date`
+  (`2026-09-30`, read as `(year, month, day)`) and the rest. A segment it
+  does not read -- outside its bounds or not -- is a `400` with wiretype's
+  problem, or the next route under `~unparsed:Next_route`.
 - A segment arrives percent-decoded: `/orders/Kim%20Li` is `"Kim Li"`.
-- A `custom` codec's `~parse` answers `Ok` the value, or `Error` the
-  sentence a client is told: `Error "This is not a SKU."`.
+- A `kind`'s `~parse` answers `Ok` the value, or `Error` the sentence a
+  client is told: `Error "This is not a SKU."`.
 - `Path.rest` takes every segment left, as a list: `/static/css/site.css`
   is `["css"; "site.css"]`, and `/static` is `[]`. It must come last. It is
   left out of the OpenAPI document.
@@ -130,7 +136,7 @@ $ curl localhost:8080/api/users/7/Kim%20Li
 {"user_id":"7","name":"Kim Li"}
 
 $ curl localhost:8080/users/abc
-{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"path.user_id","code":"malformed","message":"This is not a whole number."}]}
+{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"path.user_id","code":"unexpected_type","message":"This must be a whole number."}]}
 ```
 
 The parameter's name, `user_id`, is where a segment that does not parse is

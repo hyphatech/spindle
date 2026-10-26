@@ -219,6 +219,39 @@ let check_inputs (r : Route_repr.t) =
             value"
            (route_name r) where name)
 
+(* A text input is one text: a description of an object, a list or a map
+   reads none, and would refuse every request that sent it. *)
+let check_texts (r : Route_repr.t) =
+  let described =
+    List.map
+      (fun (p : Route_repr.param) -> ("the path parameter", p.name, p.schema))
+      r.info.params
+    @ List.filter_map
+        (fun need ->
+          match (Route_repr.input_key need, need) with
+          | ( Some (where, name),
+              (Dep.Query i | Dep.Header i | Dep.Cookie i | Dep.Field i) ) ->
+              Some (where, name, i.schema)
+          | ( Some _,
+              ( Dep.File _ | Dep.Path _ | Dep.Body _ | Dep.Custom _
+              | Dep.Resource _ ) )
+          | None, _ ->
+              None)
+        r.info.needs
+  in
+  match
+    List.find_opt
+      (fun (_, _, schema) -> not (Parameter.scalar schema))
+      described
+  with
+  | None -> Ok ()
+  | Some (where, name, _) ->
+      Error
+        (Printf.sprintf
+           "%s reads %s %s by a description of no scalar, which no text is; \
+            describe it as a string, a number, a boolean, an enum or a kind"
+           (route_name r) where name)
+
 (* Declared statuses are successes, since failing is a refusal, each once.
    One a JSON answer is sent under carries content, which RFC 9110 §15.3.5
    and §15.3.6 forbid a 204 and a 205: the wire would drop what the document
@@ -292,6 +325,7 @@ let check r =
     let* () = check_body r in
     let* () = check_content_types r in
     let* () = check_inputs r in
+    let* () = check_texts r in
     check_statuses r
 
 (* A client branches on a code's name, so a name has one status and one doc
