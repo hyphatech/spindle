@@ -5,7 +5,8 @@
   </picture>
 </h1>
 
-The Eio-native web framework for modern OCaml.
+The web framework for modern OCaml.
+Fast, ergonomic and RFC-strict. Eio-native and multicore by design.
 
 [![ci](https://img.shields.io/github/actions/workflow/status/hyphatech/spindle/ci.yml?branch=main&label=ci)](https://github.com/hyphatech/spindle/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/hyphatech/spindle?label=release)](https://github.com/hyphatech/spindle/releases)

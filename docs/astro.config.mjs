@@ -23,7 +23,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "spindle",
-      description: "The Eio-native web framework for modern OCaml.",
+      description: "The web framework for modern OCaml.",
       logo: { src: "starlight-theme-hypha/assets/hypha.webp" },
       favicon: "/favicon.svg",
       plugins: [

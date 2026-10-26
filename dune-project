@@ -109,7 +109,7 @@
 
 (package
  (name spindle)
- (synopsis "The Eio-native web framework for modern OCaml")
+ (synopsis "The web framework for modern OCaml")
  (description
   "Routes as values, dependencies that list what a route reads, failures as values, streams and WebSockets, the API described as OpenAPI and Zod, and HTTP/1.1 read and written by itself.")
  (depends
