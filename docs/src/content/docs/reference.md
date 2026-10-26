@@ -18,6 +18,8 @@ it as a module (`Spindle_http`).
 | `spindle-client` | `spindle-client` | Calling another server, which installs and links no framework |
 | `spindle-sqlite` | `spindle-sqlite` | A server's SQLite: a pool of one file in WAL mode, a transaction per borrow, sessions |
 | `spindle-postgres` | `spindle-postgres` | A server's Postgres: bounded connections, a pool, a transaction per borrow, sessions |
+| `spindle-mcp` | `spindle-mcp` | A Model Context Protocol server: the routes an agent calls tools through |
+| `spindle-mcp-client` | `spindle-mcp-client`, `spindle-mcp-client.protocol` | Calling another server's tools over MCP, which installs and links no framework, and MCP's messages, which both ends share |
 | `spindle-cli` | `spindle-cli` | An application's command line: its API's document, Zod schemas and Melange client |
 | [`wiretype`, `ppx_wiretype`](https://hyphatech.github.io/wiretype/) | `wiretype`, `ppx_wiretype` | JSON as descriptions, and the deriver that writes one, released on their own; installed with `spindle` |
 | [`rowtype`, `rowtype-sqlite`, `rowtype-postgres`, `rowtype-migrate`](https://hyphatech.github.io/rowtype/) | the same | A statement described once, its SQLite and Postgres backends, and migrations, released on their own; `spindle-sqlite` and `spindle-postgres` each install `rowtype` and their backend, and `rowtype-migrate` is installed beside them (`opam install rowtype-migrate`), which builds the dialect of each backend installed |
@@ -45,18 +47,32 @@ it as a module (`Spindle_http`).
   -- a server's SQLite.
 - [`Spindle_postgres`](/spindle/reference/spindle-postgres/Spindle_postgres/index.html)
   -- a server's Postgres.
+- [`Spindle_mcp`](/spindle/reference/spindle-mcp/Spindle_mcp/index.html) --
+  a Model Context Protocol server.
+- [`Spindle_mcp_client`](/spindle/reference/spindle-mcp-client/Spindle_mcp_client/index.html)
+  -- calling another server's tools, and
+  [`Spindle_mcp_protocol`](/spindle/reference/spindle-mcp-client/Spindle_mcp_protocol/index.html)
+  -- MCP's messages, which both ends share.
 - [`Spindle_cli`](/spindle/reference/spindle-cli/Spindle_cli/index.html) -- an
   application's command line.
 
 ## What it is built on
 
-- [`Wiretype`](https://hyphatech.github.io/wiretype/) -- JSON as
-  descriptions, and what `[@@deriving wiretype]` writes, documented on its
-  own site.
-- [`Rowtype`, `Rowtype_sqlite`, `Rowtype_postgres`, `Rowtype_migrate`,
-  `Rowtype_migrate_sqlite` and
-  `Rowtype_migrate_postgres`](https://hyphatech.github.io/rowtype/) -- a
-  statement described once, running one on each database, and migrations and
-  each database's way of running them, documented on their own site.
-- [`Postgres_eio`](https://hyphatech.github.io/postgres-eio/) -- the driver,
-  documented on its own site.
+Each is released and documented on its own site, and links here go to its
+reference there.
+
+- [`Wiretype`](https://hyphatech.github.io/wiretype/reference/wiretype/Wiretype/index.html)
+  -- JSON as descriptions, and what `[@@deriving wiretype]` writes.
+- [`Rowtype`](https://hyphatech.github.io/rowtype/reference/rowtype/Rowtype/index.html)
+  -- a statement described once.
+- [`Rowtype_sqlite`](https://hyphatech.github.io/rowtype/reference/rowtype-sqlite/Rowtype_sqlite/index.html)
+  and
+  [`Rowtype_postgres`](https://hyphatech.github.io/rowtype/reference/rowtype-postgres/Rowtype_postgres/index.html)
+  -- running one on each database.
+- [`Rowtype_migrate`](https://hyphatech.github.io/rowtype/reference/rowtype-migrate/Rowtype_migrate/index.html)
+  -- migrations, and each database's way of running them:
+  [`Rowtype_migrate_sqlite`](https://hyphatech.github.io/rowtype/reference/rowtype-migrate/Rowtype_migrate_sqlite/index.html)
+  and
+  [`Rowtype_migrate_postgres`](https://hyphatech.github.io/rowtype/reference/rowtype-migrate/Rowtype_migrate_postgres/index.html).
+- [`Postgres_eio`](https://hyphatech.github.io/postgres-eio/reference/postgres-eio/Postgres_eio/index.html)
+  -- the driver.

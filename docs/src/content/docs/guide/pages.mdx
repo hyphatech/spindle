@@ -65,10 +65,13 @@ starts, as above, not per request.
 </Tabs>
 
 ```console
-$ curl 'localhost:8080/hello/%3Cb%3Ekim%3C%2Fb%3E'
+$ curl localhost:8080/hello/kim
 <!DOCTYPE html>
-<html lang="en"><head>...<title>Hello</title></head><body><h1>Hello, &lt;b&gt;kim&lt;/b&gt;!</h1></body></html>
+<html lang="en"><head>...<title>Hello</title></head><body><h1>Hello, kim!</h1></body></html>
 ```
+
+A name with markup in it is escaped: visit `/hello/<b>kim</b>` and the
+page reads `Hello, <b>kim</b>!`, tags and all, rather than a bold name.
 
 A refusal is still JSON, on a page's route as on any other. For an HTML
 page when no route matches, pass your own answer as `~not_found`
