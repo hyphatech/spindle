@@ -1,5 +1,28 @@
 # Changes
 
+## Unreleased
+
+- `Broadcast.subscribe hub ~topic tag f` runs `f` with the subscription and
+  unsubscribes however `f` ends -- returned, raised or cancelled -- where it
+  answered the subscription for the caller to give back with `unsubscribe`.
+  A route's `Fun.protect` around it goes. `unsubscribe` stays, to end a
+  subscription from anywhere before its work does.
+
+- `Broadcast.forward ?until sub send` sends every event to `send` until the
+  subscription ends, answering `Ok ()`, or `send` answers an `Error`, which
+  it answers: the loop over `next` every broadcasting route wrote. With
+  `~until:gone` it ends a quiet topic's stream when its client goes, at the
+  cost of one fiber a subscription, where `next ~until` raced every event
+  and cost a loop about three times as much; a `send` already running
+  finishes. `next` is unchanged.
+
+- Fixed: a subscriber released in a fiber already cancelled -- a socket's
+  `Fiber.first` ending its forwarding, a server past its drain -- while
+  another domain held the hub's lock stayed subscribed, raising
+  `Fun.Finally_raised`: listed by `subscribers` after its client left, and
+  kept in memory for as long as its topic stayed quiet. Every operation on a
+  hub now takes its lock under `Eio.Cancel.protect`.
+
 ## 0.12.0 (2026-10-26)
 
 - A request's text inputs are read by wiretype descriptions, as a body is:

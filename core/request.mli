@@ -111,8 +111,8 @@ val client_gone : t -> unit Eio.Promise.t
 (** Resolved once the client has gone: when the exchange is over, or sooner,
     where the server learns it -- an events stream whose write fails, its
     keep-alive's included. Nothing is cancelled when it resolves; a producer
-    waiting for something to send waits on it too ([Broadcast.next ~until]) to
-    end as soon as it is resolved, rather than at its next [send]. *)
+    waiting for something to send waits on it too ([Broadcast.forward ~until])
+    to end as soon as it is resolved, rather than at its next [send]. *)
 
 val secure : t -> bool
 (** Whether a cookie set in answer to this request should be [Secure]: true

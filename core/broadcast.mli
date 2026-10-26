@@ -28,22 +28,59 @@ val create : ?depth:int -> unit -> ('tag, 'event) t
     subscriber at the first event: it is a constant written in source. *)
 
 val subscribe :
-  ('tag, 'event) t -> topic:string -> 'tag -> ('tag, 'event) subscription
+  ('tag, 'event) t ->
+  topic:string ->
+  'tag ->
+  (('tag, 'event) subscription -> 'a) ->
+  'a
+(** [subscribe t ~topic tag f] subscribes to [topic] as [tag], runs [f] with the
+    subscription, and unsubscribes however [f] ends -- returned, raised or
+    cancelled -- so a subscription lasts as long as the work that reads it and
+    no longer. Subscribing first and then reading the state a route sends before
+    the changes is what makes a change published in between arrive.
+
+    {[
+    Spindle.Broadcast.subscribe hub ~topic:room () (fun sub ->
+        Spindle.Broadcast.forward ~until:gone sub send)
+    ]} *)
 
 val unsubscribe : ('tag, 'event) t -> ('tag, 'event) subscription -> unit
+(** Ends a subscription before its work does -- another fiber's, say, whose
+    reader then answers as one dropped. Once ended, nothing more happens. *)
 
 val next :
   ?until:unit Eio.Promise.t -> ('tag, 'event) subscription -> 'event option
-(** The next event, waiting until there is one. [None] once the subscriber has
-    been dropped or unsubscribed -- and again every time after -- which is how
-    the fiber writing it to a socket learns to stop; and [None] once [until] is
-    resolved, which a stream's producer gives as {!Spindle.client_gone}, so one
-    waiting on a quiet topic ends when its client goes rather than at the next
-    event. An event that arrives as [until] resolves may be lost with it. *)
+(** The next event, waiting until there is one: for a reader that takes one
+    event and does something else, where a loop that sends each is {!forward}.
+    [None] once the subscriber has been dropped or unsubscribed -- and again
+    every time after -- and once [until] is resolved. With [until], each wait
+    races the queue against it, which costs a loop about three times what
+    {!forward}'s one watcher does. An event that arrives as [until] resolves may
+    be lost with it. *)
+
+val forward :
+  ?until:unit Eio.Promise.t ->
+  ('tag, 'event) subscription ->
+  ('event -> (unit, 'e) result) ->
+  (unit, 'e) result
+(** [forward ?until sub send] hands every event to [send], in order, and answers
+    [Ok ()] once the subscriber is dropped as slow, unsubscribed or closed, or
+    the first [Error] [send] answers. [until] -- a stream's
+    {!Spindle.client_gone}, so one on a quiet topic ends when its client goes
+    rather than at the next event -- resolving unsubscribes it as {!unsubscribe}
+    does: {!subscribers} stops listing it at once, a [send] already running
+    finishes, and nothing is cancelled. An [until] already resolved hands on
+    nothing.
+
+    {[
+    Spindle.Broadcast.forward ~until:gone sub (fun order ->
+        if Order.visible_to user order then send order else Ok ())
+    ]} *)
 
 val close : ('tag, 'event) t -> unit
-(** Unsubscribes everybody on every topic: each {!next} answers [None], which is
-    how a server that is stopping ends its streams. *)
+(** Unsubscribes everybody on every topic: each {!forward} answers [Ok ()] and
+    each {!next} [None], which is how a server that is stopping ends its
+    streams. *)
 
 val publish : ('tag, 'event) t -> topic:string -> 'event -> unit
 (** Never blocks: a subscriber that cannot keep up is dropped here. *)

@@ -76,18 +76,8 @@ let events =
     (let+ room = Spindle.param room and+ gone = Spindle.client_gone in
      Ok
        (fun send ->
-         let sub = Spindle.Broadcast.subscribe hub ~topic:room () in
-         Fun.protect
-           ~finally:(fun () -> Spindle.Broadcast.unsubscribe hub sub)
-           (fun () ->
-             let rec loop () =
-               match Spindle.Broadcast.next ~until:gone sub with
-               | Some event ->
-                   let* () = send event in
-                   loop ()
-               | None -> Ok () (* dropped as slow, unsubscribed, or gone *)
-             in
-             loop ())))
+         Spindle.Broadcast.subscribe hub ~topic:room () (fun sub ->
+             Spindle.Broadcast.forward ~until:gone sub send)))
 
 (* Anywhere else: make the event once, and everybody gets it. *)
 let () =
@@ -95,17 +85,41 @@ let () =
 ```
 
 - **An event is encoded once**, however many subscribers get it.
+- **A subscription lasts as long as its work.** `Broadcast.subscribe` runs
+  the function it is given and unsubscribes however it ends -- returned,
+  raised or cancelled -- so a subscription cannot be left behind.
+- **`Broadcast.forward` sends every event until the subscription ends**,
+  and answers the first `Error` `send` answers.
 - **A client that leaves a quiet topic ends its producer.** The keep-alive
   it can no longer be sent resolves `Spindle.client_gone`, and
-  `Broadcast.next ~until:gone` answers `None`, so the subscription and the
+  `forward ~until:gone` unsubscribes, so the subscription and the
   connection are let go without waiting for the next event. Nothing is
-  cancelled: a producer that does not pass `~until` learns at its next
-  `send`.
+  cancelled: a `send` already running finishes, and a producer that does
+  not pass `~until` learns at its next `send`.
 - **A slow subscriber is dropped, never waited for.** One more than
-  `~depth` events (16) behind gets `None` from `next`. So send whole
+  `~depth` events (16) behind, its `forward` answers `Ok ()`. So send whole
   states, not changes, and a client that reconnects is up to date.
 - Each subscriber carries a tag (`()` here), which `Broadcast.subscribers`
-  lists: who is present, say. `Broadcast.close` ends every subscription.
+  lists: who is present, say. `Broadcast.unsubscribe` ends one subscription
+  from anywhere, and `Broadcast.close` every one.
+
+To send the state as it is, then every change, subscribe first: a change
+made while the state is read then still arrives.
+
+```ocaml
+(fun send ->
+  Spindle.Broadcast.subscribe hub ~topic:room () (fun sub ->
+      let* () = send (Spindle.Event.make count (Counts.read room)) in
+      Spindle.Broadcast.forward ~until:gone sub send))
+```
+
+`forward`'s `send` is any function, so a subscriber that sees only some
+events, or each in its own form, filters or turns them there:
+
+```ocaml
+Spindle.Broadcast.forward ~until:gone sub (fun order ->
+    if Order.visible_to user order then send order else Ok ())
+```
 
 To read a stream from OCaml, see [the HTTP
 client](/spindle/guide/client/#server-sent-events); to test one, see

@@ -78,6 +78,6 @@ type 's stream = ('s t -> (unit, gone) result) -> (unit, gone) result
     [send] answers [Error Gone] once the client has gone, so a loop written with
     [let*] ends there. A producer waiting for something to send when its client
     goes learns it at its next [send], or sooner by waiting on
-    {!Spindle.client_gone} -- [Broadcast.next ~until] -- which the server
+    {!Spindle.client_gone} -- [Broadcast.forward ~until] -- which the server
     resolves when a write fails, its keep-alive's included: nothing cancels it.
 *)

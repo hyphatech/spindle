@@ -537,30 +537,17 @@ let test_a_room_is_a_broadcast_of_frames env () =
       (let+ () = Spindle.Dep.return () in
        Ok
          (fun ws ->
-           let sub = Spindle.Broadcast.subscribe hub ~topic:"room" () in
+           Spindle.Broadcast.subscribe hub ~topic:"room" () @@ fun sub ->
            Atomic.incr joined;
            Eio.Condition.broadcast changed;
-           Fun.protect
-             ~finally:(fun () -> Spindle.Broadcast.unsubscribe hub sub)
-             (fun () ->
-               Eio.Fiber.first
-                 (fun () ->
-                   let rec hear () =
-                     let* said = Ws.receive ws in
-                     Spindle.Broadcast.publish hub ~topic:"room"
-                       (Ws.encode (Ws.server chat) said);
-                     hear ()
-                   in
-                   hear ())
-                 (fun () ->
-                   let rec tell () =
-                     match Spindle.Broadcast.next sub with
-                     | Some f ->
-                         let* () = Ws.send_encoded ws f in
-                         tell ()
-                     | None -> Ok ()
-                   in
-                   tell ()))))
+           let rec hear () =
+             let* said = Ws.receive ws in
+             Spindle.Broadcast.publish hub ~topic:"room"
+               (Ws.encode (Ws.server chat) said);
+             hear ()
+           in
+           Eio.Fiber.first hear (fun () ->
+               Spindle.Broadcast.forward sub (Ws.send_encoded ws))))
   in
   Eio.Switch.run @@ fun sw ->
   let port = serve ~sw env [ room ] in

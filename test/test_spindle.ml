@@ -5580,16 +5580,9 @@ let test_a_stop_lets_answers_finish domains () =
       (Spindle.Dep.return
          (Ok
             (Spindle.Response.events (fun send ->
-                 let sub = Spindle.Broadcast.subscribe hub ~topic:"t" () in
+                 Spindle.Broadcast.subscribe hub ~topic:"t" () @@ fun sub ->
                  let* () = send ": open\n\n" in
-                 let rec loop () =
-                   match Spindle.Broadcast.next sub with
-                   | Some e ->
-                       let* () = send e in
-                       loop ()
-                   | None -> Ok ()
-                 in
-                 loop ()))))
+                 Spindle.Broadcast.forward sub send))))
   in
   let stop, stopping = Eio.Promise.create () in
   let returned, return = Eio.Promise.create () in
@@ -5683,9 +5676,9 @@ let test_a_stop_lets_a_stream_of_known_length_finish domains () =
     (Mtime.span started (Eio.Promise.await returned))
 
 (* An events route on a topic nothing is published to, its producer
-   waiting on [Broadcast.next] -- told [until] the client has gone, or not
-   -- and resolving [returned] as it returns. *)
-let quiet_topic ~hub ~returned ~heard_gone ~until =
+   reading the subscription by [read], which is told the promise the client's
+   going resolves, and resolving [returned] once it has been unsubscribed. *)
+let quiet_topic ~hub ~returned ~heard_gone ~read =
   Spindle.get
     Spindle.Path.(s "events")
     Spindle.Returns.response
@@ -5693,25 +5686,26 @@ let quiet_topic ~hub ~returned ~heard_gone ~until =
      Ok
        (Spindle.Response.events (fun send ->
             Eio.Promise.resolve heard_gone gone;
-            let sub = Spindle.Broadcast.subscribe hub ~topic:"quiet" () in
             Fun.protect
-              ~finally:(fun () ->
-                Spindle.Broadcast.unsubscribe hub sub;
-                Eio.Promise.resolve returned ())
+              ~finally:(fun () -> Eio.Promise.resolve returned ())
               (fun () ->
+                Spindle.Broadcast.subscribe hub ~topic:"quiet" () @@ fun sub ->
                 let* () = send ": open\n\n" in
-                let rec loop () =
-                  match
-                    Spindle.Broadcast.next
-                      ?until:(if until then Some gone else None)
-                      sub
-                  with
-                  | Some e ->
-                      let* () = send e in
-                      loop ()
-                  | None -> Ok ()
-                in
-                loop ()))))
+                read gone sub send))))
+
+let forward_until gone sub send = Spindle.Broadcast.forward ~until:gone sub send
+
+(* [next ~until], one event at a time: the primitive [forward] replaces in a
+   loop, still ending when the client goes. *)
+let next_until gone sub send =
+  let rec loop () =
+    match Spindle.Broadcast.next ~until:gone sub with
+    | Some e ->
+        let* () = send e in
+        loop ()
+    | None -> Ok ()
+  in
+  loop ()
 
 (* A client that opens the stream and leaves, once it has been sent its
    first comment. *)
@@ -5730,7 +5724,7 @@ let open_and_leave connect =
    it goes: the keep-alive that cannot be written says so, the producer
    returns and its connection slot is the next client's. Nothing is
    published. *)
-let test_a_client_leaving_a_quiet_topic_ends_its_producer domains () =
+let test_a_client_leaving_a_quiet_topic_ends_its_producer ~read domains () =
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let hub : (unit, string) Spindle.Broadcast.t = Spindle.Broadcast.create () in
@@ -5739,7 +5733,7 @@ let test_a_client_leaving_a_quiet_topic_ends_its_producer domains () =
   let connect =
     serve_in_memory ~sw env ~domains ~max_connections:1
       (Spindle.Test.app
-         [ quiet_topic ~hub ~returned:return ~heard_gone ~until:true; hello ])
+         [ quiet_topic ~hub ~returned:return ~heard_gone ~read; hello ])
   in
   open_and_leave connect;
   Eio.Promise.await returned;
@@ -5763,7 +5757,10 @@ let test_a_producer_that_ignores_the_client_going_ends_at_its_send domains () =
   let connect =
     serve_in_memory ~sw env ~domains
       (Spindle.Test.app
-         [ quiet_topic ~hub ~returned:return ~heard_gone ~until:false ])
+         [
+           quiet_topic ~hub ~returned:return ~heard_gone
+             ~read:(fun _ sub send -> Spindle.Broadcast.forward sub send);
+         ])
   in
   open_and_leave connect;
   Eio.Promise.await (Eio.Promise.await gone);
@@ -9832,8 +9829,8 @@ let test_a_depth_below_one_is_refused () =
 let test_a_slow_subscriber_is_dropped () =
   Eio_main.run @@ fun _ ->
   let b = Spindle.Broadcast.create ~depth:2 () in
-  let quick = Spindle.Broadcast.subscribe b ~topic:"t" "quick" in
-  let slow = Spindle.Broadcast.subscribe b ~topic:"t" "slow" in
+  Spindle.Broadcast.subscribe b ~topic:"t" "quick" @@ fun quick ->
+  Spindle.Broadcast.subscribe b ~topic:"t" "slow" @@ fun slow ->
   let got = ref [] in
   List.iter
     (fun e ->
@@ -10023,14 +10020,14 @@ let test_an_event_reaches_every_domain () =
   Eio_main.run @@ fun env ->
   let domain_mgr = Eio.Stdenv.domain_mgr env in
   let b = Spindle.Broadcast.create ~depth:16 () in
-  let slow = Spindle.Broadcast.subscribe b ~topic:"t" "slow" in
+  Spindle.Broadcast.subscribe b ~topic:"t" "slow" @@ fun slow ->
   let listening, listen = Eio.Promise.create () in
   let heard = ref None in
   Eio.Fiber.both
     (fun () ->
       heard :=
         Eio.Domain_manager.run domain_mgr (fun () ->
-            let quick = Spindle.Broadcast.subscribe b ~topic:"t" "quick" in
+            Spindle.Broadcast.subscribe b ~topic:"t" "quick" @@ fun quick ->
             Eio.Promise.resolve listen ();
             Spindle.Broadcast.next quick))
     (fun () ->
@@ -10053,6 +10050,183 @@ let test_an_event_reaches_every_domain () =
   Alcotest.(check (option string))
     "then was told, and told again" None
     (Spindle.Broadcast.next slow)
+
+(* A subscription is the hub's only while its work runs: listed during it,
+   and gone once the work returns, raises or is cancelled. *)
+let test_a_subscription_lasts_as_long_as_its_work () =
+  Eio_main.run @@ fun _ ->
+  let b : (string, string) Spindle.Broadcast.t = Spindle.Broadcast.create () in
+  let listed () = Spindle.Broadcast.subscribers b ~topic:"t" in
+  Spindle.Broadcast.subscribe b ~topic:"t" "a" (fun _ ->
+      Alcotest.(check (list string)) "listed while it works" [ "a" ] (listed ()));
+  Alcotest.(check (list string)) "gone once it returns" [] (listed ());
+  (match Spindle.Broadcast.subscribe b ~topic:"t" "a" (fun _ -> raise Exit) with
+  | () -> Alcotest.fail "the work's raise was lost"
+  | exception Exit -> ());
+  Alcotest.(check (list string)) "gone once it raises" [] (listed ());
+  Eio.Fiber.first
+    (fun () ->
+      Spindle.Broadcast.subscribe b ~topic:"t" "a" (fun sub ->
+          ignore (Spindle.Broadcast.next sub : string option)))
+    Eio.Fiber.yield;
+  Alcotest.(check (list string)) "gone once it is cancelled" [] (listed ())
+
+(* A release often runs in a fiber already cancelled -- a socket's
+   [Fiber.first] ending its writing loop, a server past its drain -- and
+   another domain may hold the hub's lock as it does: every one of these
+   is let go all the same, and none raises. Ten thousand subscribers make
+   each walk the other domain takes under the lock long enough that most
+   rounds meet it. *)
+let test_a_cancelled_subscriber_is_released () =
+  Eio_main.run @@ fun env ->
+  let b : (int, int) Spindle.Broadcast.t = Spindle.Broadcast.create () in
+  let rec held n work =
+    if n = 0 then work ()
+    else
+      Spindle.Broadcast.subscribe b ~topic:"busy" n (fun _ -> held (n - 1) work)
+  in
+  held 10_000 @@ fun () ->
+  let stop = Atomic.make false and raised = ref 0 in
+  Eio.Fiber.both
+    (fun () ->
+      Eio.Domain_manager.run (Eio.Stdenv.domain_mgr env) (fun () ->
+          while not (Atomic.get stop) do
+            ignore (Spindle.Broadcast.subscribers b ~topic:"busy" : int list)
+          done))
+    (fun () ->
+      for i = 1 to 2_000 do
+        match
+          Eio.Fiber.first
+            (fun () ->
+              Spindle.Broadcast.subscribe b ~topic:"room" i (fun sub ->
+                  ignore (Spindle.Broadcast.next sub : int option)))
+            Eio.Fiber.yield
+        with
+        | () -> ()
+        | exception Fun.Finally_raised _ -> incr raised
+      done;
+      Atomic.set stop true);
+  check_int "nobody is left subscribed" 0
+    (List.length (Spindle.Broadcast.subscribers b ~topic:"room"));
+  check_int "and no release raised" 0 !raised
+
+(* [forward] hands on every event in the order published, and answers
+   [Ok ()] however the subscription ends: unsubscribed by another fiber,
+   the hub closed, or dropped as slow -- which keeps what was queued, in
+   order, and nothing after. *)
+let test_forward_hands_on_every_event_until_the_end () =
+  Eio_main.run @@ fun _ ->
+  let ended ~events stop =
+    let b : (unit, int) Spindle.Broadcast.t =
+      Spindle.Broadcast.create ~depth:4 ()
+    in
+    let got = ref [] in
+    let answer =
+      Spindle.Broadcast.subscribe b ~topic:"t" () @@ fun sub ->
+      fst
+        (Eio.Fiber.pair
+           (fun () ->
+             Spindle.Broadcast.forward sub (fun e ->
+                 got := e :: !got;
+                 Ok ()))
+           (fun () ->
+             List.iter
+               (Spindle.Broadcast.publish b ~topic:"t")
+               (List.init events Fun.id);
+             stop b sub))
+    in
+    Alcotest.(check (result unit string)) "it ends" (Ok ()) answer;
+    List.rev !got
+  in
+  Alcotest.(check (list int))
+    "unsubscribed, after every event" [ 0; 1; 2 ]
+    (ended ~events:3 Spindle.Broadcast.unsubscribe);
+  Alcotest.(check (list int))
+    "closed, after every event" [ 0; 1; 2 ]
+    (ended ~events:3 (fun b _ -> Spindle.Broadcast.close b));
+  let slow = ended ~events:20 (fun _ _ -> ()) in
+  Alcotest.(check (list int))
+    "dropped as slow, after what was queued"
+    (List.init (List.length slow) Fun.id)
+    slow;
+  Alcotest.(check bool) "and nothing after" true (List.length slow < 20)
+
+(* Subscribed before its state is sent, a route misses nothing published in
+   between. *)
+let test_an_event_published_before_the_first_send_arrives () =
+  Eio_main.run @@ fun _ ->
+  let b : (unit, string) Spindle.Broadcast.t = Spindle.Broadcast.create () in
+  let got = ref [] in
+  let send e =
+    got := e :: !got;
+    Ok ()
+  in
+  let answer =
+    Spindle.Broadcast.subscribe b ~topic:"t" () @@ fun sub ->
+    Spindle.Broadcast.publish b ~topic:"t" "change";
+    let* () = send "state" in
+    Spindle.Broadcast.close b;
+    Spindle.Broadcast.forward sub send
+  in
+  Alcotest.(check (result unit string)) "it ends" (Ok ()) answer;
+  Alcotest.(check (list string))
+    "the state, then the change" [ "state"; "change" ] (List.rev !got)
+
+(* [until] resolving on a quiet topic unsubscribes at once -- nothing is
+   published, and the work around [forward] has not returned -- and ends
+   [forward] with [Ok ()]; an [until] already resolved hands on nothing. *)
+let test_forward_ends_when_until_resolves () =
+  Eio_main.run @@ fun _ ->
+  let b : (unit, string) Spindle.Broadcast.t = Spindle.Broadcast.create () in
+  let gone, leave = Eio.Promise.create () in
+  let answer = ref None in
+  Spindle.Broadcast.subscribe b ~topic:"t" () (fun sub ->
+      Eio.Fiber.both
+        (fun () ->
+          answer :=
+            Some (Spindle.Broadcast.forward ~until:gone sub (fun _ -> Ok ())))
+        (fun () ->
+          Eio.Promise.resolve leave ();
+          Eio.Fiber.yield ();
+          Alcotest.(check (list unit))
+            "unsubscribed as it resolves" []
+            (Spindle.Broadcast.subscribers b ~topic:"t")));
+  Alcotest.(check (option (result unit string)))
+    "and forward ended" (Some (Ok ())) !answer;
+  Spindle.Broadcast.subscribe b ~topic:"t" () (fun sub ->
+      Spindle.Broadcast.publish b ~topic:"t" "queued";
+      Alcotest.(check (result unit string))
+        "an until already resolved hands on nothing" (Ok ())
+        (Spindle.Broadcast.forward ~until:gone sub (fun e ->
+             Alcotest.failf "%s was handed on" e)))
+
+(* [until] resolving while [send] runs lets it finish: nothing under it is
+   cancelled, and its answer is [forward]'s. *)
+let test_a_send_running_as_until_resolves_finishes () =
+  Eio_main.run @@ fun _ ->
+  let b : (unit, string) Spindle.Broadcast.t = Spindle.Broadcast.create () in
+  let gone, leave = Eio.Promise.create () in
+  let sending, started = Eio.Promise.create () in
+  let finish, finished = Eio.Promise.create () in
+  let send _ =
+    Eio.Promise.resolve started ();
+    Eio.Promise.await finish;
+    Error "the send's own"
+  in
+  let answer =
+    Spindle.Broadcast.subscribe b ~topic:"t" () @@ fun sub ->
+    fst
+      (Eio.Fiber.pair
+         (fun () -> Spindle.Broadcast.forward ~until:gone sub send)
+         (fun () ->
+           Spindle.Broadcast.publish b ~topic:"t" "x";
+           Eio.Promise.await sending;
+           Eio.Promise.resolve leave ();
+           Eio.Fiber.yield ();
+           Eio.Promise.resolve finished ()))
+  in
+  Alcotest.(check (result unit string))
+    "the send's answer" (Error "the send's own") answer
 
 (* ------------------------------------------------------------------ *)
 (* Codecs *)
@@ -10672,7 +10846,12 @@ let () =
             (test_a_failed_accept_is_not_the_servers_end 1);
           Alcotest.test_case "a client leaving a quiet topic ends its producer"
             `Quick
-            (test_a_client_leaving_a_quiet_topic_ends_its_producer 1);
+            (test_a_client_leaving_a_quiet_topic_ends_its_producer
+               ~read:forward_until 1);
+          Alcotest.test_case "a client leaving a quiet topic ends next ~until"
+            `Quick
+            (test_a_client_leaving_a_quiet_topic_ends_its_producer
+               ~read:next_until 1);
           Alcotest.test_case
             "a producer that ignores the client going ends at its send" `Quick
             (test_a_producer_that_ignores_the_client_going_ends_at_its_send 1);
@@ -10774,7 +10953,12 @@ let () =
             (test_a_stream_sent_from_two_fibers_keeps_its_send_limit 4);
           Alcotest.test_case "a client leaving a quiet topic ends its producer"
             `Quick
-            (test_a_client_leaving_a_quiet_topic_ends_its_producer 4);
+            (test_a_client_leaving_a_quiet_topic_ends_its_producer
+               ~read:forward_until 4);
+          Alcotest.test_case "a client leaving a quiet topic ends next ~until"
+            `Quick
+            (test_a_client_leaving_a_quiet_topic_ends_its_producer
+               ~read:next_until 4);
           Alcotest.test_case
             "a producer that ignores the client going ends at its send" `Quick
             (test_a_producer_that_ignores_the_client_going_ends_at_its_send 4);
@@ -10913,5 +11097,17 @@ let () =
             `Quick test_an_alarm_set_from_several_domains_fires_once;
           Alcotest.test_case "an event reaches every domain" `Quick
             test_an_event_reaches_every_domain;
+          Alcotest.test_case "a subscription lasts as long as its work" `Quick
+            test_a_subscription_lasts_as_long_as_its_work;
+          Alcotest.test_case "a cancelled subscriber is released" `Quick
+            test_a_cancelled_subscriber_is_released;
+          Alcotest.test_case "forward hands on every event until the end" `Quick
+            test_forward_hands_on_every_event_until_the_end;
+          Alcotest.test_case "an event published before the first send arrives"
+            `Quick test_an_event_published_before_the_first_send_arrives;
+          Alcotest.test_case "forward ends when until resolves" `Quick
+            test_forward_ends_when_until_resolves;
+          Alcotest.test_case "a send running as until resolves finishes" `Quick
+            test_a_send_running_as_until_resolves_finishes;
         ] );
     ]

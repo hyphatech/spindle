@@ -277,6 +277,15 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   next `receive` or `send`, or sooner by waiting on `Spindle.client_gone`,
   which the server resolves and the handler reads as a value. Symptom: a `try` around a send, or work stopped
   mid-transaction under a handler.
+- **A release cannot be cancelled.** Whatever gives a resource back -- a
+  subscription to its `Broadcast` hub -- takes its lock under
+  `Eio.Cancel.protect`, and `Broadcast.subscribe` releases on every way out
+  of its function, since a release often runs in a fiber already cancelled,
+  where waiting for a lock another domain holds raises and the resource is
+  never given back: a subscriber listed after its client left, and its queue
+  held for as long as its topic stays quiet. Test: `test_spindle` cancels
+  2,000 subscribers while another domain holds the hub's lock, and finds
+  none left.
 - **A file is read for a request only by `Static`'s lookup or beneath a
   `Files` directory's subtree**, never by a path joined from a request:
   `Static` reads its files when the server starts and answers from memory,

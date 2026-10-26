@@ -282,15 +282,15 @@ val request_id : string Dep.t
 
 val client_gone : unit Eio.Promise.t Dep.t
 (** See {!Request.client_gone}: what an events route's producer hands
-    {!Broadcast.next} as [~until], so a client that leaves a quiet topic ends
+    {!Broadcast.forward} as [~until], so a client that leaves a quiet topic ends
     its producer at once.
 
     {[
-      (let+ room = Spindle.param room and+ gone = Spindle.client_gone in
-       Ok
-         (fun send ->
-           ...
-           match Spindle.Broadcast.next ~until:gone sub with ...))
+    let+ room = Spindle.param room and+ gone = Spindle.client_gone in
+    Ok
+      (fun send ->
+        Spindle.Broadcast.subscribe hub ~topic:room () (fun sub ->
+            Spindle.Broadcast.forward ~until:gone sub send))
     ]} *)
 
 val body : string Dep.t

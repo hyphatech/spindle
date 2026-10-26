@@ -105,30 +105,23 @@ To send one message to many sockets, encode it once with `Ws.encode
 Make the hub a
 [`Spindle.Broadcast`](/spindle/guide/sse/#broadcasting-to-many-clients) of
 encoded messages. A handler that both receives and forwards runs two loops,
-here under `Eio.Fiber.first`, which ends both when either does:
+here under `Eio.Fiber.first`, which ends both when either does, and
+`Broadcast.subscribe` unsubscribes once the handler returns:
 
 ```ocaml
 let hub : (unit, said Ws.encoded) Spindle.Broadcast.t =
   Spindle.Broadcast.create ()
 
 let chat ws =
-  let sub = Spindle.Broadcast.subscribe hub ~topic:"lobby" () in
-  Fun.protect ~finally:(fun () -> Spindle.Broadcast.unsubscribe hub sub)
-  @@ fun () ->
+  Spindle.Broadcast.subscribe hub ~topic:"lobby" () @@ fun sub ->
   let rec listen () =
     let* said = Ws.receive ws in
     Spindle.Broadcast.publish hub ~topic:"lobby"
       (Ws.encode (Ws.server protocol) said);
     listen ()
   in
-  let rec forward () =
-    match Spindle.Broadcast.next sub with
-    | Some message ->
-        let* () = Ws.send_encoded ws message in
-        forward ()
-    | None -> Ok ()
-  in
-  Eio.Fiber.first listen forward
+  Eio.Fiber.first listen (fun () ->
+      Spindle.Broadcast.forward sub (Ws.send_encoded ws))
 ```
 
 When the client leaves, `listen` ends and `forward` is cancelled. If it was
