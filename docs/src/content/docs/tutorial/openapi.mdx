@@ -15,13 +15,13 @@ document never drifts from them.
 ## Interactive docs with Scalar
 
 `Spindle.Openapi.routes` serves an OpenAPI document of the routes you give
-it at `/openapi.json`, and Scalar's interactive reference over it at `/docs`:
+it at `/openapi.json`, and interactive docs that render it at `/docs`:
 
 <Code code={openapi} lang="ocaml" title="openapi.ml" />
 
-Open `http://localhost:8080/docs` for an interactive OpenAPI reference
-([Scalar](https://scalar.com)) generated from your routes: every route, its
-body and answer as schemas, and every code it may refuse with. You can send a
+Your API docs are at `http://localhost:8080/docs`, generated from your routes
+and rendered by [Scalar](https://scalar.com). Each endpoint lists its schema,
+with the bounds from your types, and every error it may answer. You can send a
 request from the browser with **Test Request**.
 
 ![The reference at /docs](../../../assets/scalar.png)

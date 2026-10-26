@@ -21,7 +21,7 @@ Fast, ergonomic and RFC-strict. Eio-native and multicore by design.
 - **RFC-strict**: its own HTTP/1.1 engine, every requirement it meets a test: RFC 9112 and 9110 for HTTP, 6455 for WebSockets, 7578 for forms, and RFC 9651's published suite for Structured Fields.
 - **Eio-native**: straight-line handlers on OCaml 5, multicore by design.
 - **Typed end to end**: JSON derived from your types, every input validated.
-- **Interactive docs**: OpenAPI docs via Scalar at `/docs`, generated from your routes.
+- **Interactive docs**: OpenAPI docs via Scalar, generated from your routes.
 - **Front end in sync**: Zod or Melange schemas, derived from your OCaml types.
 - **Batteries included**: SQLite and Postgres, WebSockets, SSE, sessions, logging, traces and metrics.
 
@@ -81,10 +81,9 @@ $ curl localhost:8080/split --json '{"total": 90, "tip": 10, "people": 3}'
 {"each":33}
 ```
 
-Open `localhost:8080/docs` for interactive API docs, with nothing to
-write: an OpenAPI 3.2 document generated from your routes, served by
-[Scalar](https://scalar.com). Every route, its schema with the bounds from
-your types, every error it may answer, and a button to try it.
+Your API docs are at `localhost:8080/docs`, generated from your routes and
+rendered by [Scalar](https://scalar.com). Each endpoint lists its schema,
+with the bounds from your types, and every error it may answer.
 
 ![POST /split in the interactive docs at /docs](docs/src/assets/scalar.png)
 

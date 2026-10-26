@@ -1,5 +1,5 @@
-(** An application's routes as an OpenAPI 3.2 document, and [/docs] to read it
-    by ({!val-routes} serves both).
+(** An application's routes as an OpenAPI 3.2 document, and a page to read it by
+    ({!val-routes} serves both).
 
     Everything is read from {!Spindle.App.routes} and the routes' descriptions:
     requests from the decoding direction, answers from the encoding one, each
