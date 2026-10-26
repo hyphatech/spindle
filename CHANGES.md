@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.12.0 (2026-10-26)
 
 - A request's text inputs are read by wiretype descriptions, as a body is:
   `Query`, `Header`, `Form`, `Cookie.named`, `signed` and `encrypted`, and
