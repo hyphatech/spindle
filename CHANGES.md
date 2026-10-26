@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.13.0 (2026-10-26)
 
 - `Broadcast.subscribe hub ~topic tag f` runs `f` with the subscription and
   unsubscribes however `f` ends -- returned, raised or cancelled -- where it
