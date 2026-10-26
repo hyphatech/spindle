@@ -93,7 +93,8 @@ val events :
     (15 s), so nothing in between closes a quiet stream as idle, and a client
     that has gone is found by the keep-alive it cannot be sent
     ({!Spindle.client_gone}). A reconnecting browser's [Last-Event-ID] is an
-    input like any header, [Spindle.Header.optional "last-event-id" codec]. *)
+    input like any header,
+    [Spindle.Header.optional "last-event-id" Wiretype.int]. *)
 
 val websocket :
   ?keep_alive:Mtime.Span.t ->

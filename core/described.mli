@@ -27,8 +27,9 @@ type body =
           (** an empty body, which [Spindle.json] reads as [{}], is refused *)
     }
   | Form_body of { fields : Wiretype.Schema.t; files : Dep.file list }
-      (** a form: an object of its fields, each its codec's, and a repeated one
-          a list of them; and its files, which only a multipart body holds *)
+      (** a form: an object of its fields, each its description's, and a
+          repeated one a list of them; and its files, which only a multipart
+          body holds *)
   | Parts_body  (** a body read a part at a time *)
   | Raw_body of string list
       (** read as it arrived, so an empty one is read too, in one of these types

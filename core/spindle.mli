@@ -41,10 +41,11 @@ module Cookie : sig
 
   val optional : 'a named -> 'a option Dep.t
   (** The cookie's value, if the request carries one that reads. One that does
-      not -- a value its codec does not read, a broken escape, or a {!signed} or
-      {!encrypted} one that fails its signature, its seal or its age -- is
-      [None], and a [debug] line naming the cookie: the server wrote it and the
-      browser only kept it, so one an older deploy wrote is no refusal. *)
+      not -- a value its description does not read, a broken escape, or a
+      {!signed} or {!encrypted} one that fails its signature, its seal or its
+      age -- is [None], and a [debug] line naming the cookie: the server wrote
+      it and the browser only kept it, so one an older deploy wrote is no
+      refusal. *)
 
   val required : 'a named -> 'a Dep.t
   (** {!optional}, refused as missing at [cookie.<name>] when it is [None]. *)

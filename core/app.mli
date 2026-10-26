@@ -50,8 +50,8 @@ val make :
     ["/"]; a path naming one parameter twice; a handler that reads a path
     parameter ({!Spindle.param}) its path does not have; and one whose
     dependencies read one input -- a query parameter, a header, a cookie, a
-    form's field -- as different things: two codecs, or one value and a list;
-    and a body's content type that is no [type/subtype], [type/*] or
+    form's field -- as different things: two descriptions, or one value and a
+    list; and a body's content type that is no [type/subtype], [type/*] or
     [type/*+suffix] ({!Spindle.body_stream}, {!Dep.of_body}), which would refuse
     every body. A literal beats a parameter wherever the routes are listed, and
     a parameter that may decline ({!Path.Next_route}) beats one that may not;

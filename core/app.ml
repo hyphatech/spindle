@@ -493,7 +493,7 @@ let rec find_route ~rest:with_rest n meth = function
               | Some found -> Some found
               | None -> match_rest ~rest:with_rest n meth segs)))
 
-(* A rest takes what is left, in the form its codec reads. *)
+(* A rest takes what is left, in the form its description reads. *)
 let params_of_segments r segs =
   let rec collect acc segments segs =
     match (segments, segs) with
