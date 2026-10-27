@@ -9,6 +9,7 @@ type server = {
   idle_timeout : Mtime.Span.t;
   body_timeout : Mtime.Span.t;
   min_body_rate : int;
+  handler_timeout : Mtime.Span.t;
   send_timeout : Mtime.Span.t;
   discard_limit : int;
   linger : Mtime.Span.t;
@@ -22,6 +23,7 @@ type route = {
   max_body : int option;
   body_timeout : Mtime.Span.t option;
   min_body_rate : int option;
+  handler_timeout : Mtime.Span.t option;
 }
 (** A route's own, each [None] where it has the server's. *)
 

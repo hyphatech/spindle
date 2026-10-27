@@ -43,6 +43,10 @@ module Code = struct
     make "busy" ~status:`Service_unavailable
       ~doc:"Something the request needed did not come free in time; try again."
 
+  let timed_out =
+    make "timed_out" ~status:`Service_unavailable
+      ~doc:"The route took longer to answer than the server allows."
+
   let unsupported_media_type =
     make "unsupported_media_type" ~status:`Unsupported_media_type
       ~doc:"The body is sent as something the route does not read."
@@ -78,6 +82,7 @@ module Code = struct
       invalid;
       too_large;
       busy;
+      timed_out;
       cross_origin;
       not_implemented;
       upgrade_required;
@@ -149,6 +154,9 @@ let busy ?(retry_after_s = 1) ?detail () =
   make ?detail Code.busy
     ~headers:[ ("retry-after", string_of_int (max 1 retry_after_s)) ]
     "The server is busy. Please try again in a moment."
+
+(* Nothing says a second try is faster, so no Retry-After. *)
+let timed_out = make Code.timed_out "That took longer than the server allows."
 
 let unsupported_media_type =
   make Code.unsupported_media_type

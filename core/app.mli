@@ -164,9 +164,23 @@ type answered = {
 }
 (** What answering a request taught the framework, beside the response. *)
 
-val handle : instance -> Request.t -> body:Body.source -> Response.t * answered
+val handle :
+  ?within:
+    (Mtime.Span.t option ->
+    (unit -> Response.t) ->
+    (Response.t, Mtime.Span.t) result) ->
+  instance ->
+  Request.t ->
+  body:Body.source ->
+  Response.t * answered
 (** Answers a request: the seam that a connection loop -- {!Server}'s, or
     another -- and {!Test.call} drive. [body] reads its body, whole or a part at
     a time, and is asked only by a route that needs it, once its other
     dependencies refused nothing, and only while its handler runs; middleware
-    and the not-found answer never see it. *)
+    and the not-found answer never see it.
+
+    [within] is how the loop bounds a handler's time: given the route's own
+    [handler_timeout] ({!Route.Limits}), [None] where it gave none, it runs the
+    handler and answers [Error] with the limit it ran past once it has cancelled
+    it, which is answered {!Refusal.timed_out}. A handler runs unbounded unless
+    given. *)

@@ -12,13 +12,14 @@ module Limits = struct
 
   let who = "Spindle.Route.Limits"
 
-  let make ?max_body ?body_timeout ?min_body_rate () =
+  let make ?max_body ?body_timeout ?min_body_rate ?handler_timeout () =
     Option.iter (Limits_repr.check_count ~who "max_body" ~least:0) max_body;
     Option.iter (Limits_repr.check_wait ~who "body_timeout") body_timeout;
     Option.iter
       (Limits_repr.check_count ~who "min_body_rate" ~least:1)
       min_body_rate;
-    ({ max_body; body_timeout; min_body_rate } : t)
+    Option.iter (Limits_repr.check_wait ~who "handler_timeout") handler_timeout;
+    ({ max_body; body_timeout; min_body_rate; handler_timeout } : t)
 end
 
 type ('r, 'a, 'k) maker =

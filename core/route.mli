@@ -41,19 +41,22 @@ module Limits : sig
     ?max_body:int ->
     ?body_timeout:Mtime.Span.t ->
     ?min_body_rate:int ->
+    ?handler_timeout:Mtime.Span.t ->
     unit ->
     t
-  (** Each as {!Server.run} describes it, for this route's body: [max_body] the
-      longest, [body_timeout] how long it has from its first read, and
-      [min_body_rate] the bytes a second it must keep up after. A body read
-      whole is held, so a route that reads it whole with a [max_body] above the
-      server's [body_budget] is a bug, reported where it is read: [500], an
-      [error] line naming the route, and {!Test.call} raises. One that streams
-      it holds a part at a time, and is bounded by [max_body] alone.
+  (** Each as {!Server.run} describes it, for this route: [max_body] the longest
+      body, [body_timeout] how long it has from its first read, [min_body_rate]
+      the bytes a second it must keep up after, and [handler_timeout] how long
+      its handler may run, its body's reads left out, before it is cancelled and
+      answered {!Refusal.timed_out}. A body read whole is held, so a route that
+      reads it whole with a [max_body] above the server's [body_budget] is a
+      bug, reported where it is read: [500], an [error] line naming the route,
+      and {!Test.call} raises. One that streams it holds a part at a time, and
+      is bounded by [max_body] alone.
 
       Raises [Invalid_argument] for one out of its range, as
       {!Server.Limits.make} does: a negative [max_body], a [min_body_rate] below
-      one, or a [body_timeout] of zero. *)
+      one, or a [body_timeout] or [handler_timeout] of zero. *)
 end
 
 type ('r, 'a, 'k) maker =

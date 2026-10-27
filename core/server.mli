@@ -21,6 +21,7 @@ module Limits : sig
     ?idle_timeout:Mtime.Span.t ->
     ?body_timeout:Mtime.Span.t ->
     ?min_body_rate:int ->
+    ?handler_timeout:Mtime.Span.t ->
     ?send_timeout:Mtime.Span.t ->
     ?discard_limit:int ->
     ?linger:Mtime.Span.t ->
@@ -33,8 +34,8 @@ module Limits : sig
   (** The limits, each its default unless given: [max_body] 1 MiB, [body_budget]
       64 MiB, [discard_limit] 64 KiB, [max_header_bytes] 16 KiB, [head_timeout]
       10 s, [idle_timeout] 60 s, [body_timeout] 20 s, [min_body_rate] 500 bytes
-      a second, [send_timeout] 30 s, [linger] 1 s, [max_connections] 512,
-      [backlog] 128 and [drain] 10 s.
+      a second, [handler_timeout] 60 s, [send_timeout] 30 s, [linger] 1 s,
+      [max_connections] 512, [backlog] 128 and [drain] 10 s.
 
       {[
       Spindle.Server.Limits.make ~max_body:(10 * 1024 * 1024) ()

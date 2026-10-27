@@ -8,6 +8,7 @@ type server = {
   idle_timeout : Mtime.Span.t;
   body_timeout : Mtime.Span.t;
   min_body_rate : int;
+  handler_timeout : Mtime.Span.t;
   send_timeout : Mtime.Span.t;
   discard_limit : int;
   linger : Mtime.Span.t;
@@ -21,9 +22,16 @@ type route = {
   max_body : int option;
   body_timeout : Mtime.Span.t option;
   min_body_rate : int option;
+  handler_timeout : Mtime.Span.t option;
 }
 
-let no_route = { max_body = None; body_timeout = None; min_body_rate = None }
+let no_route =
+  {
+    max_body = None;
+    body_timeout = None;
+    min_body_rate = None;
+    handler_timeout = None;
+  }
 
 (* A limit out of range is a constant written wrong where it is made,
    refused there rather than read as a server that serves nobody or a

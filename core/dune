@@ -13,6 +13,7 @@
  ; page /docs serves. A package built on the framework reaches them through
  ; the public modules like anybody.
  (private_modules
+  handler_clock
   limits_repr
   wire
   deadline

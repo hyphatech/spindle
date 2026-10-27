@@ -44,9 +44,9 @@ module Code : sig
       undeclared only where its document lists it, from what the route reads:
       {!invalid} where it reads an input, {!unreadable} and {!too_large} where
       it reads a body, {!cross_origin} for a method that changes something,
-      {!upgrade_required} for a WebSocket, and {!busy} and {!internal} anywhere.
-      Any other -- {!not_found} from a handler, say -- is declared as the
-      route's own. *)
+      {!upgrade_required} for a WebSocket, and {!busy}, {!timed_out} and
+      {!internal} anywhere. Any other -- {!not_found} from a handler, say -- is
+      declared as the route's own. *)
 
   val not_found : t
   val method_not_allowed : t
@@ -54,6 +54,7 @@ module Code : sig
   val invalid : t
   val too_large : t
   val busy : t
+  val timed_out : t
   val cross_origin : t
   val not_implemented : t
   val upgrade_required : t
@@ -137,6 +138,11 @@ val busy : ?retry_after_s:int -> ?detail:string -> unit -> t
     for its body: [503 busy], with [Retry-After] ([retry_after_s] seconds, 1),
     at least one. Refusing at once is what keeps an overloaded server answering;
     the client is the one that can wait. *)
+
+val timed_out : t
+(** The route's handler ran past its [handler_timeout] ({!Server.Limits},
+    {!Route.Limits}) and was cancelled: [503 timed_out], with no [Retry-After],
+    since nothing says a second try would be faster. *)
 
 val unsupported_media_type : t
 (** A body sent as something the route does not read: [415]. *)

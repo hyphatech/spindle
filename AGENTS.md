@@ -162,11 +162,21 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   the answer is written. Test: a `400` for a cookie an old deploy made, or
   a value moved from one cookie to another reading as it; `test_spindle`'s
   cookie cases edit, move, age and rotate one.
-- **A limit is a dependency**, so a route's `429` is in its document and on
+- **A rate limit is a dependency**, so a route's `429` is in its document and on
   no route without one: `Rate.limit` declares `Refusal.Code.rate_limited`,
   which is not among the framework's codes every route may give. Test: a
   document that promises every route may answer `429`, or a limit a reader
   of the route cannot see; `test_spindle`'s rate case reads the document.
+- **A setting has one name at every level.** A setting a route, an input
+  or an answer overrides has the name and the type of the application's --
+  `~compress`, `~cors`, `~refuses`, and `~limits`' `max_body`,
+  `body_timeout`, `min_body_rate` and `handler_timeout` -- and one that
+  exists at one level only has no twin under another name, because a
+  reader who knows one level then knows the other. A route's settings are
+  labels on the route, never an open map. Symptom: a route label or an
+  input's argument whose name is not the application's for the same
+  setting, a type that differs under one name, or a framework setting
+  read from anywhere but a route's labels.
 - **Who may call a route is what it reads.** A caller or a check of
   `Access` -- or `Bearer.claims` or `Bearer.scope`, whose subject is a
   caller -- is a dependency, and a route that reads none is anyone's, with
@@ -299,8 +309,11 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   loop ended decides its close; nothing in the framework raises into the
   application or cancels a handler whose peer has gone -- it learns at its
   next `receive` or `send`, or sooner by waiting on `Spindle.client_gone`,
-  which the server resolves and the handler reads as a value. Symptom: a `try` around a send, or work stopped
-  mid-transaction under a handler.
+  which the server resolves and the handler reads as a value. The one
+  cancellation is a handler past its `handler_timeout`, before its answer
+  is in hand, and a transaction under it ends with nothing kept. Symptom: a
+  `try` around a send, or work stopped mid-transaction under a handler that
+  was within its limit.
 - **A release cannot be cancelled.** Whatever gives a resource back -- a
   subscription to its `Broadcast` hub -- takes its lock under
   `Eio.Cancel.protect`, and `Broadcast.subscribe` releases on every way out

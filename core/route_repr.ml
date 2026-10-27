@@ -193,7 +193,7 @@ let framework_codes (i : info) =
       (if is_websocket then [ Code.upgrade_required ] else []);
       (if reads_body then [ Code.unreadable; Code.too_large ] else []);
       (if is_unsafe || is_websocket then [ Code.cross_origin ] else []);
-      [ Code.busy; Code.internal ];
+      [ Code.busy; Code.timed_out; Code.internal ];
     ]
 
 let make meth ?(refuses = []) ?summary ?doc ?(tags = [])

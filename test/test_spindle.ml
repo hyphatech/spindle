@@ -433,6 +433,8 @@ let test_a_route_limit_that_cannot_be_is_refused () =
       Spindle.Route.Limits.make ~min_body_rate:0 ());
   refused "body_timeout" (fun () ->
       Spindle.Route.Limits.make ~body_timeout:Mtime.Span.zero ());
+  refused "handler_timeout" (fun () ->
+      Spindle.Route.Limits.make ~handler_timeout:Mtime.Span.zero ());
   ignore
     (Spindle.Route.Limits.make ~max_body:0 ~min_body_rate:1
        ~body_timeout:Mtime.Span.ns ()
@@ -5212,6 +5214,9 @@ let test_a_limit_out_of_range_is_refused () =
         fun () -> Spindle.Server.Limits.make ~body_timeout:Mtime.Span.zero () );
       ( "no time to send",
         fun () -> Spindle.Server.Limits.make ~send_timeout:Mtime.Span.zero () );
+      ( "no time to answer",
+        fun () -> Spindle.Server.Limits.make ~handler_timeout:Mtime.Span.zero ()
+      );
     ];
   limits
     (fun () ->

@@ -141,6 +141,9 @@ let test_a_route_is_in_the_document () =
   Alcotest.(check bool)
     "and the framework's for what it reads" true
     (contains ~sub:"invalid" (str [ "responses"; "400"; "description" ] op));
+  Alcotest.(check bool)
+    "and its handler's time, which every route has" true
+    (contains ~sub:"timed_out" (str [ "responses"; "503"; "description" ] op));
   Alcotest.(check string)
     "the credential, as a scheme" "cookie"
     (str [ "components"; "securitySchemes"; "session"; "in" ] j);

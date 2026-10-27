@@ -35,7 +35,9 @@ val app :
     [Eio_mock.Clock.Mono.set_time]. A body is read under [limits] as the server
     reads one, {!Server.Limits.default} unless given, a route's own in place of
     them: a body past [max_body] is [413], and a route that reads one whole with
-    a [max_body] above [body_budget] raises at {!call}. Raises
+    a [max_body] above [body_budget] raises at {!call}. A handler runs as long
+    as it runs, since {!call} needs no Eio loop: its [handler_timeout] is the
+    server's to bound, and a test of it serves the app on virtual time. Raises
     [Invalid_argument] with {!App.make}'s reason for a table it refuses, as
     [Spindle.serve] does: a route table is a constant written in source, and a
     test that made a bad one has nothing to do but stop. A test of what

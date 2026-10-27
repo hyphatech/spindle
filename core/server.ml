@@ -74,6 +74,7 @@ module Limits = struct
       ?(head_timeout = Mtime.Span.(10 * s))
       ?(idle_timeout = Mtime.Span.(60 * s))
       ?(body_timeout = Mtime.Span.(20 * s)) ?(min_body_rate = 500)
+      ?(handler_timeout = Mtime.Span.(60 * s))
       ?(send_timeout = Mtime.Span.(30 * s)) ?(discard_limit = 65_536)
       ?(linger = Mtime.Span.s) ?(body_budget = 67_108_864)
       ?(max_connections = 512) ?(backlog = 128) ?(drain = Mtime.Span.(10 * s))
@@ -88,6 +89,7 @@ module Limits = struct
     check_wait "idle_timeout" idle_timeout;
     check_wait "body_timeout" body_timeout;
     check_wait "send_timeout" send_timeout;
+    check_wait "handler_timeout" handler_timeout;
     ({
        max_body;
        max_header_bytes;
@@ -95,6 +97,7 @@ module Limits = struct
        idle_timeout;
        body_timeout;
        min_body_rate;
+       handler_timeout;
        send_timeout;
        discard_limit;
        linger;
@@ -162,6 +165,7 @@ type limits = {
   idle_timeout : Mtime.Span.t;
   body_timeout : Mtime.Span.t;
   min_body_rate : int;
+  handler_timeout : Mtime.Span.t;
   discard_limit : int;
   linger : Mtime.Span.t;
   body_budget : int;
@@ -855,9 +859,31 @@ let exchange ~clock ~read_clock ~limits ~trace ~instruments ~state ~deadline app
         }
       in
       let req = make_request ~read_clock ~limits ~peer head in
+      let handler_clock = Handler_clock.create clock in
       let body, stop_reading =
         request_body ~limits ~state ~deadline ~framing ~reader ~req ic out
           progress
+      in
+      (* A wait on the body is the body's limits', not the handler's. *)
+      let body =
+        {
+          Body.whole =
+            (fun ?max_body ?body_timeout ?min_body_rate () ->
+              Handler_clock.reading handler_clock (fun () ->
+                  body.whole ?max_body ?body_timeout ?min_body_rate ()));
+          part =
+            (fun ?max_body ?body_timeout ?min_body_rate () ->
+              Handler_clock.reading handler_clock (fun () ->
+                  body.part ?max_body ?body_timeout ?min_body_rate ()));
+        }
+      in
+      let within handler_timeout handler =
+        let limit =
+          Option.value handler_timeout ~default:limits.handler_timeout
+        in
+        Result.map_error
+          (fun () -> limit)
+          (Handler_clock.within handler_clock ~limit handler)
       in
       let traceparent =
         match Field.all (Request.headers req) "traceparent" with
@@ -916,7 +942,7 @@ let exchange ~clock ~read_clock ~limits ~trace ~instruments ~state ~deadline app
             release_budget ~state progress progress.reserved)
           (fun () ->
             let started = Eio.Time.Mono.now clock in
-            let response, answered = App.handle app req ~body in
+            let response, answered = App.handle ~within app req ~body in
             stop_reading ();
             (* The body is the route's once it returns, so its budget is
                given back before the answer is written. *)
@@ -1149,6 +1175,7 @@ let settings ?domains ?(limits = Limits.default) ?(trusted_proxies = [])
         idle_timeout = l.idle_timeout;
         body_timeout = l.body_timeout;
         min_body_rate = l.min_body_rate;
+        handler_timeout = l.handler_timeout;
         discard_limit = l.discard_limit;
         linger = l.linger;
         body_budget = l.body_budget;

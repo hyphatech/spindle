@@ -78,6 +78,7 @@ which takes each by its name and keeps the rest at their defaults.
 | `head_timeout` | 10 s | a head still arriving is `408` |
 | `idle_timeout` | 60 s | an idle connection is closed |
 | `body_timeout` | 20 s | a body gets 20 s, plus one second for every `min_body_rate` (500) bytes received; one that falls behind is closed |
+| `handler_timeout` | 60 s | a handler still running is cancelled and answered `503 timed_out`; time spent waiting on its body is not counted |
 | `send_timeout` | 30 s | a client that stops reading the answer is closed |
 | `max_connections` | 512 | connections held at once, per address; the rest wait in `backlog` (128) |
 | `discard_limit` | 64 KiB | a body a route left unread is read and dropped up to it; with more left, the connection is closed |
@@ -89,12 +90,24 @@ A wait is an `Mtime.Span.t`, named for what it bounds:
 refused where the limits are made, since the server would wait for nothing;
 only `drain` and `linger` may be zero.
 
-A route has its own `max_body`, `body_timeout` and `min_body_rate` in place
-of these, by the same names, and keeps the server's where it gives none:
+A route has its own `max_body`, `body_timeout`, `min_body_rate` and
+`handler_timeout` in place of these, by the same names, and keeps the server's where it gives none:
 `Spindle.post ~limits:(Spindle.Route.Limits.make ~max_body:(64 * 1024 *
 1024) ()) ...` ([large bodies](/spindle/tutorial/bodies/#large-bodies)). The
 rest act before a route is chosen, between requests or on the whole server,
 so they are the server's alone.
+
+`handler_timeout` is the one limit on your own code rather than the
+client's. A handler stuck on something that never comes -- a row lock, an
+upstream with no deadline of its own -- would otherwise hold its connection
+and whatever it took from a pool for good, until the pool is empty and
+routes that never touch it stop answering too. Past the limit its handler
+is cancelled, with everything it started: a database statement in flight
+closes its connection, so its transaction ends with nothing kept. Work
+handed to `Background` is not cancelled. A route that legitimately runs
+longer, an export say, gives its own:
+`Spindle.post ~limits:(Spindle.Route.Limits.make ~handler_timeout:Mtime.Span.(5 * min) ()) ...`.
+A stream or a socket runs after its answer, so the limit is over by then.
 
 Keep `max_connections` under the process's file descriptor limit
 (`ulimit -n`): every open stream and WebSocket holds a connection, and a

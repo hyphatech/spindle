@@ -843,7 +843,15 @@ let preflight t req =
 
 (* The innermost handler. The origin check comes first: forgery is refused
    whatever route it names. *)
-let answer_resolution t ~resources ~body ~answered_route resolution req =
+(* A route's handler under the loop's limit on its time, its own in place
+   of the loop's where it gave one. *)
+let bounded within ~(info : Route_repr.info) handler =
+  match within info.limits.handler_timeout handler with
+  | Ok response -> response
+  | Error limit -> Handler_clock.refusal ~route:info.pattern ~limit
+
+let answer_resolution t ~resources ~body ~within ~answered_route resolution req
+    =
   let meth = match Request.meth req with `HEAD -> `GET | m -> m in
   (* A browser opens a socket with the page's cookies, so it is checked as
      a POST is. *)
@@ -896,7 +904,9 @@ let answer_resolution t ~resources ~body ~answered_route resolution req =
     | Route (r, params) ->
         answered_route := Some (pattern_of r);
         with_raise_as_500
-          (fun req -> Route_repr.handle r req ~resources ~params ~body)
+          (fun req ->
+            bounded within ~info:r.info (fun () ->
+                Route_repr.handle r req ~resources ~params ~body))
           req
     | Slash -> (
         match location_without_slash req with
@@ -915,7 +925,9 @@ let answer_resolution t ~resources ~body ~answered_route resolution req =
         match t.not_found with
         | Some r ->
             with_raise_as_500
-              (fun req -> Route_repr.handle r req ~resources ~params:[] ~body)
+              (fun req ->
+                bounded within ~info:r.info (fun () ->
+                    Route_repr.handle r req ~resources ~params:[] ~body))
               req
         | None -> Response.refusal Refusal.not_found)
 
@@ -1102,7 +1114,10 @@ let choose_gzip (compress : Compress_repr.t) req ~held response =
 (* A raise is caught at the route, so the access log names it, and again
    around the middleware, so a middleware's bug is one 500 rather than a
    dropped connection. *)
-let handle (i : instance) req ~body =
+(* With no loop to say otherwise, a handler runs as long as it runs. *)
+let unbounded _ handler = Ok (handler ())
+
+let handle ?(within = unbounded) (i : instance) req ~body =
   let t = i.app in
   let answered_route = ref None in
   let resolution = resolve t req in
@@ -1130,8 +1145,8 @@ let handle (i : instance) req ~body =
           (List.fold_right
              (fun m h -> m h)
              t.middleware
-             (answer_resolution t ~resources:i.resources ~body ~answered_route
-                resolution))
+             (answer_resolution t ~resources:i.resources ~body ~within
+                ~answered_route resolution))
           req
   in
   (* On every answer of a covered route, a middleware's included, so an

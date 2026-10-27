@@ -45,6 +45,15 @@
 
 - Breaking: `App.answered`'s `access` is `access_log`.
 
+- Breaking: a route's handler is bounded by `handler_timeout`, 60 s unless
+  given in `Server.Limits.make`, or in the route's own `Route.Limits.make`.
+  Past it the handler is cancelled, with everything it started, and
+  answered `503 timed_out`, a new framework code every route's document
+  lists, with a `warn` line naming the route; time spent waiting on its
+  body is not counted, and a stream or a socket runs after its answer. A
+  handler that ran longer than a minute now needs its own limit.
+  `App.handle ?within` is how a connection loop of its own bounds one.
+
 - A route's `~limits` are its own `max_body`, `body_timeout` and
   `min_body_rate` in place of the server's, by the same names:
   `Spindle.post ~limits:(Spindle.Route.Limits.make ~max_body:n ()) ...`.

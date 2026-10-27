@@ -68,7 +68,7 @@ let reads_a_part =
    are where its state is proven safe from several. On [In_memory]'s virtual
    time; what it answers is [on_connection]'s, below. *)
 let serve ~sw env ?(domains = 4) ?max_body ?max_header_bytes ?discard_limit
-    ?body_budget ?stop ?drain served =
+    ?body_budget ?handler_timeout ?stop ?drain served =
   let listening, connect = In_memory.listen () in
   Eio.Fiber.fork_daemon ~sw (fun () ->
       Spindle.Server.serve_on
@@ -78,7 +78,7 @@ let serve ~sw env ?(domains = 4) ?max_body ?max_header_bytes ?discard_limit
         ~read_clock:(fun () -> Ptime.epoch)
         ~limits:
           (Spindle.Server.Limits.make ?max_body ?max_header_bytes ?discard_limit
-             ?body_budget ?drain ())
+             ?body_budget ?handler_timeout ?drain ())
         ?stop [ listening ] served;
       `Stop_daemon);
   connect
@@ -862,6 +862,146 @@ let test_a_route's_body_has_its_own_time () =
   check_int "whole" 40 (String.length a.body)
 
 (* ------------------------------------------------------------------ *)
+(* A handler's time *)
+
+(* On virtual time, the routes made with the server's clock so a handler
+   can wait on it, and [after] moving the clock to an instant. *)
+let with_handler_clock ?handler_timeout routes f =
+  In_memory.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let clock = Eio.Stdenv.mono_clock env in
+  let connect =
+    serve ~sw env ~domains:1 ?handler_timeout (Spindle.Test.app (routes clock))
+  in
+  let at () =
+    Mtime.Span.of_uint64_ns (Mtime.to_uint64_ns (Eio.Time.Mono.now clock))
+  and after span =
+    Eio.Time.Mono.sleep_until clock
+      (Mtime.of_uint64_ns (Mtime.Span.to_uint64_ns span))
+  in
+  f (on_connection env connect) ~at ~after
+
+let waits ?limits clock span path =
+  Spindle.post ?limits
+    Spindle.Path.(s path)
+    Spindle.Returns.text
+    (Spindle.Dep.map
+       (fun () ->
+         Eio.Time.Mono.sleep_span clock span;
+         Ok "done")
+       (Spindle.Dep.return ()))
+
+let check_span what expected span =
+  check_bool what true (Mtime.Span.equal expected span)
+
+(* A handler stuck on what never comes holds its connection and whatever
+   it took until its limit, then is cancelled and answered. *)
+let test_a_stuck_handler_is_cancelled () =
+  let cancelled = ref false in
+  let stuck =
+    Spindle.post
+      Spindle.Path.(s "stuck")
+      Spindle.Returns.text
+      (Spindle.Dep.map
+         (fun () ->
+           let never, _ = Eio.Promise.create () in
+           Fun.protect
+             ~finally:(fun () -> cancelled := true)
+             (fun () -> Eio.Promise.await never);
+           Ok "")
+         (Spindle.Dep.return ()))
+  in
+  with_handler_clock ~handler_timeout:Mtime.Span.(10 * s) (fun _ -> [ stuck ])
+  @@ fun connect ~at ~after ->
+  connect @@ fun send r ->
+  send (post "/stuck" "");
+  after Mtime.Span.(10 * s);
+  let a = read_answer r in
+  check_int "refused" 503 a.status;
+  check_bool "as having taken too long" true
+    (String.starts_with ~prefix:{|{"error":"timed_out"|} a.body);
+  check_span "at its limit" Mtime.Span.(10 * s) (at ());
+  check_bool "its handler cancelled" true !cancelled
+
+(* A route's limit is in place of the server's, longer or shorter. *)
+let test_a_route's_handler_has_its_own_time () =
+  with_handler_clock (fun clock ->
+      [
+        waits clock Mtime.Span.(90 * s) "plain";
+        waits
+          ~limits:
+            (Spindle.Route.Limits.make ~handler_timeout:Mtime.Span.(2 * min) ())
+          clock
+          Mtime.Span.(90 * s)
+          "longer";
+        waits
+          ~limits:(Spindle.Route.Limits.make ~handler_timeout:Mtime.Span.s ())
+          clock
+          Mtime.Span.(2 * s)
+          "shorter";
+      ])
+  @@ fun connect ~at ~after ->
+  let call path ~waits =
+    connect (fun send r ->
+        send (post path "");
+        after (Mtime.Span.add (at ()) waits);
+        read_answer r)
+  in
+  check_string "a route given longer is answered" "done"
+    (call "/longer" ~waits:Mtime.Span.(90 * s)).body;
+  check_int "where the server's sixty seconds cut it off" 503
+    (call "/plain" ~waits:Mtime.Span.(60 * s)).status;
+  check_int "and one given less is cut off sooner" 503
+    (call "/shorter" ~waits:Mtime.Span.s).status
+
+(* A body that keeps its rate is the body's limits' to bound, not the
+   handler's: thirty seconds of a byte a second under a ten-second limit. *)
+let test_a_slow_body_is_not_the_handler's_time () =
+  let reads =
+    Spindle.post
+      ~limits:
+        (Spindle.Route.Limits.make
+           ~body_timeout:Mtime.Span.(60 * s)
+           ~handler_timeout:Mtime.Span.(10 * s)
+           ())
+      Spindle.Path.(s "reads")
+      Spindle.Returns.response
+      (Spindle.Dep.map (fun b -> Ok (Spindle.Response.make b)) Spindle.body)
+  in
+  with_handler_clock (fun _ -> [ reads ]) @@ fun connect ~at:_ ~after ->
+  connect @@ fun send r ->
+  send "POST /reads HTTP/1.1\r\nHost: t\r\nContent-Length: 30\r\n\r\n";
+  for second = 1 to 30 do
+    after Mtime.Span.(second * s);
+    send "x"
+  done;
+  let a = read_answer r in
+  check_int "read and answered" 200 a.status;
+  check_int "whole" 30 (String.length a.body)
+
+(* A stream runs after its answer, so the handler's limit is over by then:
+   one that sends at ninety seconds is not cut at sixty. *)
+let test_a_stream_outlives_the_limit () =
+  let late clock =
+    Spindle.get
+      Spindle.Path.(s "late")
+      Spindle.Returns.response
+      (Spindle.Dep.return
+         (Ok
+            (Spindle.Response.stream (fun send ->
+                 Eio.Time.Mono.sleep_span clock Mtime.Span.(90 * s);
+                 send "late"))))
+  in
+  with_handler_clock (fun clock -> [ late clock ])
+  @@ fun connect ~at:_ ~after ->
+  connect @@ fun send r ->
+  send (get "/late");
+  after Mtime.Span.(90 * s);
+  let a = read_answer r in
+  check_int "answered" 200 a.status;
+  check_string "and sent all it had" "late" a.body
+
+(* ------------------------------------------------------------------ *)
 (* Responses *)
 
 let ran = Atomic.make false
@@ -1264,6 +1404,14 @@ let () =
             test_a_body_kept_at_the_rate_is_read_whole;
           Alcotest.test_case "a route's body has its own time" `Quick
             test_a_route's_body_has_its_own_time;
+          Alcotest.test_case "a stuck handler is cancelled" `Quick
+            test_a_stuck_handler_is_cancelled;
+          Alcotest.test_case "a route's handler has its own time" `Quick
+            test_a_route's_handler_has_its_own_time;
+          Alcotest.test_case "a slow body is not the handler's time" `Quick
+            test_a_slow_body_is_not_the_handler's_time;
+          Alcotest.test_case "a stream outlives the limit" `Quick
+            test_a_stream_outlives_the_limit;
           Alcotest.test_case "a route's limits are its own" `Quick
             test_a_route's_limits_are_its_own;
           Alcotest.test_case "a limit passes within a tick" `Quick
