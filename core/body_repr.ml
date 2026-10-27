@@ -3,28 +3,45 @@
 
 type error = Request_repr.body_error
 
+module L = (val Logs.src_log Log.http : Logs.LOG)
+
 type source = {
-  whole : unit -> (string, error) result;
-  part : max:int -> ([ `Data of string | `End ], error) result;
+  whole :
+    ?max_body:int ->
+    ?body_timeout:Mtime.Span.t ->
+    ?min_body_rate:int ->
+    unit ->
+    (string, error) result;
+  part :
+    ?max_body:int ->
+    ?body_timeout:Mtime.Span.t ->
+    ?min_body_rate:int ->
+    unit ->
+    ([ `Data of string | `End ], error) result;
 }
+
+exception Unholdable of { max_body : int; body_budget : int }
 
 type held = {
   source : source;
   pattern : string;  (** the route's, for the log *)
+  limits : Limits_repr.route;
   mutable read : (string, error) result option;
   mutable streamed : bool;
   mutable handler_returned : bool;
 }
 
-type t = {
-  held : held;
-  max : int;
-  mutable failed : error option;
-  mutable ended : bool;
-}
+type t = { held : held; mutable failed : error option; mutable ended : bool }
 
-let hold source ~pattern =
-  { source; pattern; read = None; streamed = false; handler_returned = false }
+let hold source ~pattern ~limits =
+  {
+    source;
+    pattern;
+    limits;
+    read = None;
+    streamed = false;
+    handler_returned = false;
+  }
 
 let refusal : error -> Refusal.t = function
   | Request_repr.Too_large -> Refusal.too_large
@@ -56,13 +73,31 @@ let whole h =
           Error
             (Request_repr.Unreadable
                (h.pattern ^ " read its body whole after reading it as a stream"))
-        else h.source.whole ()
+        else
+          let l = h.limits in
+          match
+            h.source.whole ?max_body:l.max_body ?body_timeout:l.body_timeout
+              ?min_body_rate:l.min_body_rate ()
+          with
+          | r -> r
+          | exception (Unholdable { max_body; body_budget } as e) ->
+              L.err (fun m ->
+                  m
+                    "%s reads its body whole with max_body %d, above \
+                     body_budget %d: no body above the budget can be held"
+                    h.pattern max_body body_budget);
+              raise e
       in
       h.read <- Some r;
       r
 
-let stream h ~max =
+let stream h =
   h.streamed <- true;
-  { held = h; max; failed = None; ended = false }
+  { held = h; failed = None; ended = false }
+
+let part h =
+  let l = h.limits in
+  h.source.part ?max_body:l.max_body ?body_timeout:l.body_timeout
+    ?min_body_rate:l.min_body_rate ()
 
 let end_handler h = h.handler_returned <- true

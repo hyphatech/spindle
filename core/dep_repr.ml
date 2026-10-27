@@ -408,12 +408,12 @@ let is_supplied resources owner =
 
 (* Once the handler returns the body is the loop's again, so a read left
    behind reads nothing. *)
-let run d ~table ~resources request ~params ~outgoing ~body =
+let run d ~table ~resources request ~params ~outgoing ~body ~limits =
   let table = if table then Some (Hashtbl.create 8) else None in
   match exec d { request; params; outgoing; table; resources } with
   | Now v -> v
   | Later k ->
-      let held = Body_repr.hold body ~pattern:outgoing.pattern in
+      let held = Body_repr.hold body ~pattern:outgoing.pattern ~limits in
       Fun.protect
         ~finally:(fun () -> Body_repr.end_handler held)
         (fun () -> k held)

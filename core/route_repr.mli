@@ -26,6 +26,7 @@ type info = {
   access_log : Logs.level;
   compress : Compress_repr.t option;
   cors : Cors_repr.t option;
+  limits : Limits_repr.route;
 }
 (** What a route says of itself, which the document and the route table read. *)
 
@@ -88,6 +89,7 @@ val make :
   ?access_log:Logs.level ->
   ?compress:Compress_repr.t ->
   ?cors:Cors_repr.t ->
+  ?limits:Limits_repr.route ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -102,6 +104,7 @@ val get :
   ?access_log:Logs.level ->
   ?compress:Compress_repr.t ->
   ?cors:Cors_repr.t ->
+  ?limits:Limits_repr.route ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -115,6 +118,7 @@ val post :
   ?access_log:Logs.level ->
   ?compress:Compress_repr.t ->
   ?cors:Cors_repr.t ->
+  ?limits:Limits_repr.route ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -128,6 +132,7 @@ val put :
   ?access_log:Logs.level ->
   ?compress:Compress_repr.t ->
   ?cors:Cors_repr.t ->
+  ?limits:Limits_repr.route ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -141,6 +146,7 @@ val patch :
   ?access_log:Logs.level ->
   ?compress:Compress_repr.t ->
   ?cors:Cors_repr.t ->
+  ?limits:Limits_repr.route ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -154,6 +160,7 @@ val delete :
   ?access_log:Logs.level ->
   ?compress:Compress_repr.t ->
   ?cors:Cors_repr.t ->
+  ?limits:Limits_repr.route ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->

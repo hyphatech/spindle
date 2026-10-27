@@ -45,6 +45,25 @@
 
 - Breaking: `App.answered`'s `access` is `access_log`.
 
+- A route's `~limits` are its own `max_body`, `body_timeout` and
+  `min_body_rate` in place of the server's, by the same names:
+  `Spindle.post ~limits:(Spindle.Route.Limits.make ~max_body:n ()) ...`.
+  Breaking: `Spindle.body_stream` and `Spindle.multipart` lose `~max`, the
+  route's `max_body` limiting them as it limits a body read whole:
+  `Spindle.body_stream ~max:n ()` → `Spindle.body_stream ()` on a route
+  with `~limits:(Route.Limits.make ~max_body:n ())`. `Body.source`'s
+  `whole` and `part` take the route's limits as optional arguments, `part`
+  losing `~max`.
+
+- Breaking: a route that reads its body whole with a `max_body`, its own or
+  the server's, above the server's `body_budget` answers `500` with an
+  `error` line naming it, where each body between the two was `503 busy`,
+  since none could ever be held; `Spindle.Test.call` raises.
+
+- `Spindle.Test.app ~limits` reads every body as the server does, under
+  `Server.Limits.default` unless given: a body read whole past `max_body`
+  is `413` in a test, as it is on a server, where a test took it.
+
 - Breaking: a route's `~cors` is its CORS policy in place of the
   application's, and `Cors.origins` and `Cors.any` lose `~routes`:
   `~cors:(Cors.origins ~routes:api_only [ site ])` on the application →

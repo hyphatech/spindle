@@ -348,7 +348,7 @@ let test_a_body_is_required_where_an_empty_one_is_refused () =
     Spindle.post
       Spindle.Path.(s "stream")
       Spindle.Returns.text
-      (let+ _ = Spindle.body_stream ~max:1024 () in
+      (let+ _ = Spindle.body_stream () in
        Ok "")
   in
   let a =
@@ -733,14 +733,12 @@ let test_a_body_refused_for_its_type_says_415 () =
       );
       ( "parts",
         true,
-        route "parts" (Spindle.Dep.map ignore (Spindle.multipart ~max:1024 ()))
-      );
+        route "parts" (Spindle.Dep.map ignore (Spindle.multipart ())) );
       ( "stream",
         true,
         route "stream"
           (Spindle.Dep.map ignore
-             (Spindle.body_stream ~content_types:[ "text/csv" ] ~max:1024 ()))
-      );
+             (Spindle.body_stream ~content_types:[ "text/csv" ] ())) );
       ("raw", false, route "raw" (Spindle.Dep.map ignore Spindle.body));
     ]
   in

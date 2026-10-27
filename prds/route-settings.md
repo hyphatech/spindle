@@ -1,6 +1,6 @@
 # Route settings: one name at every level, and a time limit on handlers
 
-**Status: Accepted** — the whole shape; the first two stages have landed.
+**Status: Accepted** — the whole shape; the first three stages have landed.
 Date: 2026-10-27
 
 ## The problem
@@ -352,7 +352,7 @@ lists, as `busy` is, and a `warn` line names the route and its limit.
 - [x] **A route's CORS.** `?cors` on the route, `Cors.none`, `?routes`
       gone; the preflight and the forgery check read the matched route's
       policy. Breaking.
-- [ ] **A route's limits.** `Route.Limits` with `max_body`,
+- [x] **A route's limits.** `Route.Limits` with `max_body`,
       `body_timeout` and `min_body_rate`; `?limits` on the route;
       `body_stream` and `multipart` lose `~max`; a whole read above the
       budget is the route's bug. Breaking.

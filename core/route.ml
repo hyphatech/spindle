@@ -7,6 +7,20 @@ type access = Dep_repr.access =
   | Caller
   | Checked of { policy : string; action : string option }
 
+module Limits = struct
+  type t = Limits_repr.route
+
+  let who = "Spindle.Route.Limits"
+
+  let make ?max_body ?body_timeout ?min_body_rate () =
+    Option.iter (Limits_repr.check_count ~who "max_body" ~least:0) max_body;
+    Option.iter (Limits_repr.check_wait ~who "body_timeout") body_timeout;
+    Option.iter
+      (Limits_repr.check_count ~who "min_body_rate" ~least:1)
+      min_body_rate;
+    ({ max_body; body_timeout; min_body_rate } : t)
+end
+
 type ('r, 'a, 'k) maker =
   ?refuses:Refusal.Code.t list ->
   ?summary:string ->
@@ -15,6 +29,7 @@ type ('r, 'a, 'k) maker =
   ?access_log:Logs.level ->
   ?compress:Compress.t ->
   ?cors:Cors.t ->
+  ?limits:Limits.t ->
   ('a, 'k) Path.t ->
   'r Returns.t ->
   'r Dep.t ->

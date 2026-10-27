@@ -335,6 +335,109 @@ let test_malformed_body_is_a_sentence_without_its_detail () =
           `POST "/echo" ~body:"not json")
          .body)
 
+(* A test reads a body as the server does: under the server's limits, a
+   route's own in place of them, whole or as it arrives. *)
+let test_a_route_has_its_own_body_limit () =
+  let reads ?limits path =
+    Spindle.post ?limits
+      Spindle.Path.(s path)
+      Spindle.Returns.text
+      (Spindle.Dep.map
+         (fun b -> Ok (string_of_int (String.length b)))
+         Spindle.body)
+  in
+  let streams ?limits path =
+    let rec count body n =
+      match Spindle.Body.read body with
+      | Ok (`Data s) -> count body (n + String.length s)
+      | Ok `End -> Ok (string_of_int n)
+      | Error e -> Error e
+    in
+    Spindle.post ?limits
+      Spindle.Path.(s path)
+      Spindle.Returns.text
+      (Spindle.Dep.map (fun body -> count body 0) (Spindle.body_stream ()))
+  in
+  let mib = 1024 * 1024 in
+  let a =
+    Spindle.Test.app
+      [
+        reads "plain";
+        reads ~limits:(Spindle.Route.Limits.make ~max_body:(2 * mib) ()) "large";
+        reads ~limits:(Spindle.Route.Limits.make ~max_body:10 ()) "small";
+        streams ~limits:(Spindle.Route.Limits.make ~max_body:100 ()) "stream";
+      ]
+  in
+  let post path n = Spindle.Test.call a `POST path ~body:(String.make n 'x') in
+  check_status "the server's limit holds where a route gives none" 413
+    (post "/plain" (mib + 1)).status;
+  check_string "a route takes more than the server would"
+    (string_of_int (mib + 1))
+    (post "/large" (mib + 1)).body;
+  check_status "and less" 413 (post "/small" 11).status;
+  check_string "up to its limit" "10" (post "/small" 10).body;
+  check_status "a stream is held to it as it arrives" 413
+    (post "/stream" 200).status;
+  check_string "and read whole within it" "100" (post "/stream" 100).body
+
+(* A body read whole is held, so a max_body the budget cannot hold could
+   never be read: the route's bug, whether the limit is its own or the
+   server's. A stream holds a part at a time, so it may go past. *)
+let test_a_whole_body_the_budget_cannot_hold_is_a_bug () =
+  let large = 128 * 1024 * 1024 in
+  let whole ?limits () =
+    Spindle.post ?limits
+      Spindle.Path.(s "import")
+      Spindle.Returns.text
+      (Spindle.Dep.map (fun _ -> Ok "") Spindle.body)
+  in
+  let raises what a =
+    match Spindle.Test.call a `POST "/import" ~body:"[]" with
+    | (_ : Spindle.Test.response) -> Alcotest.failf "%s answered" what
+    | exception Invalid_argument m ->
+        Alcotest.(check bool)
+          (what ^ ", named") true
+          (contains ~sub:"max_body 134217728, above body_budget 67108864" m)
+  in
+  raises "its own"
+    (Spindle.Test.app
+       [ whole ~limits:(Spindle.Route.Limits.make ~max_body:large ()) () ]);
+  raises "the server's"
+    (Spindle.Test.app
+       ~limits:(Spindle.Server.Limits.make ~max_body:large ())
+       [ whole () ]);
+  check_status "a stream may go past" 200
+    (Spindle.Test.call
+       (Spindle.Test.app
+          [
+            Spindle.post
+              ~limits:(Spindle.Route.Limits.make ~max_body:large ())
+              Spindle.Path.(s "import")
+              Spindle.Returns.text
+              (Spindle.Dep.map (fun _ -> Ok "") (Spindle.body_stream ()));
+          ])
+       `POST "/import" ~body:"[]")
+      .status
+
+(* A limit out of range is a constant written in source, refused where it
+   is made, as the server's are. *)
+let test_a_route_limit_that_cannot_be_is_refused () =
+  let refused name make =
+    match make () with
+    | (_ : Spindle.Route.Limits.t) -> Alcotest.failf "%s was accepted" name
+    | exception Invalid_argument m ->
+        Alcotest.(check bool) (name ^ ", named") true (contains ~sub:name m)
+  in
+  refused "max_body" (fun () -> Spindle.Route.Limits.make ~max_body:(-1) ());
+  refused "min_body_rate" (fun () ->
+      Spindle.Route.Limits.make ~min_body_rate:0 ());
+  refused "body_timeout" (fun () ->
+      Spindle.Route.Limits.make ~body_timeout:Mtime.Span.zero ());
+  ignore
+    (Spindle.Route.Limits.make ~max_body:0 ~min_body_rate:1
+       ~body_timeout:Mtime.Span.ns ()
+      : Spindle.Route.Limits.t)
+
 let test_a_raise_is_500_and_says_nothing_of_it () =
   let boom =
     Spindle.get
@@ -563,10 +666,10 @@ let test_a_refusal_before_the_body_never_reads_it () =
   let body =
     {
       Spindle.Body.whole =
-        (fun () ->
+        (fun ?max_body:_ ?body_timeout:_ ?min_body_rate:_ () ->
           incr read;
           Ok {|{"name":"kim"}|});
-      part = (fun ~max:_ -> Ok `End);
+      part = (fun ?max_body:_ ?body_timeout:_ ?min_body_rate:_ () -> Ok `End);
     }
   in
   let call headers =
@@ -2027,10 +2130,11 @@ let test_a_form_is_read_once_and_only_as_a_form () =
          ~body:
            {
              Spindle.Body.whole =
-               (fun () ->
+               (fun ?max_body:_ ?body_timeout:_ ?min_body_rate:_ () ->
                  incr read;
                  Ok body);
-             part = (fun ~max:_ -> Ok `End);
+             part =
+               (fun ?max_body:_ ?body_timeout:_ ?min_body_rate:_ () -> Ok `End);
            })
   in
   check_status "four fields" 200
@@ -2079,7 +2183,7 @@ let test_a_form_is_read_once_and_only_as_a_form () =
   Alcotest.(check bool)
     "and beside a stream" true
     (Result.is_error
-       (beside (Spindle.body_stream ~max:10 () |> Spindle.Dep.map ignore)));
+       (beside (Spindle.body_stream () |> Spindle.Dep.map ignore)));
   Alcotest.(check bool)
     "and two fields are one body" true
     (Result.is_ok
@@ -2167,9 +2271,10 @@ let uploads =
           :: acc)
   in
   Spindle.post
+    ~limits:(Spindle.Route.Limits.make ~max_body:400 ())
     Spindle.Path.(s "uploads")
     Spindle.Returns.text
-    (let+ parts = Spindle.multipart ~max:400 () in
+    (let+ parts = Spindle.multipart () in
      each parts [])
 
 let test_an_upload_is_read_a_part_at_a_time () =
@@ -2259,7 +2364,7 @@ let test_a_form's_files_are_inputs () =
             Spindle.post
               Spindle.Path.(s "x")
               Spindle.Returns.text
-              (let+ _ = name and+ _ = Spindle.multipart ~max:10 () in
+              (let+ _ = name and+ _ = Spindle.multipart () in
                Ok "");
           ]));
   match Spindle.Openapi.document (Spindle.App.app a) with
@@ -8106,8 +8211,10 @@ let test_a_file_replaced_before_its_body_sends_nothing () =
       (Spindle.Request.make ~read_clock:(fun () -> Ptime.epoch) `GET "/a.txt")
       ~body:
         {
-          Spindle.Body.whole = (fun () -> Ok "");
-          part = (fun ~max:_ -> Ok `End);
+          Spindle.Body.whole =
+            (fun ?max_body:_ ?body_timeout:_ ?min_body_rate:_ () -> Ok "");
+          part =
+            (fun ?max_body:_ ?body_timeout:_ ?min_body_rate:_ () -> Ok `End);
         }
   in
   let next = Eio.Path.(root / "files" / "a.next") in
@@ -8242,12 +8349,11 @@ let rec tally body ~parts ~bytes =
 
 let upload =
   Spindle.post
+    ~limits:(Spindle.Route.Limits.make ~max_body:200_000 ())
     Spindle.Path.(s "upload")
     Spindle.Returns.text
     (let+ body =
-       Spindle.body_stream
-         ~content_types:[ "application/octet-stream" ]
-         ~max:200_000 ()
+       Spindle.body_stream ~content_types:[ "application/octet-stream" ] ()
      in
      tally body ~parts:0 ~bytes:0)
 
@@ -8262,9 +8368,7 @@ let test_a_content_type_that_is_no_pattern_is_refused () =
         Spindle.post
           Spindle.Path.(s "upload")
           Spindle.Returns.text
-          (let+ _ =
-             Spindle.body_stream ~content_types:[ pattern ] ~max:1024 ()
-           in
+          (let+ _ = Spindle.body_stream ~content_types:[ pattern ] () in
            Ok "")
       in
       match Spindle.App.make [ route ] with
@@ -8285,7 +8389,7 @@ let test_a_content_type_that_is_no_pattern_is_refused () =
            (let+ _ =
               Spindle.body_stream
                 ~content_types:[ "text/csv"; "image/*"; "application/*+json" ]
-                ~max:1024 ()
+                ()
             in
             Ok "");
        ]
@@ -8321,9 +8425,10 @@ let test_a_body_read_after_its_handler_reads_nothing () =
     Spindle.Test.app
       [
         Spindle.post
+          ~limits:(Spindle.Route.Limits.make ~max_body:1000 ())
           Spindle.Path.(s "late")
           Spindle.Returns.response
-          (let+ body = Spindle.body_stream ~max:1000 () in
+          (let+ body = Spindle.body_stream () in
            Ok
              (Spindle.Response.stream (fun send ->
                   late := Some (Spindle.Body.read body);
@@ -8343,7 +8448,7 @@ let test_a_route_reads_one_body () =
         Spindle.post
           Spindle.Path.(s "twice")
           Spindle.Returns.text
-          (let+ _ = Spindle.body_stream ~max:10 () and+ s = Spindle.body in
+          (let+ _ = Spindle.body_stream () and+ s = Spindle.body in
            Ok s);
       ]
   in
@@ -8822,8 +8927,10 @@ let test_a_route_answers_the_status_it_chose () =
          `PUT "/users/stray")
       ~body:
         {
-          Spindle.Body.whole = (fun () -> Ok "");
-          part = (fun ~max:_ -> Ok `End);
+          Spindle.Body.whole =
+            (fun ?max_body:_ ?body_timeout:_ ?min_body_rate:_ () -> Ok "");
+          part =
+            (fun ?max_body:_ ?body_timeout:_ ?min_body_rate:_ () -> Ok `End);
         }
   in
   check_status "an unlisted status is sent" 202
@@ -10617,6 +10724,12 @@ let () =
             test_malformed_body_is_a_sentence_without_its_detail;
           Alcotest.test_case "a raise is 500 and says nothing of it" `Quick
             test_a_raise_is_500_and_says_nothing_of_it;
+          Alcotest.test_case "a route has its own body limit" `Quick
+            test_a_route_has_its_own_body_limit;
+          Alcotest.test_case "a whole body the budget cannot hold is a bug"
+            `Quick test_a_whole_body_the_budget_cannot_hold_is_a_bug;
+          Alcotest.test_case "a route limit that cannot be is refused" `Quick
+            test_a_route_limit_that_cannot_be_is_refused;
         ] );
       ( "middleware",
         [

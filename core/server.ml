@@ -64,37 +64,11 @@ let proxy_of_string s =
                 unix:<path>"
                s))
 
-(* A limit out of range is a constant written wrong where the server starts,
-   refused there rather than read as a server that serves nobody or a
-   deadline that is always passed. *)
-let check_limit name ok shown =
-  if not ok then
-    invalid_arg (Printf.sprintf "Spindle.Server: ~%s cannot be %s" name shown)
-
-let check_count name ~least n = check_limit name (n >= least) (string_of_int n)
-
-(* A span is never negative, so a wait is out of range only at zero. *)
-let check_wait name span =
-  check_limit name
-    (not (Mtime.Span.equal span Mtime.Span.zero))
-    (Format.asprintf "%a" Mtime.Span.pp span)
+let check_count = Limits_repr.check_count ~who:"Spindle.Server"
+let check_wait = Limits_repr.check_wait ~who:"Spindle.Server"
 
 module Limits = struct
-  type t = {
-    max_body : int;
-    max_header_bytes : int;
-    head_timeout : Mtime.Span.t;
-    idle_timeout : Mtime.Span.t;
-    body_timeout : Mtime.Span.t;
-    min_body_rate : int;
-    send_timeout : Mtime.Span.t;
-    discard_limit : int;
-    linger : Mtime.Span.t;
-    body_budget : int;
-    max_connections : int;
-    backlog : int;
-    drain : Mtime.Span.t;
-  }
+  type t = Limits_repr.server
 
   let make ?(max_body = 1_048_576) ?(max_header_bytes = 16_384)
       ?(head_timeout = Mtime.Span.(10 * s))
@@ -114,21 +88,22 @@ module Limits = struct
     check_wait "idle_timeout" idle_timeout;
     check_wait "body_timeout" body_timeout;
     check_wait "send_timeout" send_timeout;
-    {
-      max_body;
-      max_header_bytes;
-      head_timeout;
-      idle_timeout;
-      body_timeout;
-      min_body_rate;
-      send_timeout;
-      discard_limit;
-      linger;
-      body_budget;
-      max_connections;
-      backlog;
-      drain;
-    }
+    ({
+       max_body;
+       max_header_bytes;
+       head_timeout;
+       idle_timeout;
+       body_timeout;
+       min_body_rate;
+       send_timeout;
+       discard_limit;
+       linger;
+       body_budget;
+       max_connections;
+       backlog;
+       drain;
+     }
+      : t)
 
   let default = make ()
 end
@@ -641,19 +616,19 @@ let refuse_head ~read_clock ~limits ~deadline out status detail =
 (* The request's body *)
 
 (* The time a byte buys: a second for every [min_body_rate]. *)
-let per_byte limits =
+let per_byte ~min_body_rate =
   Mtime.Span.of_uint64_ns
-    (Int64.div 1_000_000_000L (Int64.of_int limits.min_body_rate))
+    (Int64.div 1_000_000_000L (Int64.of_int min_body_rate))
 
 (* Armed only while the body is read, so the handler's own time is never the
    client's: an allowance, and a second more for every [min_body_rate] bytes,
    so a byte sent just inside each wait cannot hold a connection open.
    Already buffered bytes count as arrived. *)
-let within_body_deadline ~limits ~deadline ic f =
-  let per_byte = per_byte limits in
+let within_body_deadline ~body_timeout ~min_body_rate ~deadline ic f =
+  let per_byte = per_byte ~min_body_rate in
   let arrived = Eio.Buf_read.buffered_bytes ic in
   Deadline.arm deadline ~per_byte
-    (Mtime.Span.add limits.body_timeout Mtime.Span.(arrived * per_byte));
+    (Mtime.Span.add body_timeout Mtime.Span.(arrived * per_byte));
   Fun.protect ~finally:(fun () -> Deadline.clear deadline) f
 
 type body_progress = {
@@ -715,26 +690,36 @@ let request_body ~limits ~state ~deadline ~framing ~reader ~req ic out progress
         Error (Body.Unreadable "the body stopped arriving")
     | `Unreadable detail -> Error (Body.Unreadable detail)
   in
+  (* The route's limit where it gave one, the server's where it did not. *)
+  let route_or ours = function Some limit -> limit | None -> ours in
   (* A client waiting for 100 Continue is refused while it still holds a
      body the budget has no room for. Room is checked, not taken: a length is
-     only a claim until its bytes come. *)
-  let whole () =
+     only a claim until its bytes come. A whole body is held, so one the
+     budget could never hold is the route's bug, whatever was sent. *)
+  let whole ?max_body ?body_timeout ?min_body_rate () =
+    let max_body = route_or limits.max_body max_body in
+    if max_body > limits.body_budget then
+      raise
+        (Body_repr.Unholdable { max_body; body_budget = limits.body_budget });
     let no_room =
       match framing with
       | Framing.Fixed n ->
           (not progress.cleared_to_send)
-          && n <= limits.max_body
+          && n <= max_body
           && state.body_bytes_reserved + n > limits.body_budget
       | Framing.No_body | Framing.Chunked | Framing.Until_close -> false
     in
     if no_room then failed `Over_budget
     else
-      match continue_if_asked ~max:limits.max_body with
+      match continue_if_asked ~max:max_body with
       | Error e -> Error e
       | Ok () -> (
           match
-            within_body_deadline ~limits ~deadline ic (fun () ->
-                Framing.read reader ~max:limits.max_body
+            within_body_deadline
+              ~body_timeout:(route_or limits.body_timeout body_timeout)
+              ~min_body_rate:(route_or limits.min_body_rate min_body_rate)
+              ~deadline ic (fun () ->
+                Framing.read reader ~max:max_body
                   ~reserve:(reserve_budget ~limits ~state progress))
           with
           | Ok s -> Ok s
@@ -755,18 +740,22 @@ let request_body ~limits ~state ~deadline ~framing ~reader ~req ic out progress
       (fun unwound -> Eio.Cancel.protect (fun () -> Eio.Promise.await unwound))
       !reading
   in
-  let part ~max =
+  let part ?max_body ?body_timeout ?min_body_rate () =
+    let max = route_or limits.max_body max_body in
     release_budget ~state progress !part_reserved;
     part_reserved := 0;
     match continue_if_asked ~max with
     | Error e -> Error e
     | Ok () -> (
-        let per_byte = per_byte limits in
+        let per_byte =
+          per_byte ~min_body_rate:(route_or limits.min_body_rate min_body_rate)
+        in
         let allowance =
           match !allowance_left with
           | Some left -> left
           | None ->
-              Mtime.Span.add limits.body_timeout
+              Mtime.Span.add
+                (route_or limits.body_timeout body_timeout)
                 Mtime.Span.(Eio.Buf_read.buffered_bytes ic * per_byte)
         in
         Deadline.arm deadline ~per_byte allowance;
@@ -944,8 +933,9 @@ let exchange ~clock ~read_clock ~limits ~trace ~instruments ~state ~deadline app
                closes. *)
             let body_finished =
               progress.cleared_to_send
-              && within_body_deadline ~limits ~deadline ic (fun () ->
-                  Framing.discard reader ~limit:limits.discard_limit)
+              && within_body_deadline ~body_timeout:limits.body_timeout
+                   ~min_body_rate:limits.min_body_rate ~deadline ic (fun () ->
+                     Framing.discard reader ~limit:limits.discard_limit)
             in
             let can_continue =
               match wire.body with

@@ -5,29 +5,41 @@
 type error = Request_repr.body_error
 
 type source = {
-  whole : unit -> (string, error) result;
-  part : max:int -> ([ `Data of string | `End ], error) result;
+  whole :
+    ?max_body:int ->
+    ?body_timeout:Mtime.Span.t ->
+    ?min_body_rate:int ->
+    unit ->
+    (string, error) result;
+  part :
+    ?max_body:int ->
+    ?body_timeout:Mtime.Span.t ->
+    ?min_body_rate:int ->
+    unit ->
+    ([ `Data of string | `End ], error) result;
 }
-(** Where the connection loop hands the body over, whole or a part at a time. *)
+(** Where the connection loop hands the body over, whole or a part at a time,
+    under the route's limits where it gave them and its own where it did not. *)
+
+exception Unholdable of { max_body : int; body_budget : int }
+(** Raised by a source asked for a body whole under a [max_body] its
+    [body_budget] cannot hold: the route's bug, since no body between the two
+    could ever be read. *)
 
 type held = {
   source : source;
   pattern : string;  (** the route's, for the log *)
+  limits : Limits_repr.route;  (** the route's own *)
   mutable read : (string, error) result option;
   mutable streamed : bool;
   mutable handler_returned : bool;
 }
 (** One request's body, as its dependencies share it. *)
 
-type t = {
-  held : held;
-  max : int;
-  mutable failed : error option;
-  mutable ended : bool;
-}
-(** The body as a stream, read a part of at most [max] bytes at a time. *)
+type t = { held : held; mutable failed : error option; mutable ended : bool }
+(** The body as a stream, read a part at a time. *)
 
-val hold : source -> pattern:string -> held
+val hold : source -> pattern:string -> limits:Limits_repr.route -> held
 
 val refusal : error -> Refusal.t
 (** [413], [503 busy] or [400], as the body failed. *)
@@ -38,10 +50,14 @@ val not_multipart : detail:string -> Refusal.t
 
 val whole : held -> (string, error) result
 (** The body read whole, once however many ask; [Unreadable] after it was read
-    as a stream, which left nothing whole. *)
+    as a stream, which left nothing whole. Raises {!Unholdable} as its source
+    does, after an [error] line naming the route. *)
 
-val stream : held -> max:int -> t
+val stream : held -> t
 (** The body as a stream; reading it whole after is refused. *)
+
+val part : held -> ([ `Data of string | `End ], error) result
+(** The body's next part, under the route's limits. *)
 
 val end_handler : held -> unit
 (** Marks the route's handler returned, after which the body is the connection

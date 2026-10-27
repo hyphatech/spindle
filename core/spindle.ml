@@ -138,7 +138,7 @@ let request_id = Dep.of_request ~needs:[] (fun r -> Ok (Request.id r))
 let client_gone = Dep.of_request ~needs:[] (fun r -> Ok (Request.client_gone r))
 let body = Dep.of_body (fun s -> Ok s)
 
-let body_stream ?(content_types = []) ~max () : Body.t Dep.t =
+let body_stream ?(content_types = []) () : Body.t Dep.t =
   let codes =
     match content_types with
     | [] -> []
@@ -149,10 +149,10 @@ let body_stream ?(content_types = []) ~max () : Body.t Dep.t =
     (fun (c : Dep_repr.context) ->
       if not (Dep_repr.takes_content_type content_types c.request) then
         Now (Error Refusal.unsupported_media_type)
-      else Later (fun held -> Ok (Body_repr.stream held ~max)))
+      else Later (fun held -> Ok (Body_repr.stream held)))
 
 (* The content type is checked before the body is read. *)
-let multipart ?max_head ~max () : Multipart.t Dep.t =
+let multipart ?max_head () : Multipart.t Dep.t =
   Dep_repr.make ~needs:[ Body Multipart ]
     ~codes:[ Refusal.Code.unsupported_media_type ]
     (fun (c : Dep_repr.context) ->
@@ -165,7 +165,7 @@ let multipart ?max_head ~max () : Multipart.t Dep.t =
           | Some boundary ->
               Later
                 (fun held ->
-                  let body = Body_repr.stream held ~max in
+                  let body = Body_repr.stream held in
                   Ok
                     (Spindle_http.Multipart.create ?max_head ~boundary
                        (fun () ->

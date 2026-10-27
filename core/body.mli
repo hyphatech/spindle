@@ -43,10 +43,21 @@ val read : t -> ([ `Data of string | `End ], Refusal.t) result
     error is the body's last word: every read after it answers the same. *)
 
 type source = Body_repr.source = {
-  whole : unit -> (string, error) result;
-      (** the whole body, within the server's own limit *)
-  part : max:int -> ([ `Data of string | `End ], error) result;
-      (** its next part, [Too_large] once the parts read pass [max] *)
+  whole :
+    ?max_body:int ->
+    ?body_timeout:Mtime.Span.t ->
+    ?min_body_rate:int ->
+    unit ->
+    (string, error) result;
+      (** the whole body, [Too_large] past [max_body] *)
+  part :
+    ?max_body:int ->
+    ?body_timeout:Mtime.Span.t ->
+    ?min_body_rate:int ->
+    unit ->
+    ([ `Data of string | `End ], error) result;
+      (** its next part, [Too_large] once the parts read pass [max_body] *)
 }
 (** How a connection loop hands a request's body over ({!App.handle}): read
-    whole, or a part at a time, and never both. *)
+    whole, or a part at a time, and never both. Each limit is the route's where
+    it gave one ({!Route.Limits}), and the loop's own where it is not given. *)

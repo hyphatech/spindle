@@ -12,8 +12,38 @@ type response = {
    on it as [Spindle.serve] does. A test is given only the resources the
    routes it calls read, so each route reads the test's own, where a server's
    are App.start's. *)
-let app ?(resources = []) ?mono_clock ?middleware ?refuses ?not_found ?cors
-    ?compress ?check_origin ?trusted_origins ?trailing_slash ?keys routes =
+(* A body under [l] as the connection loop reads one, the route's own in
+   place of them. The route's are passed on as they came, so a server this
+   app is served by keeps its own, and [l] is checked beside them. *)
+let under (l : Limits_repr.server) (body : Body.source) =
+  let limit max_body = Option.value max_body ~default:l.max_body in
+  let read = ref 0 in
+  {
+    Body.whole =
+      (fun ?max_body ?body_timeout ?min_body_rate () ->
+        let max = limit max_body in
+        if max > l.body_budget then
+          raise
+            (Body_repr.Unholdable
+               { max_body = max; body_budget = l.body_budget });
+        match body.whole ?max_body ?body_timeout ?min_body_rate () with
+        | Ok s when String.length s > max -> Error Body.Too_large
+        | r -> r);
+    part =
+      (fun ?max_body ?body_timeout ?min_body_rate () ->
+        let max = limit max_body in
+        match body.part ?max_body ?body_timeout ?min_body_rate () with
+        | Ok (`Data s) when !read + String.length s > max ->
+            Error Body.Too_large
+        | Ok (`Data s) as data ->
+            read := !read + String.length s;
+            data
+        | r -> r);
+  }
+
+let app ?(resources = []) ?mono_clock ?(limits = Server.Limits.default)
+    ?middleware ?refuses ?not_found ?cors ?compress ?check_origin
+    ?trusted_origins ?trailing_slash ?keys routes =
   let mono_clock =
     match mono_clock with
     | Some clock -> (clock :> Eio.Time.Mono.ty Eio.Resource.t)
@@ -49,7 +79,7 @@ let app ?(resources = []) ?mono_clock ?middleware ?refuses ?not_found ?cors
           r with
           run =
             (fun req ~resources:_ ~params ~body ->
-              r.run req ~resources:given ~params ~body);
+              r.run req ~resources:given ~params ~body:(under limits body));
           resources_read = [];
         })
       routes
@@ -87,6 +117,17 @@ let answer_checked app req ~body =
        invalid_arg
          (Printf.sprintf "%s read the resource %s, which Test.app was not given"
             asked name)
+   | Some
+       {
+         Refusal.raised =
+           Some (Body_repr.Unholdable { max_body; body_budget }, _);
+         _;
+       } ->
+       invalid_arg
+         (Printf.sprintf
+            "%s reads its body whole with max_body %d, above body_budget %d: \
+             no body above the budget can be held"
+            asked max_body body_budget)
    | Some _ | None -> ());
    match answered.undeclared with
    | Some (App.Code code) ->
@@ -115,10 +156,14 @@ let call ?(now = Ptime.epoch) ?(peer = "127.0.0.1") ?proxied ?proxy_header
   let body =
     let s = Option.value body ~default:"" and at = ref 0 in
     {
-      Body.whole = (fun () -> Ok s);
+      Body.whole =
+        (fun ?max_body ?body_timeout:_ ?min_body_rate:_ () ->
+          match max_body with
+          | Some max when String.length s > max -> Error Body.Too_large
+          | Some _ | None -> Ok s);
       part =
-        (fun ~max ->
-          if String.length s > max then Error Body.Too_large
+        (fun ?(max_body = max_int) ?body_timeout:_ ?min_body_rate:_ () ->
+          if String.length s > max_body then Error Body.Too_large
           else if !at >= String.length s then Ok `End
           else
             let n = Int.min part_bytes (String.length s - !at) in
@@ -166,7 +211,11 @@ let call ?(now = Ptime.epoch) ?(peer = "127.0.0.1") ?proxied ?proxy_header
           Buffer.contents b);
   }
 
-let no_body = { Body.whole = (fun () -> Ok ""); part = (fun ~max:_ -> Ok `End) }
+let no_body =
+  {
+    Body.whole = (fun ?max_body:_ ?body_timeout:_ ?min_body_rate:_ () -> Ok "");
+    part = (fun ?max_body:_ ?body_timeout:_ ?min_body_rate:_ () -> Ok `End);
+  }
 
 (* ------------------------------------------------------------------ *)
 (* A browser, keeping what the app set *)

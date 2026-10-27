@@ -231,10 +231,23 @@ to accept another site of your own, list it in `~trusted_origins` instead.
 ## Large bodies
 
 `Spindle.json` and `Spindle.body` hold the whole body, up to the server's
-`max_body`. For an upload too large to hold, read it as it arrives:
+`max_body`. A route that takes larger bodies, or smaller, says so in its
+own limits, under the server's names:
 
-- **`Spindle.body_stream ~max ()`** hands the handler a `Spindle.Body.t`,
-  limited to the route's own `max` bytes. Read it a part at a time with
+```ocaml
+Spindle.post
+  ~limits:(Spindle.Route.Limits.make ~max_body:(64 * 1024 * 1024) ())
+  Spindle.Path.(s "import")
+  ...
+```
+
+A body held whole must fit the server's `body_budget` too, so a route that
+reads one whole with a `max_body` above it is a bug: `500` and an `error`
+line naming the route, and `Spindle.Test.call` raises. For an upload too
+large to hold, read it as it arrives:
+
+- **`Spindle.body_stream ()`** hands the handler a `Spindle.Body.t`,
+  limited to the route's `max_body`. Read it a part at a time with
   `Body.read`. A failure (too large, stopped arriving) is already the
   refusal to answer with, so `let* part = Spindle.Body.read body in` goes on
   through it, as a session's does.
@@ -242,7 +255,7 @@ to accept another site of your own, list it in `~trusted_origins` instead.
   `type/subtype`, `type/*` or `type/*+suffix`, compared without case or
   parameters. Any other type is answered `415` before a byte is read, and
   the API's document lists them as the body's types.
-- **`Spindle.multipart ~max ()`** is the same body, split into the parts of
+- **`Spindle.multipart ()`** is the same body, split into the parts of
   a `multipart/form-data` upload. `Multipart.next` gives a part's head (its
   `name`, `filename` and content type), `Multipart.read` its bytes. Their
   failures are refusals too. Nothing

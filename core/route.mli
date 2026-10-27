@@ -20,6 +20,42 @@
 
 type t = Route_repr.t
 
+(** What a route lets a request make it hold or wait for, in place of the
+    server's ({!Server.Limits}), under the same names: only those a route can
+    apply, since the rest act before a route is chosen, between requests or on
+    the whole server. A limit it does not give is the server's.
+
+    {[
+    let import =
+      Spindle.post
+        ~limits:(Spindle.Route.Limits.make ~max_body:(64 * 1024 * 1024) ())
+        Path.(s "import")
+        (Returns.json receipt_json)
+        (let+ body = Spindle.body_stream () in
+         save body)
+    ]} *)
+module Limits : sig
+  type t = Limits_repr.route
+
+  val make :
+    ?max_body:int ->
+    ?body_timeout:Mtime.Span.t ->
+    ?min_body_rate:int ->
+    unit ->
+    t
+  (** Each as {!Server.run} describes it, for this route's body: [max_body] the
+      longest, [body_timeout] how long it has from its first read, and
+      [min_body_rate] the bytes a second it must keep up after. A body read
+      whole is held, so a route that reads it whole with a [max_body] above the
+      server's [body_budget] is a bug, reported where it is read: [500], an
+      [error] line naming the route, and {!Test.call} raises. One that streams
+      it holds a part at a time, and is bounded by [max_body] alone.
+
+      Raises [Invalid_argument] for one out of its range, as
+      {!Server.Limits.make} does: a negative [max_body], a [min_body_rate] below
+      one, or a [body_timeout] of zero. *)
+end
+
 type ('r, 'a, 'k) maker =
   ?refuses:Refusal.Code.t list ->
   ?summary:string ->
@@ -28,6 +64,7 @@ type ('r, 'a, 'k) maker =
   ?access_log:Logs.level ->
   ?compress:Compress.t ->
   ?cors:Cors.t ->
+  ?limits:Limits.t ->
   ('a, 'k) Path.t ->
   'r Returns.t ->
   'r Dep.t ->
@@ -48,7 +85,8 @@ type ('r, 'a, 'k) maker =
     routes that other sites call, under an app whose pages allow none, or
     {!Cors.none} for one route that allows none under an app that allows some.
     Routes that share settings share a maker:
-    [let api_get = Spindle.get ~cors:app_site]. *)
+    [let api_get = Spindle.get ~cors:app_site]. [limits] are its own in place of
+    the server's ({!Limits}). *)
 
 (** {1 What a route is}
 
@@ -100,6 +138,7 @@ type info = Route_repr.info = {
       (** its own compression policy; [None] where it has the app's *)
   cors : Cors.t option;
       (** its own CORS policy; [None] where it has the app's *)
+  limits : Limits.t;  (** its own limits *)
 }
 
 val info : t -> info

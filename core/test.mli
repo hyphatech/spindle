@@ -12,6 +12,7 @@ type response = {
 val app :
   ?resources:Dep.resource list ->
   ?mono_clock:_ Eio.Time.Mono.t ->
+  ?limits:Server.Limits.t ->
   ?middleware:Middleware.t list ->
   ?refuses:Refusal.Code.t list ->
   ?not_found:(Response.t, Refusal.t) result Dep.t ->
@@ -31,12 +32,16 @@ val app :
     none, apart from any other app's, on [mono_clock]: one that never moves
     unless given, so a test that waits out a limit gives
     [Eio_mock.Clock.Mono.make ()] and moves it with
-    [Eio_mock.Clock.Mono.set_time]. Raises [Invalid_argument] with {!App.make}'s
-    reason for a table it refuses, as [Spindle.serve] does: a route table is a
-    constant written in source, and a test that made a bad one has nothing to do
-    but stop. A test of what {!App.make} refuses calls {!App.make}. It raises
-    too for a {!Static.directory} or {!Files.directory} route, which reads a
-    directory when the server starts and a test has none: a test loads one with
+    [Eio_mock.Clock.Mono.set_time]. A body is read under [limits] as the server
+    reads one, {!Server.Limits.default} unless given, a route's own in place of
+    them: a body past [max_body] is [413], and a route that reads one whole with
+    a [max_body] above [body_budget] raises at {!call}. Raises
+    [Invalid_argument] with {!App.make}'s reason for a table it refuses, as
+    [Spindle.serve] does: a route table is a constant written in source, and a
+    test that made a bad one has nothing to do but stop. A test of what
+    {!App.make} refuses calls {!App.make}. It raises too for a
+    {!Static.directory} or {!Files.directory} route, which reads a directory
+    when the server starts and a test has none: a test loads one with
     {!Static.load} and serves it with {!Static.route}, or serves one it opened
     itself with {!Files.route}, as the message says. And it raises for
     [resources] {!App.start} refuses: one {!Dep.of_resource} did not make, or

@@ -46,17 +46,19 @@ let rec tally body bytes =
 
 let upload =
   Spindle.post
+    ~limits:(Spindle.Route.Limits.make ~max_body:1_000_000 ())
     Spindle.Path.(s "upload")
     Spindle.Returns.response
-    (let+ body = Spindle.body_stream ~max:1_000_000 () in
+    (let+ body = Spindle.body_stream () in
      tally body 0)
 
 (* Reads one part and answers, leaving the rest to the loop. *)
 let reads_a_part =
   Spindle.post
+    ~limits:(Spindle.Route.Limits.make ~max_body:1_000_000 ())
     Spindle.Path.(s "part")
     Spindle.Returns.response
-    (let+ body = Spindle.body_stream ~max:1_000_000 () in
+    (let+ body = Spindle.body_stream () in
      match Spindle.Body.read body with
      | Ok (`Data s) -> Ok (Spindle.Response.make (String.make 1 s.[0]))
      | Ok `End -> Ok (Spindle.Response.make "")
@@ -508,9 +510,10 @@ let test_a_client_gone_before_its_continue_is_a_value () =
   let seen, saw = Eio.Promise.create () in
   let reads =
     Spindle.post
+      ~limits:(Spindle.Route.Limits.make ~max_body:1024 ())
       Spindle.Path.(s "reads")
       Spindle.Returns.response
-      (let+ body = Spindle.body_stream ~max:1024 () in
+      (let+ body = Spindle.body_stream () in
        match Spindle.Body.read body with
        | Ok _ ->
            Eio.Promise.resolve saw "read";
@@ -545,7 +548,7 @@ let test_a_client_gone_before_its_continue_is_a_value () =
 let test_a_declared_length_holds_only_what_arrived () =
   let first_read, reading = Eio.Promise.create () in
   let second_answered, answered = Eio.Promise.create () in
-  with_server ~body_budget:100 [ echo ] @@ fun connect ->
+  with_server ~max_body:100 ~body_budget:100 [ echo ] @@ fun connect ->
   Eio.Fiber.both
     (fun () ->
       connect (fun send r ->
@@ -586,7 +589,7 @@ let test_bodies_share_a_budget () =
            Ok (Spindle.Response.make b))
          Spindle.body)
   in
-  with_server ~body_budget:100 [ hold; echo ] @@ fun connect ->
+  with_server ~max_body:100 ~body_budget:100 [ hold; echo ] @@ fun connect ->
   Eio.Fiber.both
     (fun () ->
       connect (fun send r ->
@@ -808,6 +811,55 @@ let test_a_body_kept_at_the_rate_is_read_whole () =
   let a = read_answer r in
   check_int "read" 200 a.status;
   check_int "whole" 2000 (String.length a.body)
+
+(* A route's limits are in place of the server's, either way: a larger
+   body than the server's, a smaller one, and longer to arrive. *)
+let test_a_route's_limits_are_its_own () =
+  let echo_under limits path =
+    Spindle.post ~limits
+      Spindle.Path.(s path)
+      Spindle.Returns.response
+      (Spindle.Dep.map (fun b -> Ok (Spindle.Response.make b)) Spindle.body)
+  in
+  let larger = echo_under (Spindle.Route.Limits.make ~max_body:64 ()) "larger"
+  and smaller = echo_under (Spindle.Route.Limits.make ~max_body:4 ()) "smaller"
+  and slower =
+    echo_under
+      (Spindle.Route.Limits.make ~body_timeout:Mtime.Span.(60 * s) ())
+      "slower"
+  in
+  with_server ~max_body:16 [ echo; larger; smaller; slower ] @@ fun connect ->
+  connect (fun send r ->
+      send (post "/larger" (String.make 40 'a'));
+      check_int "a route takes more than the server would" 200
+        (read_answer r).status);
+  connect (fun send r ->
+      send (post "/echo" (String.make 40 'a'));
+      check_int "where one with none does not" 413 (read_answer r).status);
+  connect (fun send r ->
+      send (post "/smaller" (String.make 10 'a'));
+      check_int "and takes less" 413 (read_answer r).status)
+
+(* A byte a second falls behind the server's twenty seconds, but not a
+   route's sixty. *)
+let test_a_route's_body_has_its_own_time () =
+  let slower =
+    Spindle.post
+      ~limits:(Spindle.Route.Limits.make ~body_timeout:Mtime.Span.(60 * s) ())
+      Spindle.Path.(s "slower")
+      Spindle.Returns.response
+      (Spindle.Dep.map (fun b -> Ok (Spindle.Response.make b)) Spindle.body)
+  in
+  with_mock_clock [ slower ] @@ fun connect after ->
+  connect @@ fun send r ->
+  send "POST /slower HTTP/1.1\r\nHost: t\r\nContent-Length: 40\r\n\r\n";
+  for second = 1 to 40 do
+    after Mtime.Span.(second * s);
+    send "x"
+  done;
+  let a = read_answer r in
+  check_int "read" 200 a.status;
+  check_int "whole" 40 (String.length a.body)
 
 (* ------------------------------------------------------------------ *)
 (* Responses *)
@@ -1090,9 +1142,10 @@ let test_a_read_left_waiting_shares_nothing_with_the_loop () =
   let late, read_late = Eio.Promise.create () in
   let leaves_a_reader =
     Spindle.post
+      ~limits:(Spindle.Route.Limits.make ~max_body:1_000_000 ())
       Spindle.Path.(s "leave")
       Spindle.Returns.response
-      (let+ body = Spindle.body_stream ~max:1_000_000 () in
+      (let+ body = Spindle.body_stream () in
        Eio.Fiber.fork ~sw (fun () ->
            Eio.Promise.resolve read_late
              (match Spindle.Body.read body with
@@ -1209,6 +1262,10 @@ let () =
             `Quick test_a_body_that_falls_behind_is_cut_off;
           Alcotest.test_case "a body kept at the rate is read whole" `Quick
             test_a_body_kept_at_the_rate_is_read_whole;
+          Alcotest.test_case "a route's body has its own time" `Quick
+            test_a_route's_body_has_its_own_time;
+          Alcotest.test_case "a route's limits are its own" `Quick
+            test_a_route's_limits_are_its_own;
           Alcotest.test_case "a limit passes within a tick" `Quick
             test_a_limit_passes_within_a_tick;
         ] );

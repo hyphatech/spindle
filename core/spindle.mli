@@ -297,17 +297,17 @@ val body : string Dep.t
 (** The body as it arrived: empty when there is none, {!Refusal.too_large} when
     there is too much. *)
 
-val body_stream : ?content_types:string list -> max:int -> unit -> Body.t Dep.t
-(** The body, read as it arrives ({!Body}), up to [max] bytes: for a body too
-    large to hold, which is why [max] is the route's own and not the server's
-    [max_body], and has no default -- a route that takes uploads is where their
-    size is decided.
+val body_stream : ?content_types:string list -> unit -> Body.t Dep.t
+(** The body, read as it arrives ({!Body}), up to the route's [max_body], or the
+    server's where it gave none: for a body too large to hold, whose size a
+    route that takes uploads gives in its limits ({!Route.Limits}).
 
     {[
     Spindle.post
+      ~limits:(Spindle.Route.Limits.make ~max_body:(64 * 1024 * 1024) ())
       Path.(s "upload")
       (Returns.json receipt_json)
-      (let+ body = Spindle.body_stream ~max:(64 * 1024 * 1024) () in
+      (let+ body = Spindle.body_stream () in
        save body)
     ]}
 
@@ -315,31 +315,32 @@ val body_stream : ?content_types:string list -> max:int -> unit -> Body.t Dep.t
     needs no body has refused nothing. The route's handler reads it with
     {!Body.read} and has it only while it runs. Its bytes count toward the
     server's [body_budget] a part at a time, from the read that gets a part to
-    the next, and it must keep arriving at the server's [min_body_rate] over the
-    whole body, measured only while the handler is inside a read.
-    [content_types] are the types it takes, each [type/subtype], [type/*] or
-    [type/*+suffix] -- any where none is named, and {!App.make} refuses one of
-    none of these forms -- checked against the request's [Content-Type] in the
-    first stage, as {!Dep.of_body}'s are, and listed as the request body's in
-    the API's document.
+    the next, and it must keep arriving at the route's [min_body_rate], or the
+    server's, over the whole body, measured only while the handler is inside a
+    read. [content_types] are the types it takes, each [type/subtype], [type/*]
+    or [type/*+suffix] -- any where none is named, and {!App.make} refuses one
+    of none of these forms -- checked against the request's [Content-Type] in
+    the first stage, as {!Dep.of_body}'s are, and listed as the request body's
+    in the API's document.
 
     A route reads at most one body: one that lists this beside another
     [body_stream], {!body}, {!json} or an {!Dep.of_body} is refused when the app
     is made, because a body read as it arrives cannot also be read whole. *)
 
-val multipart : ?max_head:int -> max:int -> unit -> Multipart.t Dep.t
+val multipart : ?max_head:int -> unit -> Multipart.t Dep.t
 (** The body as a [multipart/form-data]'s parts, read a part at a time as they
-    arrive ({!Multipart}), up to [max] bytes: the upload {!body_stream} is for,
-    already cut at its boundaries. It is {!body_stream} in all else -- the
-    route's own [max], the server's body rate over the whole body, the budget
-    held a part at a time, the one body its route reads -- and [max_head] bounds
-    each part's head, 16 KiB, as the server bounds a request's.
+    arrive ({!Multipart}): the upload {!body_stream} is for, already cut at its
+    boundaries. It is {!body_stream} in all else -- the route's [max_body], its
+    body rate over the whole body, the budget held a part at a time, the one
+    body its route reads -- and [max_head] bounds each part's head, 16 KiB, as
+    the server bounds a request's.
 
     {[
     Spindle.post
+      ~limits:(Spindle.Route.Limits.make ~max_body:(4 * 1024 * 1024 * 1024) ())
       Path.(s "videos")
       (Returns.json receipt_json)
-      (let+ parts = Spindle.multipart ~max:(4 * 1024 * 1024 * 1024) () in
+      (let+ parts = Spindle.multipart () in
        save_each parts)
     ]}
 

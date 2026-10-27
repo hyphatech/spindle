@@ -8,8 +8,18 @@ type error = Request_repr.body_error =
   | Over_budget
 
 type source = Body_repr.source = {
-  whole : unit -> (string, error) result;
-  part : max:int -> ([ `Data of string | `End ], error) result;
+  whole :
+    ?max_body:int ->
+    ?body_timeout:Mtime.Span.t ->
+    ?min_body_rate:int ->
+    unit ->
+    (string, error) result;
+  part :
+    ?max_body:int ->
+    ?body_timeout:Mtime.Span.t ->
+    ?min_body_rate:int ->
+    unit ->
+    ([ `Data of string | `End ], error) result;
 }
 
 (* The body's own failure is kept as the loop said it; the route is handed
@@ -27,7 +37,7 @@ let read (t : t) =
     | Some e, _ -> Error e
     | None, true -> Ok `End
     | None, false -> (
-        match t.held.source.part ~max:t.max with
+        match Body_repr.part t.held with
         | Ok `End ->
             t.ended <- true;
             Ok `End

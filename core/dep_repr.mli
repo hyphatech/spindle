@@ -218,9 +218,11 @@ val run :
   params:(string * string) list ->
   outgoing:outgoing ->
   body:Body_repr.source ->
+  limits:Limits_repr.route ->
   ('a, Refusal.t) result
-(** A route's dependency run for one request. Once it returns the body is the
-    connection loop's again, so a read left behind reads nothing. *)
+(** A route's dependency run for one request, its body read under [limits]. Once
+    it returns the body is the connection loop's again, so a read left behind
+    reads nothing. *)
 
 val of_body :
   ?refuses:Refusal.Code.t list ->

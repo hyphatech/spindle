@@ -12,7 +12,7 @@ type proxy_header = Request.proxy_header =
 (** What a server lets a client make it hold or wait for. Each is described
     under {!run} by its name; few programs change any. *)
 module Limits : sig
-  type t
+  type t = Limits_repr.server
 
   val make :
     ?max_body:int ->
@@ -134,16 +134,19 @@ val run :
 
     {b Bodies.} A body longer than [max_body] (1 MiB) is [413] -- a chunked
     body's extensions count toward it -- and a declared length past it is
-    refused before a client that asked is told to send it. The bodies being held
-    at once share [body_budget] (64 MiB), counted as their bytes arrive rather
-    than as their lengths claim, and given back when the route returns, before
-    its answer is written: one that does not fit is [503 busy] and its
-    connection closed, which is what bounds the memory a route that accepts
-    anonymous bodies can be made to hold. A body is read only if the route needs
-    it. Whatever a route left unread is read and dropped, up to [discard_limit]
-    (64 KiB), before the answer is written; a body with more left than that
-    closes the connection instead, because a new connection costs less than
-    reading what nobody wants.
+    refused before a client that asked is told to send it. A route's own
+    [max_body], [body_timeout] and [min_body_rate] are in place of these for its
+    body ({!Route.Limits}). The bodies being held at once share [body_budget]
+    (64 MiB), counted as their bytes arrive rather than as their lengths claim,
+    and given back when the route returns, before its answer is written: one
+    that does not fit is [503 busy] and its connection closed, which is what
+    bounds the memory a route that accepts anonymous bodies can be made to hold.
+    A body read whole is held, so a route that reads one with a [max_body] above
+    [body_budget] is a bug, [500] with an [error] line naming it. A body is read
+    only if the route needs it. Whatever a route left unread is read and
+    dropped, up to [discard_limit] (64 KiB), before the answer is written; a
+    body with more left than that closes the connection instead, because a new
+    connection costs less than reading what nobody wants.
 
     {b Heads.} A request head larger than [max_header_bytes] (16 KiB) is [431],
     or [414] when it is the request line that does not fit; one that takes

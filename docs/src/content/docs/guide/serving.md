@@ -89,8 +89,12 @@ A wait is an `Mtime.Span.t`, named for what it bounds:
 refused where the limits are made, since the server would wait for nothing;
 only `drain` and `linger` may be zero.
 
-A route that takes large uploads reads its body as a stream, with a limit of
-its own ([large bodies](/spindle/tutorial/bodies/#large-bodies)).
+A route has its own `max_body`, `body_timeout` and `min_body_rate` in place
+of these, by the same names, and keeps the server's where it gives none:
+`Spindle.post ~limits:(Spindle.Route.Limits.make ~max_body:(64 * 1024 *
+1024) ()) ...` ([large bodies](/spindle/tutorial/bodies/#large-bodies)). The
+rest act before a route is chosen, between requests or on the whole server,
+so they are the server's alone.
 
 Keep `max_connections` under the process's file descriptor limit
 (`ulimit -n`): every open stream and WebSocket holds a connection, and a

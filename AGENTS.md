@@ -94,8 +94,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   refuses, arguments whose description is no object, a scope with no
   `~auth`, or a question that is no form or two of one key on a tool),
   `Spindle.Query.default` and `Spindle.Header.default` (for a default its
-  description will not write), `Spindle.Server.Limits.make` (for
-  a limit out of its range), `Spindle.Server.run`, `serve_on` and
+  description will not write), `Spindle.Server.Limits.make` and
+  `Spindle.Route.Limits.make` (for a limit out of its range), `Spindle.Server.run`, `serve_on` and
   `Spindle.serve` (for fewer than one domain, or a trusted proxy that is no
   address), `Spindle.serve` and
   `Spindle.Test.app`, for a route table `App.make` refuses -- and `Test.app`
@@ -104,7 +104,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   `Spindle.Openapi.routes`, for whatever `Spindle.Openapi.make` refuses;
   and `Spindle.Test.call`, `Spindle.Test.events` and
   `Spindle.Test.websocket`, which refuse an undeclared code, a status its
-  route does not list, or a resource `Test.app` was not given -- and
+  route does not list, a resource `Test.app` was not given, or a body read
+  whole under a `max_body` the `body_budget` cannot hold -- and
   `Test.events` an event past its reader's limit -- in a test and nowhere
   else. Nothing else raises
   across a library boundary. Symptom: `rg -n -w invalid_arg -g '*.ml' http
