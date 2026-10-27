@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.14.0 (2026-10-27)
 
 - `Spindle.Access`: who may do what. A policy is a function of the caller,
   an action and the object, answering `Allow` or `Deny reason`;
