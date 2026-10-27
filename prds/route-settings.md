@@ -1,6 +1,6 @@
 # Route settings: one name at every level, and a time limit on handlers
 
-**Status: Accepted** — the whole shape; the first stage has landed.
+**Status: Accepted** — the whole shape; the first two stages have landed.
 Date: 2026-10-27
 
 ## The problem
@@ -173,8 +173,9 @@ let api_post = Spindle.post ~cors:public ~limits:api_limits
 ```
 
 `Route.info` loses `meta : Meta.t` and gains `summary : string option`,
-`doc : string option`, `tags : string list`, `access_log : Logs.level` and
-`compress : Compress.t option`, the route's own policy where it gave one.
+`doc : string option`, `tags : string list`, `access_log : Logs.level`,
+and `compress : Compress.t option` and `cors : Cors.t option`, the route's
+own policies where it gave them.
 `Route.pp`, the OpenAPI document and `spindle-mcp` read them there.
 
 ### Limits
@@ -348,7 +349,7 @@ lists, as `busy` is, and a `warn` line names the route and its limit.
 - [x] **`Meta` removed.** `?access_log` and `?compress` on the route,
       `Compress.none`, `Route.info`'s fields; the middleware guide's
       example becomes `Spindle.add_header` in the route. Breaking.
-- [ ] **A route's CORS.** `?cors` on the route, `Cors.none`, `?routes`
+- [x] **A route's CORS.** `?cors` on the route, `Cors.none`, `?routes`
       gone; the preflight and the forgery check read the matched route's
       policy. Breaking.
 - [ ] **A route's limits.** `Route.Limits` with `max_body`,

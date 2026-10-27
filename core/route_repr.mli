@@ -25,6 +25,7 @@ type info = {
   tags : string list;
   access_log : Logs.level;
   compress : Compress_repr.t option;
+  cors : Cors_repr.t option;
 }
 (** What a route says of itself, which the document and the route table read. *)
 
@@ -86,6 +87,7 @@ val make :
   ?tags:string list ->
   ?access_log:Logs.level ->
   ?compress:Compress_repr.t ->
+  ?cors:Cors_repr.t ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -99,6 +101,7 @@ val get :
   ?tags:string list ->
   ?access_log:Logs.level ->
   ?compress:Compress_repr.t ->
+  ?cors:Cors_repr.t ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -111,6 +114,7 @@ val post :
   ?tags:string list ->
   ?access_log:Logs.level ->
   ?compress:Compress_repr.t ->
+  ?cors:Cors_repr.t ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -123,6 +127,7 @@ val put :
   ?tags:string list ->
   ?access_log:Logs.level ->
   ?compress:Compress_repr.t ->
+  ?cors:Cors_repr.t ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -135,6 +140,7 @@ val patch :
   ?tags:string list ->
   ?access_log:Logs.level ->
   ?compress:Compress_repr.t ->
+  ?cors:Cors_repr.t ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -147,6 +153,7 @@ val delete :
   ?tags:string list ->
   ?access_log:Logs.level ->
   ?compress:Compress_repr.t ->
+  ?cors:Cors_repr.t ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->

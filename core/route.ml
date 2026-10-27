@@ -14,6 +14,7 @@ type ('r, 'a, 'k) maker =
   ?tags:string list ->
   ?access_log:Logs.level ->
   ?compress:Compress.t ->
+  ?cors:Cors.t ->
   ('a, 'k) Path.t ->
   'r Returns.t ->
   'r Dep.t ->

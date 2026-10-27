@@ -4,16 +4,15 @@ module Meth = Spindle_http.Meth
 
 type origins = Origins of string list | Any
 
-type t = {
+type policy = {
   origins : origins;
   credentials : bool;
   headers : string list;  (** lower-cased, as they are compared *)
   expose : string list;
   max_age_s : int;
-  routes : Route_repr.info -> bool;
 }
 
-let covers t info = t.routes info
+type t = policy option
 
 let allows t origin =
   match t.origins with

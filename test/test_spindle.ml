@@ -2296,35 +2296,30 @@ let test_urlencoded_reads_as_a_browser_writes () =
 (* CORS *)
 
 let app_origin = "https://app.example.com"
+let app_site = Spindle.Cors.origins ~credentials:true [ app_origin ]
 
-let cors_routes =
+(* The API's routes share a maker, with [api] their own policy where one is
+   given; the page has the app's. *)
+let cors_routes ?api () =
   let say words = Spindle.Dep.return (Ok words) in
   [
-    Spindle.get
+    Spindle.get ?cors:api
       Spindle.Path.(s "api" / s "item")
       Spindle.Returns.text (say "item");
-    Spindle.post
+    Spindle.post ?cors:api
       Spindle.Path.(s "api" / s "item")
       Spindle.Returns.text (say "posted");
-    Spindle.route `OPTIONS
+    Spindle.route `OPTIONS ?cors:api
       Spindle.Path.(s "api" / s "item")
       Spindle.Returns.text
       (say "the route's own OPTIONS");
     Spindle.post Spindle.Path.(s "page") Spindle.Returns.text (say "page");
   ]
 
-let api_only (i : Spindle.Route.info) =
-  String.starts_with ~prefix:"/api/" i.pattern
-
 let cross_site origin = [ ("sec-fetch-site", "cross-site"); ("origin", origin) ]
 
 let test_a_preflight_is_the_framework's () =
-  let a =
-    Spindle.Test.app
-      ~cors:
-        (Spindle.Cors.origins ~credentials:true ~routes:api_only [ app_origin ])
-      cors_routes
-  in
+  let a = Spindle.Test.app (cors_routes ~api:app_site ()) in
   let preflight ?(origin = app_origin) target =
     Spindle.Test.call a `OPTIONS target
       ~headers:
@@ -2365,8 +2360,6 @@ let test_a_preflight_is_the_framework's () =
 let test_an_answer_says_who_may_read_it () =
   let a =
     Spindle.Test.app
-      ~cors:
-        (Spindle.Cors.origins ~credentials:true ~routes:api_only [ app_origin ])
       ~middleware:
         [
           (fun h r ->
@@ -2376,7 +2369,7 @@ let test_an_answer_says_who_may_read_it () =
             else h r);
         ]
       ~refuses:[ code "nope" `Forbidden ]
-      cors_routes
+      (cors_routes ~api:app_site ())
   in
   let get headers = Spindle.Test.call a `GET "/api/item" ~headers in
   let allowed = get [ ("origin", app_origin) ] in
@@ -2399,12 +2392,7 @@ let test_an_answer_says_who_may_read_it () =
        "vary")
 
 let test_an_allowed_origin_may_write () =
-  let named =
-    Spindle.Test.app
-      ~cors:
-        (Spindle.Cors.origins ~credentials:true ~routes:api_only [ app_origin ])
-      cors_routes
-  in
+  let named = Spindle.Test.app (cors_routes ~api:app_site ()) in
   check_status "a named origin's credentialed write passes the origin check" 200
     (Spindle.Test.call named `POST "/api/item"
        ~headers:(("cookie", "session=s") :: cross_site app_origin))
@@ -2416,7 +2404,7 @@ let test_an_allowed_origin_may_write () =
   check_status "and so is one to a route the policy does not cover" 403
     (Spindle.Test.call named `POST "/page" ~headers:(cross_site app_origin))
       .status;
-  let any = Spindle.Test.app ~cors:(Spindle.Cors.any ()) cors_routes in
+  let any = Spindle.Test.app ~cors:(Spindle.Cors.any ()) (cors_routes ()) in
   let from_anywhere = cross_site "https://anyone.example" in
   let r = Spindle.Test.call any `POST "/api/item" ~headers:from_anywhere in
   check_status "under Any, a write with no cookie passes" 200 r.status;
@@ -2453,6 +2441,40 @@ let test_an_allowed_origin_may_write () =
          (("authorization", "Bearer mF_9.B5f-4.1JqM")
          :: ("sec-fetch-mode", "cors") :: from_anywhere))
       .status
+
+(* A route's policy is in place of the app's, so one route allows no site
+   under an app that allows one: no answer of it is readable, no preflight
+   for it is granted, and a write to it from that site is forgery. *)
+let test_a_route_allows_no_site_under_the_app's () =
+  let private_ =
+    Spindle.post ~cors:Spindle.Cors.none
+      Spindle.Path.(s "api" / s "private")
+      Spindle.Returns.text
+      (Spindle.Dep.return (Ok "private"))
+  in
+  let a = Spindle.Test.app ~cors:app_site (private_ :: cors_routes ()) in
+  let r =
+    Spindle.Test.call a `POST "/api/private" ~headers:[ ("origin", app_origin) ]
+  in
+  check_header "its answer is readable by no site" None
+    (Spindle.Test.header r "access-control-allow-origin");
+  check_header "and says no Vary for it" None (Spindle.Test.header r "vary");
+  check_status "a write from the app's site is forgery" 403
+    (Spindle.Test.call a `POST "/api/private" ~headers:(cross_site app_origin))
+      .status;
+  check_header "its preflight grants nothing" None
+    (Spindle.Test.header
+       (Spindle.Test.call a `OPTIONS "/api/private"
+          ~headers:
+            [
+              ("origin", app_origin); ("access-control-request-method", "POST");
+            ])
+       "access-control-allow-origin");
+  check_header "while the app's policy covers the rest" (Some app_origin)
+    (Spindle.Test.header
+       (Spindle.Test.call a `GET "/api/item"
+          ~headers:[ ("origin", app_origin) ])
+       "access-control-allow-origin")
 
 (* ---------------------------------------------------------------- *)
 (* Compression *)
@@ -10782,6 +10804,8 @@ let () =
             test_an_answer_says_who_may_read_it;
           Alcotest.test_case "an allowed origin may write" `Quick
             test_an_allowed_origin_may_write;
+          Alcotest.test_case "a route allows no site under the app's" `Quick
+            test_a_route_allows_no_site_under_the_app's;
         ] );
       ( "forms",
         [

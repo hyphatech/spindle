@@ -205,7 +205,21 @@ host and whether the browser used `https`.
       by default).
     - `~max_age_s` is how long a browser keeps a preflight's answer (600
       seconds).
-    - `~routes` narrows the policy to some routes, say your API.
+
+    A route's `~cors` is its policy in place of the app's, so an API can
+    allow a site while the pages allow none. Routes that share a policy
+    share a maker:
+
+    ```ocaml
+    let app_site =
+      Spindle.Cors.origins ~credentials:true [ "https://app.example.com" ]
+
+    let api_get = Spindle.get ~cors:app_site
+    let api_post = Spindle.post ~cors:app_site
+    ```
+
+    `~cors:Spindle.Cors.none` on a route allows no site under an app that
+    allows one.
 
     `Spindle.Cors.any ()` takes no `~credentials`: a policy letting every site
     act as the signed-in person does not compile. Under `Cors.any ()`, a write

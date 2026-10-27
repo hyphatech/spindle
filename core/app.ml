@@ -41,7 +41,7 @@ type t = {
   codes : Refusal.Code.t list;  (** what the middleware answer *)
   check_origin : bool;
   trusted_origins : string list;
-  cors : Cors_repr.t option;
+  cors : Cors_repr.t;
   compress : Compress_repr.t;
   trailing_slash : trailing_slash;
 }
@@ -512,9 +512,9 @@ let find_with_params ~rest t meth segs =
     (fun (r, _, _) -> (r, params_of_segments r segs))
     (find_route ~rest t.table meth segs)
 
-let make ?(middleware = []) ?(refuses = []) ?not_found ?cors ?(compress = None)
-    ?(check_origin = true) ?(trusted_origins = []) ?(trailing_slash = Strict)
-    routes =
+let make ?(middleware = []) ?(refuses = []) ?not_found ?(cors = None)
+    ?(compress = None) ?(check_origin = true) ?(trusted_origins = [])
+    ?(trailing_slash = Strict) routes =
   let not_found =
     Option.map (Route_repr.get Path.root Returns.response) not_found
   in
@@ -795,30 +795,51 @@ let allowed_methods infos =
   in
   if List.exists (Meth.equal `GET) ms then ms @ [ `HEAD ] else ms
 
-(* The framework answers a preflight on any path a covered route answers. *)
+(* A route's own policy is in place of the app's, one allowing no site
+   included. *)
+let cors_of t (info : Route_repr.info) =
+  match info.cors with Some c -> c | None -> t.cors
+
+(* The framework answers a preflight where a covered route answers the
+   method asked for, under that route's policy; the methods it allows are
+   those of the routes there whose policies allow the origin. A HEAD is
+   asked of the GET route that answers it. *)
 let preflight t req =
   match
-    ( t.cors,
-      Request.meth req,
+    ( Request.meth req,
       Request.header req "origin",
       Request.header req "access-control-request-method" )
   with
-  | Some cors, `OPTIONS, Some origin, Some _ -> (
-      match
-        List.filter (Cors_repr.covers cors)
+  | `OPTIONS, Some origin, Some asked -> (
+      let asked = if String.equal asked "HEAD" then "GET" else asked in
+      let covered =
+        List.filter_map
+          (fun info -> Option.map (fun c -> (info, c)) (cors_of t info))
           (routes_at_path t (Request.path req))
+      in
+      match
+        List.find_opt
+          (fun ((i : Route_repr.info), _) ->
+            String.equal (Meth.to_string i.meth) asked)
+          covered
       with
-      | [] -> None
-      | covered ->
+      | None -> None
+      | Some (_, cors) ->
+          let allowed =
+            List.filter_map
+              (fun (info, c) ->
+                if Cors_repr.allows c origin then Some info else None)
+              covered
+          in
           Some
             (Response.empty ~status:`No_content
                ~headers:
                  (Cors_repr.preflight cors ~origin
-                    ~allow:(allowed_methods covered)
+                    ~allow:(allowed_methods allowed)
                     ~requested:
                       (Request.header req "access-control-request-headers"))
                ()))
-  | (Some _ | None), _, _, _ -> None
+  | _, (Some _ | None), (Some _ | None) -> None
 
 (* The innermost handler. The origin check comes first: forgery is refused
    whatever route it names. *)
@@ -856,12 +877,14 @@ let answer_resolution t ~resources ~body ~answered_route resolution req =
          (Spindle_http.Field.all (Request.headers req) "authorization")
   in
   let cors_trusts =
-    match (t.cors, resolution, Request.header req "origin") with
-    | Some cors, Route ((r : Route_repr.t), _), Some origin
-      when Cors_repr.covers cors r.info ->
-        Cors_repr.trusts cors ~origin
-          ~ambient_credential:(ambient_credential ())
-    | (Some _ | None), _, (Some _ | None) -> false
+    match (resolution, Request.header req "origin") with
+    | Route ((r : Route_repr.t), _), Some origin -> (
+        match cors_of t r.info with
+        | Some cors ->
+            Cors_repr.trusts cors ~origin
+              ~ambient_credential:(ambient_credential ())
+        | None -> false)
+    | _, (Some _ | None) -> false
   in
   if
     t.check_origin
@@ -1114,12 +1137,12 @@ let handle (i : instance) req ~body =
   (* On every answer of a covered route, a middleware's included, so an
      allowed page can read why it was refused. *)
   let response =
-    match (t.cors, matched) with
-    | Some cors, Some info when Cors_repr.covers cors info ->
+    match Option.bind matched (cors_of t) with
+    | Some cors ->
         Response.add_headers
           (Cors_repr.answer_headers cors ~origin:(Request.header req "origin"))
           response
-    | (Some _ | None), (Some _ | None) -> response
+    | None -> response
   in
   (* Judged on what the whole chain answered. *)
   let undeclared =

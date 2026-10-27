@@ -45,6 +45,16 @@
 
 - Breaking: `App.answered`'s `access` is `access_log`.
 
+- Breaking: a route's `~cors` is its CORS policy in place of the
+  application's, and `Cors.origins` and `Cors.any` lose `~routes`:
+  `~cors:(Cors.origins ~routes:api_only [ site ])` on the application →
+  `~cors:(Cors.origins [ site ])` on each API route, through a shared maker
+  such as `let api_get = Spindle.get ~cors:site`. `Cors.none` allows no
+  site, and is the application's policy unless it gives one. A preflight is
+  answered under the policy of the route that answers the method it asks
+  for, listing the methods of the routes there whose policies allow the
+  origin.
+
 ## 0.13.0 (2026-10-26)
 
 - `Broadcast.subscribe hub ~topic tag f` runs `f` with the subscription and

@@ -27,6 +27,7 @@ type ('r, 'a, 'k) maker =
   ?tags:string list ->
   ?access_log:Logs.level ->
   ?compress:Compress.t ->
+  ?cors:Cors.t ->
   ('a, 'k) Path.t ->
   'r Returns.t ->
   'r Dep.t ->
@@ -42,7 +43,12 @@ type ('r, 'a, 'k) maker =
     gives [Debug], so its lines are there when asked for and bury nothing.
     [compress] is its compression policy in place of the app's ({!App.make}'s
     [compress]): {!Compress.none} for a route whose answers are never
-    compressed, as one that answers a secret beside what a request sent. *)
+    compressed, as one that answers a secret beside what a request sent. [cors]
+    is its CORS policy in place of the app's ({!App.make}'s [cors]): an API's
+    routes that other sites call, under an app whose pages allow none, or
+    {!Cors.none} for one route that allows none under an app that allows some.
+    Routes that share settings share a maker:
+    [let api_get = Spindle.get ~cors:app_site]. *)
 
 (** {1 What a route is}
 
@@ -92,6 +98,8 @@ type info = Route_repr.info = {
   access_log : Logs.level;  (** the level of its line in the access log *)
   compress : Compress.t option;
       (** its own compression policy; [None] where it has the app's *)
+  cors : Cors.t option;
+      (** its own CORS policy; [None] where it has the app's *)
 }
 
 val info : t -> info

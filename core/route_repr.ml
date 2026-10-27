@@ -28,6 +28,7 @@ type info = {
   tags : string list;
   access_log : Logs.level;
   compress : Compress_repr.t option;
+  cors : Cors_repr.t option;
 }
 
 type start = {
@@ -195,7 +196,7 @@ let framework_codes (i : info) =
     ]
 
 let make meth ?(refuses = []) ?summary ?doc ?(tags = [])
-    ?(access_log = Logs.Info) ?compress path returns inputs =
+    ?(access_log = Logs.Info) ?compress ?cors path returns inputs =
   let pattern = Path.pattern path in
   let segments = Path_repr.segments path in
   let table = Dep_repr.needs_table inputs in
@@ -216,6 +217,7 @@ let make meth ?(refuses = []) ?summary ?doc ?(tags = [])
         tags;
         access_log;
         compress;
+        cors;
       };
     segments;
     run =
