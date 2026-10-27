@@ -32,8 +32,8 @@
     told to stop, so a probe's next connection is refused, and every answer
     while it drains says [Connection: close].
 
-    Both write their access line at [debug] ({!Meta.access}), since something
-    asks every few seconds. *)
+    Both write their access line at [debug] ({!Route.maker}'s [access_log]),
+    since something asks every few seconds. *)
 
 type check
 

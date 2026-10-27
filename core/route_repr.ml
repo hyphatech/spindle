@@ -23,7 +23,11 @@ type info = {
   returns : Returns.shape;
   codes : Refusal.Code.t list;
   opaque : bool;
-  meta : Meta.t;
+  summary : string option;
+  doc : string option;
+  tags : string list;
+  access_log : Logs.level;
+  compress : Compress_repr.t option;
 }
 
 type start = {
@@ -190,13 +194,8 @@ let framework_codes (i : info) =
       [ Code.busy; Code.internal ];
     ]
 
-let meta_of ?summary ?doc ?tags ?(meta = Meta.empty) () =
-  let add_if key = function Some v -> Meta.add key v | None -> Fun.id in
-  meta
-  |> add_if Meta.summary summary
-  |> add_if Meta.doc doc |> add_if Meta.tags tags
-
-let make meth ?(refuses = []) ?summary ?doc ?tags ?meta path returns inputs =
+let make meth ?(refuses = []) ?summary ?doc ?(tags = [])
+    ?(access_log = Logs.Info) ?compress path returns inputs =
   let pattern = Path.pattern path in
   let segments = Path_repr.segments path in
   let table = Dep_repr.needs_table inputs in
@@ -212,7 +211,11 @@ let make meth ?(refuses = []) ?summary ?doc ?tags ?meta path returns inputs =
         returns = Returns_repr.shape returns;
         codes = refuses @ Dep.codes inputs;
         opaque = Dep.opaque inputs;
-        meta = meta_of ?summary ?doc ?tags ?meta ();
+        summary;
+        doc;
+        tags;
+        access_log;
+        compress;
       };
     segments;
     run =

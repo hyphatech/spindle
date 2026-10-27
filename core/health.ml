@@ -8,9 +8,6 @@ let not_ready =
   Refusal.Code.make "not_ready" ~status:`Service_unavailable
     ~doc:"Something the server needs to serve did not answer."
 
-(* Probed every few seconds, so its access line is at debug. *)
-let debug_access = Meta.(empty |> add access Logs.Debug)
-
 (* A raise is a bug, answered as one; only a returned error is the check
    failing. *)
 let failure_of (name, run) =
@@ -33,11 +30,12 @@ let ready_now runs =
 let routes ?(live = Path.s "livez") ?(ready = Path.s "readyz")
     ?(guard = Dep.return ()) checks =
   [
-    Route_repr.get ~summary:"Whether the process answers" ~meta:debug_access
+    (* Probed every few seconds, so its access line is at debug. *)
+    Route_repr.get ~summary:"Whether the process answers" ~access_log:Logs.Debug
       live Returns.text
       (Dep.map (fun () -> Ok "ok") guard);
-    Route_repr.get ~summary:"Whether the server can serve" ~meta:debug_access
-      ~refuses:[ not_ready ] ready Returns.text
+    Route_repr.get ~summary:"Whether the server can serve"
+      ~access_log:Logs.Debug ~refuses:[ not_ready ] ready Returns.text
       (Dep.map
          (fun ((), runs) -> ready_now runs)
          (Dep.both guard

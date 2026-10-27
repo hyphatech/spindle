@@ -76,7 +76,7 @@ val make :
     the routes it covers ({!Cors}): absent unless given, since the origin check
     and the browser's own refusal are what keep a site's answers its own.
     [compress] writes answers with gzip where a client takes it ({!Compress}):
-    off unless given.
+    {!Compress.none} unless given, and a route's own policy in its place.
 
     {b Forgery.} Every request by a method that changes something -- anything
     but [GET], [HEAD] and [OPTIONS] -- that a browser sent from another site is
@@ -155,9 +155,9 @@ type answered = {
   undeclared : undeclared option;
       (** what in the answer nobody declared: a bug, which {!Test.call} raises
           on and the server logs *)
-  access : Logs.level;
+  access_log : Logs.level;
       (** the level of its line in the access log: the matched route's
-          {!Meta.access}, and [Info] when it has none or none matched *)
+          [access_log] ({!Route.maker}), and [Info] when none matched *)
   gzip : int option;
       (** the level its body is to be written with gzip at, where the app's
           [compress] took it ({!Compress}) *)

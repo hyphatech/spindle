@@ -279,9 +279,9 @@ let route_of info returns body =
   {
     info;
     operation_id = operation_id info;
-    summary = Meta.find Meta.summary info.meta;
-    doc = Meta.find Meta.doc info.meta;
-    tags = Option.value ~default:[] (Meta.find Meta.tags info.meta);
+    summary = info.summary;
+    doc = info.doc;
+    tags = info.tags;
     parameters = parameters_of info;
     credentials = info.credentials;
     anonymous = anonymous_of info;

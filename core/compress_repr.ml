@@ -2,9 +2,8 @@
 
 module Media_type = Spindle_http.Media_type
 
-type t = { min_bytes : int; level : int; types : string list }
-
-let never : unit Meta.key = Meta.key ()
+type policy = { min_bytes : int; level : int; types : string list }
+type t = policy option
 
 (* A tag names one representation, so a gzipped one's is the tag marked. *)
 let mark = "-gzip"

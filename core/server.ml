@@ -319,7 +319,7 @@ let rec log_access ~instruments req ~duration (answered : App.answered)
         [ ("spindle.refusal.code", `String (Refusal.Code.name f.Refusal.code)) ]
     | None -> []
   in
-  L.msg answered.access (fun m ->
+  L.msg answered.access_log (fun m ->
       m "%s %s %d"
         (Meth.to_string (Request.meth req))
         (Request.path req) status ~tags:(Log.tags fields));

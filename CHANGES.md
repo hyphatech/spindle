@@ -28,6 +28,23 @@
   refusal is that tool's `isError` when it is called, where `routes` raised
   `Invalid_argument` for a tool whose dependency might refuse.
 
+- Breaking: `Spindle.Meta` is gone. A route's settings are labels with the
+  application's names and types, and what it says of itself is fields of
+  `Route.info`: `~meta:Meta.(empty |> add Meta.access Logs.Debug)` →
+  `~access_log:Logs.Debug`; `~meta:Meta.(empty |> add Compress.never ())`
+  → `~compress:Compress.none`; `Meta.find Meta.summary info.meta` →
+  `info.summary`, and `doc`, `tags` and `access_log` alike. A key of an
+  application's own, read by its middleware, is a dependency of the route
+  instead, as `Spindle.add_header` for a header one route needs.
+
+- A route's `~compress` is its compression policy in place of the
+  application's, so one route can compress under an application that does
+  not. `Compress.none` compresses nothing, and is the application's policy
+  unless it gives one. A route under `Compress.none` no longer says `Vary:
+  Accept-Encoding`, since its answers do not vary by it.
+
+- Breaking: `App.answered`'s `access` is `access_log`.
+
 ## 0.13.0 (2026-10-26)
 
 - `Broadcast.subscribe hub ~topic tag f` runs `f` with the subscription and

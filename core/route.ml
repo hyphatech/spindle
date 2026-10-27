@@ -12,7 +12,8 @@ type ('r, 'a, 'k) maker =
   ?summary:string ->
   ?doc:string ->
   ?tags:string list ->
-  ?meta:Meta.t ->
+  ?access_log:Logs.level ->
+  ?compress:Compress.t ->
   ('a, 'k) Path.t ->
   'r Returns.t ->
   'r Dep.t ->
@@ -92,7 +93,7 @@ let pp_info ppf i =
     | items -> Format.fprintf ppf "@,  %s: %s" label (String.concat ", " items)
   in
   Format.fprintf ppf "@[<v>%s %s" (Meth.to_string i.meth) i.pattern;
-  Option.iter (Format.fprintf ppf "  -- %s") (Meta.find Meta.summary i.meta);
+  Option.iter (Format.fprintf ppf "  -- %s") i.summary;
   print_line "path"
     (List.map
        (fun p ->
@@ -121,5 +122,5 @@ let pp_info ppf i =
           (fun a b ->
             String.compare (Refusal.Code.name a) (Refusal.Code.name b))
           i.codes));
-  print_line "tags" (Option.value (Meta.find Meta.tags i.meta) ~default:[]);
+  print_line "tags" i.tags;
   Format.fprintf ppf "@]"

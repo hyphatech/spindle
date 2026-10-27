@@ -25,7 +25,8 @@ type ('r, 'a, 'k) maker =
   ?summary:string ->
   ?doc:string ->
   ?tags:string list ->
-  ?meta:Meta.t ->
+  ?access_log:Logs.level ->
+  ?compress:Compress.t ->
   ('a, 'k) Path.t ->
   'r Returns.t ->
   'r Dep.t ->
@@ -35,9 +36,13 @@ type ('r, 'a, 'k) maker =
     beyond those its inputs carry ({!Dep.codes}) and the framework's own its
     document lists from what it reads ({!Refusal.Code}). A refusal with a code
     none of them declares is the route's bug: {!Test.call} raises on it, and the
-    server logs it. [summary], [doc] and [tags] are what it says of itself
-    ({!Meta.summary}, {!Meta.doc}, {!Meta.tags}), and [meta] anything else a
-    package has a key for. *)
+    server logs it. [summary], [doc] and [tags] are what it says of itself, for
+    its document. [access_log] is the level of its line in the access log,
+    [Info] unless given: a route something asks every few seconds -- a probe --
+    gives [Debug], so its lines are there when asked for and bury nothing.
+    [compress] is its compression policy in place of the app's ({!App.make}'s
+    [compress]): {!Compress.none} for a route whose answers are never
+    compressed, as one that answers a secret beside what a request sent. *)
 
 (** {1 What a route is}
 
@@ -81,29 +86,35 @@ type info = Route_repr.info = {
   opaque : bool;
       (** whether its inputs may read more than [needs] says -- a {!Dep.bind},
           an {!Dep.of_request} with no [~needs] *)
-  meta : Meta.t;
+  summary : string option;
+  doc : string option;
+  tags : string list;
+  access_log : Logs.level;  (** the level of its line in the access log *)
+  compress : Compress.t option;
+      (** its own compression policy; [None] where it has the app's *)
 }
 
 val info : t -> info
 
 val matched : Request.t -> info option
-(** The route this request matched -- what it reads, returns and refuses, and
-    every {!Meta} key it carries -- or [None] when no route answers it: a [404],
-    a [405], the framework's [OPTIONS], a trailing-slash redirect, or the
-    not-found answer. The route table chooses before any middleware runs, so a
-    middleware that is a policy for some routes reads it here:
+(** The route this request matched -- what it reads, returns and refuses -- or
+    [None] when no route answers it: a [404], a [405], the framework's
+    [OPTIONS], a trailing-slash redirect, or the not-found answer. The route
+    table chooses before any middleware runs, so a middleware that counts or
+    times requests reads the route here, by its pattern rather than its path:
 
     {[
-    let noindex : unit Meta.key = Meta.key ()
-
-    let hidden handler request =
+    let per_route handler request =
       let response = handler request in
-      match
-        Option.bind (Route.matched request) (fun r -> Meta.find noindex r.meta)
-      with
-      | Some () -> Response.with_header ("x-robots-tag", "noindex") response
-      | None -> response
-    ]} *)
+      let pattern =
+        match Route.matched request with Some r -> r.pattern | None -> "none"
+      in
+      count pattern;
+      response
+    ]}
+
+    What one route needs is not a middleware's: it is a dependency of the
+    route's, so the route lists it ({!Middleware}). *)
 
 val pp_info : Format.formatter -> info -> unit
 (** A route as a reader wants it, a few lines: its method and pattern and

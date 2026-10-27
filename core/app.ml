@@ -11,7 +11,7 @@ type undeclared = Code of Refusal.Code.t | Status of Status.t
 type answered = {
   route : string option;
   undeclared : undeclared option;
-  access : Logs.level;
+  access_log : Logs.level;
   gzip : int option;
 }
 
@@ -42,7 +42,7 @@ type t = {
   check_origin : bool;
   trusted_origins : string list;
   cors : Cors_repr.t option;
-  compress : Compress_repr.t option;
+  compress : Compress_repr.t;
   trailing_slash : trailing_slash;
 }
 
@@ -512,7 +512,7 @@ let find_with_params ~rest t meth segs =
     (fun (r, _, _) -> (r, params_of_segments r segs))
     (find_route ~rest t.table meth segs)
 
-let make ?(middleware = []) ?(refuses = []) ?not_found ?cors ?compress
+let make ?(middleware = []) ?(refuses = []) ?not_found ?cors ?(compress = None)
     ?(check_origin = true) ?(trusted_origins = []) ?(trailing_slash = Strict)
     routes =
   let not_found =
@@ -1015,14 +1015,14 @@ let revalidated c ~compressed response =
    precompressed. A 304 is the representation the client [held]; and a
    whole answer to a GET whose route left If-None-Match unasked is one where
    the client holds the compressed representation it would be. *)
-let choose_gzip t req matched ~held response =
+let choose_gzip (compress : Compress_repr.t) req ~held response =
   let module Etag = Spindle_http.Etag in
   let holds tag =
     match held with
     | Etag.Any -> true
     | Etag.Tags tags -> List.exists (Etag.weak_equal tag) tags
   in
-  match t.compress with
+  match compress with
   | None -> (response, None)
   | Some c when Status.equal (Response.status response) `Not_modified ->
       let compressed tag =
@@ -1049,12 +1049,6 @@ let choose_gzip t req matched ~held response =
             | Error _ -> false)
         | None -> false
       in
-      let route_opted_out =
-        match matched with
-        | Some (info : Route.info) ->
-            Option.is_some (Meta.find Compress_repr.never info.meta)
-        | None -> false
-      in
       let large_enough =
         match Response.content response with
         | Response.Buffered s -> String.length s >= c.min_bytes
@@ -1075,8 +1069,7 @@ let choose_gzip t req matched ~held response =
       if
         takes_gzip req
         && (not (has_header "content-encoding"))
-        && (not no_transform) && (not route_opted_out) && large_enough
-        && is_whole
+        && (not no_transform) && large_enough && is_whole
       then
         if held_already then
           (revalidated c ~compressed:(fun _ -> true) response, None)
@@ -1094,8 +1087,15 @@ let handle (i : instance) req ~body =
   let req =
     match matched with Some info -> Route_repr.mark info req | None -> req
   in
+  (* A route's own policy is in place of the app's, a route that compresses
+     nothing included. *)
+  let compress =
+    match matched with
+    | Some { Route_repr.compress = Some c; _ } -> c
+    | Some { Route_repr.compress = None; _ } | None -> t.compress
+  in
   let req, held =
-    match t.compress with
+    match compress with
     | Some _ -> unmark_preconditions req
     | None -> (req, Spindle_http.Etag.Tags [])
   in
@@ -1153,15 +1153,14 @@ let handle (i : instance) req ~body =
         else None
     | None, None -> None
   in
-  let access =
+  let access_log =
     match matched with
-    | Some (info : Route.info) ->
-        Option.value (Meta.find Meta.access info.meta) ~default:Logs.Info
+    | Some (info : Route.info) -> info.access_log
     | None -> Logs.Info
   in
-  let response, gzip = choose_gzip t req matched ~held response in
+  let response, gzip = choose_gzip compress req ~held response in
   log_refusal req
-    (response, { route = !answered_route; undeclared; access; gzip })
+    (response, { route = !answered_route; undeclared; access_log; gzip })
 
 (* What a route reads when it starts is read first, in listed order, and
    supplied beside the program's own, so the check that follows finds every

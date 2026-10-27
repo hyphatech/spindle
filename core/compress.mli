@@ -1,6 +1,7 @@
 (** Answers compressed with gzip, streams included: one policy for the app
-    ({!App.make}'s [compress]), off unless given, because it is CPU the process
-    pays and the proxy in front often compresses already.
+    ({!App.make}'s [compress]), {!none} unless given, because it is CPU the
+    process pays and the proxy in front often compresses already, and a route's
+    own in place of it where the route gives one ({!Route.maker}'s [compress]).
 
     {[
     Spindle.serve env ~compress:Spindle.Compress.default routes
@@ -10,8 +11,8 @@
     [min_bytes], or a stream of one whose length is not known, to a client whose
     [Accept-Encoding] takes gzip, where the answer names no [Content-Encoding]
     of its own, says no [Cache-Control: no-transform], is no part of a range,
-    and is on a route that did not say {!never}. A [HEAD] gets the length its
-    [GET] would. Every answer of a listed type says [Vary: Accept-Encoding],
+    under a policy that is not {!none}. A [HEAD] gets the length its [GET]
+    would. Every answer of a listed type says [Vary: Accept-Encoding],
     compressed or not, and an entity tag on a compressed one carries the coding
     inside its quotes -- ["v1-gzip"] for ["v1"] -- so the two representations
     are never taken for one.
@@ -32,8 +33,9 @@
     precompressed sibling is served instead ({!Static}, {!Files}).
 
     {b A route that answers a secret beside what a request sent} -- where the
-    length of a compressed answer lets an observer guess the secret -- says so:
-    [~meta:Meta.(empty |> add Compress.never ())]. *)
+    length of a compressed answer lets an observer guess the secret -- has a
+    policy of its own: [Spindle.get ~compress:Compress.none ...]. Its answers do
+    not vary by [Accept-Encoding], so they say no [Vary] for it. *)
 
 type t = Compress_repr.t
 
@@ -48,5 +50,6 @@ val make : ?min_bytes:int -> ?level:int -> ?types:string list -> unit -> t
 val default : t
 (** [make ()]: what an application that compresses usually wants. *)
 
-val never : unit Meta.key
-(** A route whose answers are never compressed. *)
+val none : t
+(** Compresses nothing: an app's policy unless it gives one, and a route's way
+    to have its answers never compressed under an app's that compresses. *)

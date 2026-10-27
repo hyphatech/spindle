@@ -20,7 +20,11 @@ type info = {
   returns : Returns.shape;
   codes : Refusal.Code.t list;
   opaque : bool;
-  meta : Meta.t;
+  summary : string option;
+  doc : string option;
+  tags : string list;
+  access_log : Logs.level;
+  compress : Compress_repr.t option;
 }
 (** What a route says of itself, which the document and the route table read. *)
 
@@ -80,7 +84,8 @@ val make :
   ?summary:string ->
   ?doc:string ->
   ?tags:string list ->
-  ?meta:Meta.t ->
+  ?access_log:Logs.level ->
+  ?compress:Compress_repr.t ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -92,7 +97,8 @@ val get :
   ?summary:string ->
   ?doc:string ->
   ?tags:string list ->
-  ?meta:Meta.t ->
+  ?access_log:Logs.level ->
+  ?compress:Compress_repr.t ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -103,7 +109,8 @@ val post :
   ?summary:string ->
   ?doc:string ->
   ?tags:string list ->
-  ?meta:Meta.t ->
+  ?access_log:Logs.level ->
+  ?compress:Compress_repr.t ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -114,7 +121,8 @@ val put :
   ?summary:string ->
   ?doc:string ->
   ?tags:string list ->
-  ?meta:Meta.t ->
+  ?access_log:Logs.level ->
+  ?compress:Compress_repr.t ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -125,7 +133,8 @@ val patch :
   ?summary:string ->
   ?doc:string ->
   ?tags:string list ->
-  ?meta:Meta.t ->
+  ?access_log:Logs.level ->
+  ?compress:Compress_repr.t ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->
@@ -136,7 +145,8 @@ val delete :
   ?summary:string ->
   ?doc:string ->
   ?tags:string list ->
-  ?meta:Meta.t ->
+  ?access_log:Logs.level ->
+  ?compress:Compress_repr.t ->
   ('a, 'kind) Path.t ->
   'r Returns_repr.t ->
   'r Dep_repr.t ->

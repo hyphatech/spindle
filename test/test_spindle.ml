@@ -439,11 +439,9 @@ let test_a_middleware_that_raises_is_500 () =
     "the exception is not in the body" false
     (contains ~sub:"hunter2" r.body)
 
-(* A middleware can ask the request which route it matched, so a policy for
-   some routes reads the route -- here, a key only the limited route carries
-   -- and it hears when no route answers at all. *)
+(* A middleware can ask the request which route it matched -- its pattern
+   and what it says of itself -- and it hears when no route answers at all. *)
 let test_middleware_can_ask_the_route () =
-  let limited : int Spindle.Meta.key = Spindle.Meta.key () in
   let told = ref [] in
   let tell handler req =
     let response = handler req in
@@ -451,16 +449,15 @@ let test_middleware_can_ask_the_route () =
       match Spindle.Route.matched req with
       | None -> "none"
       | Some (i : Spindle.Route.info) -> (
-          match Spindle.Meta.find limited i.meta with
-          | Some n -> Printf.sprintf "%s, limited to %d" i.pattern n
+          match i.summary with
+          | Some summary -> Printf.sprintf "%s, %s" i.pattern summary
           | None -> i.pattern)
     in
     told := what :: !told;
     response
   in
   let limit =
-    Spindle.get
-      ~meta:Spindle.Meta.(empty |> add limited 5)
+    Spindle.get ~summary:"Limited"
       Spindle.Path.(s "limited")
       Spindle.Returns.response
       (Spindle.Dep.return (Ok (Spindle.Response.empty ())))
@@ -476,7 +473,8 @@ let test_middleware_can_ask_the_route () =
     match !told with [ what ] -> what | _ -> "told more than once"
   in
   check_string "a route" "/hello/{name}" (told_for `GET "/hello/kim");
-  check_string "its key" "/limited, limited to 5" (told_for `GET "/limited");
+  check_string "what it says of itself" "/limited, Limited"
+    (told_for `GET "/limited");
   check_string "a 405" "none" (told_for `POST "/limited");
   check_string "a redirect" "none" (told_for `GET "/limited/");
   check_string "the not-found answer" "none" (told_for `GET "/about")
@@ -2465,8 +2463,8 @@ let large =
   String.concat "," (List.init 300 (fun i -> Printf.sprintf {|{"n":%d}|} i))
 
 let compressed_routes =
-  let say ?meta ?(headers = []) path content_type body =
-    Spindle.get ?meta
+  let say ?compress ?(headers = []) path content_type body =
+    Spindle.get ?compress
       Spindle.Path.(s path)
       Spindle.Returns.response
       (Spindle.Dep.return
@@ -2479,7 +2477,7 @@ let compressed_routes =
     say "small" "application/json" "[1]";
     say "image" "image/png" (String.make 4096 'x');
     say "secret" "application/json" (String.make 4096 'x')
-      ~meta:Spindle.Meta.(empty |> add Spindle.Compress.never ());
+      ~compress:Spindle.Compress.none;
     say "kept" "application/json" (String.make 4096 'x')
       ~headers:[ ("cache-control", "no-transform") ];
   ]
@@ -2559,17 +2557,42 @@ let test_an_answer_is_compressed_where_it_may_be () =
     [
       ("/small", "nor a body too small to be worth it");
       ("/image", "nor a type that is not listed");
-      ("/secret", "nor a route that said never");
+      ("/secret", "nor a route whose own policy compresses nothing");
       ("/kept", "nor an answer that says no-transform");
     ];
   check_header "a type not listed does not vary" None
     (Spindle.Test.header (get "/image") "vary");
+  check_header "nor does a route that compresses nothing" None
+    (Spindle.Test.header (get "/secret") "vary");
   let off = Spindle.Test.app compressed_routes in
   check_header "and nothing is compressed unless the app says" None
     (Spindle.Test.header
        (Spindle.Test.call off `GET "/large"
           ~headers:[ ("accept-encoding", "gzip") ])
        "content-encoding")
+
+(* A route's policy is in place of the app's, so a route compresses where
+   the app does not, as one compresses nothing where the app does. *)
+let test_a_route_has_its_own_compression () =
+  let own =
+    Spindle.get ~compress:Spindle.Compress.default
+      Spindle.Path.(s "own")
+      Spindle.Returns.response
+      (Spindle.Dep.return
+         (Ok
+            (Spindle.Response.make ~content_type:"application/json"
+               ("[" ^ large ^ "]"))))
+  in
+  let a = Spindle.Test.app (own :: compressed_routes) in
+  let get path =
+    Spindle.Test.call a `GET path ~headers:[ ("accept-encoding", "gzip") ]
+  in
+  let r = get "/own" in
+  check_header "the route's own policy compresses" (Some "gzip")
+    (Spindle.Test.header r "content-encoding");
+  check_string "and it reads back as it was" ("[" ^ large ^ "]") (gunzip r.body);
+  check_header "while the app's compresses nothing" None
+    (Spindle.Test.header (get "/large") "content-encoding")
 
 (* A tag names one representation, so a compressed answer's is marked. A
    client that sends the marked tag back holds that representation, and is
@@ -9362,9 +9385,6 @@ let test_a_stream_sends_its_declared_events () =
 (* ------------------------------------------------------------------ *)
 (* What an app says about itself *)
 
-(* A package's own key, beside the framework's. *)
-let rate_limit : int Spindle.Meta.key = Spindle.Meta.key ()
-
 (* Everything a route reads, answers and may refuse with, and what it says
    of itself, listed without a request -- enough to document it. *)
 (* A client branches on a code's name, so two routes may share one only if
@@ -9620,9 +9640,7 @@ let test_an_app_lists_its_routes () =
       |> Spindle.Dep.join ~refuses:[ signed_out ])
   in
   let item =
-    Spindle.post ~summary:"Add an item" ~tags:[ "orders" ]
-      ~meta:Spindle.Meta.(empty |> add rate_limit 10)
-      ~refuses:[ gone ]
+    Spindle.post ~summary:"Add an item" ~tags:[ "orders" ] ~refuses:[ gone ]
       Spindle.Path.(s "orders" / order_id / s "items")
       (Spindle.Returns.json ~status:`Created greeting_json)
       (let+ _ = Spindle.param order_id
@@ -9661,11 +9679,8 @@ let test_an_app_lists_its_routes () =
         "the credential it takes" [ "session" ]
         (List.map (fun (c : Spindle.Dep.credential) -> c.scheme) i.credentials);
       Alcotest.(check (option string))
-        "what it says of itself" (Some "Add an item")
-        (Spindle.Meta.find Spindle.Meta.summary i.meta);
-      Alcotest.(check (option int))
-        "and a package's own" (Some 10)
-        (Spindle.Meta.find rate_limit i.meta);
+        "what it says of itself" (Some "Add an item") i.summary;
+      Alcotest.(check (list string)) "and its tags" [ "orders" ] i.tags;
       Alcotest.(check bool) "says all it reads" false i.opaque;
       Alcotest.(check bool) "unlike one that reads the request" true o.opaque;
       let printed = Format.asprintf "%a" Spindle.Route.pp_info i in
@@ -9775,8 +9790,14 @@ let test_a_check_reads_a_resource () =
     (Spindle.Test.call (Spindle.Test.app routes) `GET "/livez").status
 
 (* Something asks every few seconds, so a probe's access line is there at
-   debug and buries nothing at info. *)
+   debug and buries nothing at info, as any route's that says so. *)
 let test_a_probe_is_logged_at_debug () =
+  let quiet =
+    Spindle.get ~access_log:Logs.Debug
+      Spindle.Path.(s "quiet")
+      Spindle.Returns.text
+      (Spindle.Dep.return (Ok ""))
+  in
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let net = Eio.Stdenv.net env and mono_clock = Eio.Stdenv.mono_clock env in
@@ -9790,12 +9811,13 @@ let test_a_probe_is_logged_at_debug () =
     serve ~sw ~net
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains:1 ~clock:mono_clock
-      (Spindle.Test.app (hello :: Spindle.Health.routes []))
+      (Spindle.Test.app (hello :: quiet :: Spindle.Health.routes []))
   in
   let call path = ignore (call_on ~net ~clock:mono_clock ~port `GET path) in
   let logged sub = List.exists (contains ~sub) !lines in
   at Logs.Info;
   call "/livez";
+  call "/quiet";
   call "/hello/kim";
   Alcotest.(check bool)
     "a request is at info" true
@@ -9803,6 +9825,9 @@ let test_a_probe_is_logged_at_debug () =
   Alcotest.(check bool)
     "a probe is not" false
     (logged {|"message":"GET /livez 200"|});
+  Alcotest.(check bool)
+    "nor a route that says so" false
+    (logged {|"message":"GET /quiet 200"|});
   at Logs.Debug;
   call "/readyz";
   Alcotest.(check bool)
@@ -10736,6 +10761,8 @@ let () =
             test_a_compression_that_cannot_be_is_refused;
           Alcotest.test_case "an answer is compressed where it may be" `Quick
             test_an_answer_is_compressed_where_it_may_be;
+          Alcotest.test_case "a route has its own compression" `Quick
+            test_a_route_has_its_own_compression;
           Alcotest.test_case "a compressed answer revalidates" `Quick
             test_a_compressed_answer_revalidates;
           Alcotest.test_case "a compressed static file revalidates" `Quick

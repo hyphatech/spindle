@@ -368,12 +368,10 @@ let exposition t =
   List.iter (add_entry b) entries;
   Buffer.contents b
 
-(* Scraped every few seconds, so its access line is at debug. *)
-let debug_access = Meta.(empty |> add access Logs.Debug)
-
 let routes ?(at = Path.s "metrics") ?(guard = Dep.return ()) t =
   [
+    (* Scraped every few seconds, so its access line is at debug. *)
     Route_repr.get ~summary:"What the server counts, as Prometheus reads it"
-      ~meta:debug_access at Returns.text
+      ~access_log:Logs.Debug at Returns.text
       (Dep.map (fun () -> Ok (exposition t)) guard);
   ]

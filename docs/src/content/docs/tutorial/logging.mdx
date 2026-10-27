@@ -88,7 +88,7 @@ place of stderr: a test's way to keep them.
 - **Levels**: `error` is a bug, `warn` handled but degraded, `info` what
   happened (the access log), `debug` how. A route polled every few seconds
   can log its access line at `Debug`, as the health checks do:
-  `Spindle.get ~meta:Spindle.Meta.(empty |> add access Logs.Debug) …`.
+  `Spindle.get ~access_log:Logs.Debug …`.
 - **No secrets.** Spindle never logs a header value, a body, a query string
   or a statement's parameters, at any level.
 

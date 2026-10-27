@@ -64,12 +64,17 @@ decodable on arrival.
 `.br`, `.zst` or `.gz` file your build wrote beside the original instead,
 when the client accepts that coding.
 
-## Turning it off for a route
+## A route's own policy
 
-A route that puts a secret in its answer beside text the request sent -- a
-CSRF token next to a search term, say -- should not be compressed, because
-the compressed length can leak the secret:
+A route's `~compress` is its policy in place of the app's, under the same
+name and type. A route that puts a secret in its answer beside text the
+request sent -- a CSRF token next to a search term, say -- should not be
+compressed, because the compressed length can leak the secret:
 
 ```ocaml
-Spindle.get ~meta:Spindle.Meta.(empty |> add Spindle.Compress.never ()) ...
+Spindle.get ~compress:Spindle.Compress.none ...
 ```
+
+Its answers then never vary by `Accept-Encoding`, so they carry no `Vary`
+for it. The other way round, one route of an app that compresses nothing
+can compress its own answers with `~compress:Spindle.Compress.default`.

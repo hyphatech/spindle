@@ -82,7 +82,6 @@ module Response = Response
 module Event = Event
 module Websocket = Spindle_http.Websocket
 module Returns = Returns
-module Meta = Meta
 module Dep = Dep
 module Bearer = Bearer
 module Access = Access

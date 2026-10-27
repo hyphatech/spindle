@@ -65,8 +65,7 @@ what it means.*
 What OCaml cannot read from the types, you write on the route:
 
 - `~summary`, `~doc` and `~tags` on every route builder (`Spindle.get`,
-  `Spindle.post`, ...), and `~meta` for keys of your own
-  (`Spindle.Meta.key`).
+  `Spindle.post`, ...).
 - `~examples` on an answer (`Returns.json ~examples`) or a body
   (`Spindle.json ~examples`), checked against the type.
 - `Dep.credential ~scheme` marks a cookie or header as proof of who is
