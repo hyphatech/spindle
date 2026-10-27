@@ -31,15 +31,14 @@ let clock : Eio.Time.Mono.ty Eio.Resource.t Spindle.Dep.t =
   Spindle.Dep.of_resource "clock"
 
 let routes =
-  List.map Spindle.Access.public
-    [
-      Spindle.get
-        Spindle.Path.(s "count")
-        (Spindle.Returns.events Spindle.Event.[ declare count ])
-        (let+ mono_clock = clock
-         and+ last = Spindle.Header.optional "last-event-id" Wiretype.int in
-         Ok (count_from ~mono_clock (Option.fold ~none:1 ~some:succ last)));
-    ]
+  [
+    Spindle.get
+      Spindle.Path.(s "count")
+      (Spindle.Returns.events Spindle.Event.[ declare count ])
+      (let+ mono_clock = clock
+       and+ last = Spindle.Header.optional "last-event-id" Wiretype.int in
+       Ok (count_from ~mono_clock (Option.fold ~none:1 ~some:succ last)));
+  ]
 
 let () =
   Spindle.Log.setup ();

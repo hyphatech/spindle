@@ -17,7 +17,6 @@ let greeting name =
   </html>
 
 let routes =
-  List.map Spindle.Access.public
   [
     Spindle.get
       Spindle.Path.(s "hello" / name)

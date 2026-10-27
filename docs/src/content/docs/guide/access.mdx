@@ -58,33 +58,19 @@ body, or in an MCP tool's arguments -- rather than loaded by a dependency.
 Each check declares what it refuses with, so the route's
 [document](/spindle/tutorial/openapi/) lists it.
 
-## Every route says who may call it
+## Who may call a route
 
-A server whose routes include one that reads no caller and no check does
-not start: `Spindle.serve` stops, naming the route, and `Test.app` raises.
-A check forgotten is the commonest break of access control, and the one
-nobody sees; here it is a route that does not start. A route anyone may
-call says so:
+Who may call a route is what it reads -- the dependencies are the whole of
+it:
 
-```ocaml
-Spindle.serve env (List.map Access.public pages @ notes)
-```
-
-| A route | Declares |
+| A route reads | Who may call it |
 |---|---|
-| reads `Access.caller`, `can`, `require` or `check` | whoever that lets through |
-| reads `Bearer.claims` or `Bearer.scope` | whoever holds the token |
-| `Access.public route` | anyone |
-| none of these | nothing: refused at start |
+| `Access.can`, `require` or `check` | whoever the policy allows |
+| `Access.caller`, `Bearer.claims` or `Bearer.scope` | whoever is signed in |
+| none of these | anyone |
 
-One made public that reads a caller as well is refused too, being two
-answers to who may call it. The routes Spindle makes -- the
-[document and its reference](/spindle/tutorial/openapi/), the
-[probes](/spindle/guide/health/), [metrics](/spindle/guide/metrics/),
-[static files](/spindle/tutorial/static-files/), the resource's
-[metadata](/spindle/guide/oauth/) and an [MCP endpoint](/spindle/guide/mcp/)
-without `~auth` -- are public, unless a `~guard` you gave them reads a
-check, which then says who may call them.
+A page anyone may read is written as any route is, and an application with
+no access control writes nothing of it.
 
 The [document](/spindle/tutorial/openapi/) says it for each operation, as
 `x-spindle-access`:
@@ -97,7 +83,22 @@ The [document](/spindle/tutorial/openapi/) says it for each operation, as
 ```
 
 one entry a check, `[]` for a route that reads only the caller, and none for
-a public one.
+one anyone may call.
+
+## A check forgotten
+
+A route meant to be guarded whose check was forgotten is anyone's -- the
+commonest break of access control, and the one nobody sees.
+`Access.unguarded` lists the routes that read no check, so a test says
+which are meant to be anyone's, and fails, naming it, when another joins
+them:
+
+```ocaml
+let test_only_these_are_public () =
+  Alcotest.(check (list string))
+    "public routes" [ "GET /"; "GET /about" ]
+    (Spindle.Access.unguarded routes)
+```
 
 ## Lists
 

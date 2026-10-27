@@ -93,4 +93,11 @@ let check p =
     (fun c who ->
       Ok (fun action thing -> judge c p ~refusal:refused who action thing))
 
-let public = Route_repr.public
+let unguarded routes =
+  List.filter_map
+    (fun (r : Route_repr.t) ->
+      match r.info.access with
+      | [] ->
+          Some (Spindle_http.Meth.to_string r.info.meth ^ " " ^ r.info.pattern)
+      | _ :: _ -> None)
+    routes

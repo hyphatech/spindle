@@ -11,13 +11,12 @@ let count seen set_cookie =
   Ok (Printf.sprintf "Visit number %d." n)
 
 let routes =
-  List.map Spindle.Access.public
-    [
-      Spindle.get Spindle.Path.root Spindle.Returns.text
-        (let+ seen = Spindle.Cookie.optional visits
-         and+ set_cookie = Spindle.set_cookie in
-         count seen set_cookie);
-    ]
+  [
+    Spindle.get Spindle.Path.root Spindle.Returns.text
+      (let+ seen = Spindle.Cookie.optional visits
+       and+ set_cookie = Spindle.set_cookie in
+       count seen set_cookie);
+  ]
 
 let () =
   Spindle.Log.setup ();

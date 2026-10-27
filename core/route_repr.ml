@@ -238,17 +238,6 @@ let make meth ?(refuses = []) ?summary ?doc ?tags ?meta path returns inputs =
     start = None;
   }
 
-let public r =
-  match r.info.access with
-  | [ Dep_repr.Public ] -> r
-  | access ->
-      { r with info = { r.info with access = Dep_repr.Public :: access } }
-
-(* The framework's own routes are as public as what they serve, unless a guard
-   they were given says who may call them. *)
-let public_unless_declared r =
-  match r.info.access with [] -> public r | _ :: _ -> r
-
 let get ?refuses = make `GET ?refuses
 let post ?refuses = make `POST ?refuses
 let put ?refuses = make `PUT ?refuses

@@ -123,10 +123,7 @@ type credential = {
   reads : need list;
 }
 
-type access =
-  | Public
-  | Caller
-  | Checked of { policy : string; action : string option }
+type access = Caller | Checked of { policy : string; action : string option }
 
 type listing = {
   owner : int;
@@ -239,11 +236,11 @@ let merge_credentials creds =
 
 let same_access a b =
   match (a, b) with
-  | Public, Public | Caller, Caller -> true
+  | Caller, Caller -> true
   | Checked a, Checked b ->
       String.equal a.policy b.policy
       && Option.equal String.equal a.action b.action
-  | (Public | Caller | Checked _), _ -> false
+  | (Caller | Checked _), _ -> false
 
 (* Each once, in the order first read: two checks of one action are one. As
    for [codes], every listing's. *)

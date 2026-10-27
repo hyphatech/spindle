@@ -56,7 +56,7 @@ let tools = [ get_forecast; echo ]
 let temperatures city = List.assoc_opt city [ ("Paris", 18) ]
 
 let app ?(tools = tools) () =
-  Public.app
+  Spindle.Test.app
     ~resources:[ Spindle.Dep.resource weather temperatures ]
     (Mcp.routes ~name:"weather" ~version:"1.0.0" tools)
 
@@ -356,7 +356,7 @@ let test_an_unknown_tool_is_invalid_params () =
 (* What every tool reads is the route's: a resource a tool reads is checked
    as the server starts. *)
 let test_a_tools_resource_is_checked_at_start () =
-  match Public.make (Mcp.routes ~name:"w" ~version:"1" tools) with
+  match Spindle.App.make (Mcp.routes ~name:"w" ~version:"1" tools) with
   | Error e -> Alcotest.fail e
   | Ok a ->
       check_bool "refused without it" true
@@ -441,7 +441,7 @@ let authed_routes =
   Mcp.routes ~auth ~name:"weather" ~version:"1.0.0" [ scoped; echo ]
 
 let authed () =
-  Public.app
+  Spindle.Test.app
     ~resources:
       [
         Spindle.Dep.resource weather temperatures;
@@ -521,7 +521,7 @@ let slow =
        Ok q.city)
 
 let slow_app () =
-  Public.app
+  Spindle.Test.app
     ~resources:[ Spindle.Dep.resource weather temperatures ]
     (Mcp.routes ~name:"weather" ~version:"1.0.0" [ slow ])
 
@@ -635,7 +635,7 @@ let delete =
        | _ -> Ok "Nothing was deleted.")
 
 let asking_app () =
-  Public.app (Mcp.routes ~name:"files" ~version:"1" [ delete ])
+  Spindle.Test.app (Mcp.routes ~name:"files" ~version:"1" [ delete ])
 
 let forms =
   Value.Object [ ("elicitation", Value.Object [ ("form", Value.Object []) ]) ]
@@ -774,7 +774,7 @@ let over_a_socket ?elicit
         ~read_clock:(fun () -> Ptime.epoch)
         ~limits:(Spindle.Server.Limits.make ~drain:Mtime.Span.(100 * ms) ())
         [ socket ]
-        (Public.app
+        (Spindle.Test.app
            ~resources:[ Spindle.Dep.resource weather temperatures ]
            routes);
       `Stop_daemon);

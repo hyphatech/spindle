@@ -29,33 +29,32 @@ let delete_todo _ = Ok ()
 let id = Spindle.Path.int "id"
 
 let routes =
-  List.map Spindle.Access.public
-    [
-      Spindle.get
-        Spindle.Path.(s "todos")
-        (Spindle.Returns.json (Wiretype.list todo_json))
-        (let+ () = Spindle.Dep.return () in
-         list_todos ());
-      Spindle.get
-        Spindle.Path.(s "todos" / id)
-        (Spindle.Returns.json todo_json)
-        (let+ id = Spindle.param id in
-         get_todo id);
-      Spindle.post
-        Spindle.Path.(s "todos")
-        (Spindle.Returns.json ~status:`Created todo_json)
-        (let+ draft = Spindle.json draft_json in
-         add_todo draft);
-      Spindle.put
-        Spindle.Path.(s "todos" / id)
-        (Spindle.Returns.json todo_json)
-        (let+ id = Spindle.param id and+ draft = Spindle.json draft_json in
-         replace_todo id draft);
-      Spindle.delete
-        Spindle.Path.(s "todos" / id)
-        (Spindle.Returns.empty ())
-        (let+ id = Spindle.param id in
-         delete_todo id);
-    ]
+  [
+    Spindle.get
+      Spindle.Path.(s "todos")
+      (Spindle.Returns.json (Wiretype.list todo_json))
+      (let+ () = Spindle.Dep.return () in
+       list_todos ());
+    Spindle.get
+      Spindle.Path.(s "todos" / id)
+      (Spindle.Returns.json todo_json)
+      (let+ id = Spindle.param id in
+       get_todo id);
+    Spindle.post
+      Spindle.Path.(s "todos")
+      (Spindle.Returns.json ~status:`Created todo_json)
+      (let+ draft = Spindle.json draft_json in
+       add_todo draft);
+    Spindle.put
+      Spindle.Path.(s "todos" / id)
+      (Spindle.Returns.json todo_json)
+      (let+ id = Spindle.param id and+ draft = Spindle.json draft_json in
+       replace_todo id draft);
+    Spindle.delete
+      Spindle.Path.(s "todos" / id)
+      (Spindle.Returns.empty ())
+      (let+ id = Spindle.param id in
+       delete_todo id);
+  ]
 
 let () = Eio_main.run @@ fun env -> Spindle.serve env routes

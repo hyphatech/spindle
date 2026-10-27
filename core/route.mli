@@ -54,9 +54,9 @@ type param = Route_repr.param = {
 }
 (** A parameter of the route's path. *)
 
-(** Who may call a route, as it declares: {!Access}'s. *)
+(** Who may call a route, as what it reads declares: {!Access}'s. A route that
+    reads neither is anyone's. *)
 type access = Dep_repr.access =
-  | Public  (** anyone: {!Access.public} *)
   | Caller  (** whoever is calling: a caller read ({!Access.caller}, a check) *)
   | Checked of { policy : string; action : string option }
       (** a policy's check of an action, by their names: [None] for
@@ -72,8 +72,8 @@ type info = Route_repr.info = {
           required where either is *)
   credentials : Dep.credential list;
   access : access list;
-      (** who may call it, each once: a caller and every check it reads, or
-          [Public] *)
+      (** who may call it, each once: a caller and every check it reads; none
+          for a route anyone may call *)
   returns : Returns.shape;
   codes : Refusal.Code.t list;
       (** its own and its inputs'; the framework's its document lists from what

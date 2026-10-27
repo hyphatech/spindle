@@ -335,8 +335,6 @@ let metadata (t : t) routes =
       bearer_methods_supported = [ "header" ];
     }
   in
-  (* RFC 9728 §3: read by a client before it holds a token. *)
-  Route_repr.public
-    (Route_repr.get t.metadata_path
-       (Returns.json document_json)
-       (Dep.return (Ok document)))
+  Route_repr.get t.metadata_path
+    (Returns.json document_json)
+    (Dep.return (Ok document))

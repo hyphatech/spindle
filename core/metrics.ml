@@ -372,9 +372,8 @@ let exposition t =
 let debug_access = Meta.(empty |> add access Logs.Debug)
 
 let routes ?(at = Path.s "metrics") ?(guard = Dep.return ()) t =
-  List.map Route_repr.public_unless_declared
-    [
-      Route_repr.get ~summary:"What the server counts, as Prometheus reads it"
-        ~meta:debug_access at Returns.text
-        (Dep.map (fun () -> Ok (exposition t)) guard);
-    ]
+  [
+    Route_repr.get ~summary:"What the server counts, as Prometheus reads it"
+      ~meta:debug_access at Returns.text
+      (Dep.map (fun () -> Ok (exposition t)) guard);
+  ]

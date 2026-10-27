@@ -19,19 +19,18 @@ let user_text id = Ok (Printf.sprintf "User %Ld" id)
 let user_answer id name = Ok { user_id = Int64.to_string id; name }
 
 let routes =
-  List.map Spindle.Access.public
-    [
-      Spindle.get
-        Spindle.Path.(s "users" / user_id)
-        Spindle.Returns.text
-        (let+ id = Spindle.param user_id in
-         user_text id);
-      Spindle.get
-        Spindle.Path.(s "api" / s "users" / user_id / name)
-        (Spindle.Returns.json user_json)
-        (let+ id = Spindle.param user_id and+ name = Spindle.param name in
-         user_answer id name);
-    ]
+  [
+    Spindle.get
+      Spindle.Path.(s "users" / user_id)
+      Spindle.Returns.text
+      (let+ id = Spindle.param user_id in
+       user_text id);
+    Spindle.get
+      Spindle.Path.(s "api" / s "users" / user_id / name)
+      (Spindle.Returns.json user_json)
+      (let+ id = Spindle.param user_id and+ name = Spindle.param name in
+       user_answer id name);
+  ]
 
 let () =
   Spindle.Log.setup ();

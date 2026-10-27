@@ -130,8 +130,8 @@ the `Authorization` header:
   [document](/spindle/tutorial/openapi/) that this input proves who is
   asking, so it lists the scheme and which routes need it.
 - The dependency hands over the token. Whose it is is the *caller*, which
-  `Access.principal` reads from it, and every route says who may call it:
-  the caller, a check of a policy, or anyone
+  `Access.principal` reads from it, and a route that reads the caller, or
+  a check of a policy, is called by whoever that lets through
   ([Access control](/spindle/guide/access/)).
 
 <details>

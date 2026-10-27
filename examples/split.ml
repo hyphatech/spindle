@@ -19,14 +19,13 @@ let split b =
   Ok { each = total /. float b.people }
 
 let routes =
-  List.map Spindle.Access.public
-    [
-      Spindle.post
-        Spindle.Path.(s "split")
-        (Spindle.Returns.json share_json)
-        (let+ b = Spindle.json bill_json in
-         split b);
-    ]
+  [
+    Spindle.post
+      Spindle.Path.(s "split")
+      (Spindle.Returns.json share_json)
+      (let+ b = Spindle.json bill_json in
+       split b);
+  ]
 
 let () =
   Spindle.Log.setup ();

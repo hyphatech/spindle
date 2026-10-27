@@ -176,7 +176,7 @@ let test_an_exhausted_pool_is_a_warning () =
       Spindle.Returns.text
       (Spindle.Dep.return (Error (Spindle_postgres.refusal (`Pool `Busy))))
   in
-  let r = Spindle.Test.call (Public.app [ busy ]) `GET "/busy" in
+  let r = Spindle.Test.call (Spindle.Test.app [ busy ]) `GET "/busy" in
   Alcotest.(check int) "503" 503 (Spindle_http.Status.to_int r.status);
   Alcotest.(check bool)
     "why is a warning" true
@@ -399,7 +399,7 @@ let store_of pool ?table () =
   let open Spindle.Syntax in
   let read = Spindle_postgres.Session.store ?table db and kept = ref None in
   let app =
-    Public.app
+    Spindle.Test.app
       ~resources:[ Spindle.Dep.resource db pool ]
       [
         Spindle.get Spindle.Path.root Spindle.Returns.text
@@ -418,7 +418,7 @@ let test_a_busy_pool_is_ready () =
   Db_target.with_postgres (fun target ->
       let pool = pool target in
       let app =
-        Public.app
+        Spindle.Test.app
           ~resources:[ Spindle.Dep.resource db pool ]
           (Spindle.Health.routes [ Spindle_postgres.Pool.check db ])
       in
@@ -440,7 +440,7 @@ let test_a_closed_pool_is_not_ready () =
   Db_target.with_postgres (fun target ->
       let pool = pool target in
       let app =
-        Public.app
+        Spindle.Test.app
           ~resources:[ Spindle.Dep.resource db pool ]
           (Spindle.Health.routes [ Spindle_postgres.Pool.check db ])
       in
@@ -789,7 +789,7 @@ let bump ?(keep_refused = false) ~refuse ~after pool =
      | Error (#Spindle_postgres.error as e) ->
          Error (Spindle_postgres.refusal e))
 
-let call route = Spindle.Test.call (Public.app [ route ]) `POST "/bump"
+let call route = Spindle.Test.call (Spindle.Test.app [ route ]) `POST "/bump"
 
 let test_a_read_and_a_write_are_one_transaction () =
   with_counter_pool (fun pool ->
@@ -862,7 +862,7 @@ let test_a_deferred_conflict_answers_as_a_statement's_does () =
               | Ok () -> ()
               | Error (`Pool _) -> Alcotest.fail "no connection"
               | Error (#S.error as e) -> Alcotest.fail (S.error_to_string e));
-              let app = Public.app [ claim_twice pool ] in
+              let app = Spindle.Test.app [ claim_twice pool ] in
               let r = Spindle.Test.call app `POST "/claim" in
               Alcotest.(check int)
                 checked 409
@@ -1005,7 +1005,7 @@ let test_sessions_read_the_pool_as_a_resource () =
       let pool = pool target in
       let b =
         Spindle.Test.browser
-          (Public.app ~resources:[ Spindle.Dep.resource db pool ] routes)
+          (Spindle.Test.app ~resources:[ Spindle.Dep.resource db pool ] routes)
       in
       ignore (Spindle.Test.Browser.call b `POST "/sign-in");
       Alcotest.(check string)

@@ -81,11 +81,6 @@ Good morning, world!
   and how it works out its answer. This route reads nothing and always gives
   the same answer, so it is `Spindle.Dep.return good_morning`. The [next
   page](/spindle/tutorial/routes/) shows routes that read their inputs.
-- **Who may call**: `List.map Spindle.Access.public` makes each route
-  anyone's. Every route says who may call it -- anyone, or whoever a check
-  lets through -- and a server with a route that says nothing does not
-  start, so a check cannot be forgotten
-  ([access control](/spindle/guide/access/)).
 - **The server**: `Eio_main.run` starts the event loop, and `Spindle.serve`
   serves the routes until you stop it.
 

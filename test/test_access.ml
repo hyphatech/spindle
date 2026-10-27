@@ -250,55 +250,20 @@ let test_a_check_declares_what_it_refuses_with () =
   has "require" "forbidden" (codes_of `GET "/admin");
   has "check" "forbidden" (codes_of `POST "/deletions")
 
-(* Scenario 2: a route that says nobody may call it does not start. *)
+(* A route that reads no check is anyone's, as it says. *)
 
-let undeclared =
+let about =
   Spindle.get
-    Spindle.Path.(s "forgotten")
+    Spindle.Path.(s "about")
     Spindle.Returns.text
-    (Spindle.Dep.return (Ok "anyone's"))
+    (Spindle.Dep.return (Ok "A notes app."))
 
-let refused_with routes =
-  match Spindle.App.make routes with
-  | Ok _ -> Alcotest.fail "the routes were made"
-  | Error m -> m
-
-let test_a_route_that_declares_nobody_does_not_start () =
-  let m = refused_with [ undeclared ] in
-  Alcotest.(check bool)
-    "names the route" true
-    (contains ~sub:"GET /forgotten" m);
-  Alcotest.(check bool) "says what to do" true (contains ~sub:"Access.public" m)
-
-let test_a_test_app_raises_for_one () =
-  match Spindle.Test.app [ undeclared ] with
-  | _ -> Alcotest.fail "the app was made"
-  | exception Invalid_argument m ->
-      Alcotest.(check bool)
-        "names the route" true
-        (contains ~sub:"GET /forgotten" m)
-
-let test_a_public_route_starts () =
-  let a = Spindle.Test.app [ Access.public undeclared ] in
-  check_status "anyone" `OK (Spindle.Test.call a `GET "/forgotten")
-
-let test_a_public_route_that_reads_a_caller_does_not_start () =
-  let m =
-    refused_with
-      [
-        Access.public
-          (Spindle.get
-             Spindle.Path.(s "mine")
-             Spindle.Returns.text
-             (let+ _ = Access.caller me in
-              Ok "mine"));
-      ]
-  in
-  Alcotest.(check bool) "names the route" true (contains ~sub:"GET /mine" m)
+let test_a_route_that_reads_no_check_is_anyones () =
+  let a = Spindle.Test.app (about :: routes) in
+  check_status "nobody signed in" `OK (Spindle.Test.call a `GET "/about")
 
 let said (a : Spindle.Route.access) =
   match a with
-  | Public -> "public"
   | Caller -> "caller"
   | Checked { policy; action = Some action } -> policy ^ ":" ^ action
   | Checked { policy; action = None } -> policy
@@ -325,28 +290,35 @@ let test_a_route_lists_who_may_call_it () =
     (access_of `GET "/notes/{note_id}/twice");
   lists "require" [ "caller"; "admin:use" ] (access_of `GET "/admin");
   lists "check" [ "caller"; "notes" ] (access_of `POST "/deletions");
-  lists "public" [ "public" ]
-    (List.map said (Spindle.Route.info (Access.public undeclared)).access)
+  lists "no check: anyone's" []
+    (List.map said (Spindle.Route.info about).access)
 
-(* The framework's own routes are as public as the API they serve, unless
-   given a guard, which then says who may call them. *)
+(* The framework's own routes read no check, and are anyone's, unless given a
+   guard that reads one. *)
 
-let test_the_frameworks_routes_are_public () =
-  let made what routes =
-    match Spindle.App.make routes with
-    | Ok _ -> ()
-    | Error m -> Alcotest.failf "%s: %s" what m
+let test_the_frameworks_routes_are_anyones () =
+  let anyones what routes =
+    Alcotest.(check (list string))
+      what
+      (List.map
+         (fun r ->
+           let i = Spindle.Route.info r in
+           Spindle.Meth.to_string i.meth ^ " " ^ i.pattern)
+         routes)
+      (Access.unguarded routes)
   in
-  made "the document" (Spindle.Openapi.routes ~title:"Notes" routes);
-  made "the probes" (Spindle.Health.routes []);
-  made "the metrics" (Spindle.Metrics.routes (Spindle.Metrics.create ()));
-  made "the resource's metadata"
+  anyones "the document" (Spindle.Openapi.routes ~title:"Notes" routes);
+  anyones "the probes" (Spindle.Health.routes []);
+  anyones "the metrics" (Spindle.Metrics.routes (Spindle.Metrics.create ()));
+  anyones "the resource's metadata"
     [
       Spindle.Bearer.metadata
         (Spindle.Bearer.make ~issuer:"https://id.example.com"
            ~resource:"https://notes.example.com")
         routes;
-    ]
+    ];
+  anyones "a site's files" [ Spindle.Static.directory "public" ];
+  anyones "a directory's" [ Spindle.Files.directory "uploads" ]
 
 let test_a_guard_says_who_may_call () =
   let each what expected routes =
@@ -364,23 +336,12 @@ let test_a_guard_says_who_may_call () =
     (Spindle.Metrics.routes ~guard:admins (Spindle.Metrics.create ()));
   each "the document, an admin's" [ "caller"; "admin:use" ]
     (Spindle.Openapi.routes ~guard:admins routes);
-  each "a guard that checks nobody: as public as before" [ "public" ]
+  each "a guard that checks nobody: anyone's, as before" []
     (Spindle.Health.routes
        ~guard:
          (let+ _ = Spindle.Header.optional "x-probe" Wiretype.string in
           ())
        [])
-
-let test_files_are_anyones () =
-  List.iter
-    (fun (what, r) ->
-      Alcotest.(check (list string))
-        what [ "public" ]
-        (List.map said (Spindle.Route.info r).access))
-    [
-      ("a site's files", Spindle.Static.directory "public");
-      ("a directory's", Spindle.Files.directory "uploads");
-    ]
 
 let test_a_token_is_a_caller () =
   let auth =
@@ -477,7 +438,7 @@ let test_a_tools_refusal_is_its_own () =
 
 let document =
   lazy
-    (match Spindle.App.make (Access.public undeclared :: routes) with
+    (match Spindle.App.make (about :: routes) with
     | Error m -> Alcotest.fail m
     | Ok a -> (
         match Spindle.Openapi.document ~title:"Notes" ~version:"1" a with
@@ -502,7 +463,7 @@ let test_the_document_lists_each_check () =
   Alcotest.(check string)
     "check" {|[{"policy":"notes"}]|}
     (access "post" "/deletions");
-  Alcotest.(check string) "public" "null" (access "get" "/forgotten")
+  Alcotest.(check string) "anyone's" "null" (access "get" "/about")
 
 (* ------------------------------------------------------------------ *)
 (* OWASP ASVS 5.0, V8 Authorization: a row a requirement Spindle meets,
@@ -512,7 +473,8 @@ let test_the_document_lists_each_check () =
 
 (* 8.1.1: authorization documentation defines function-level and
    data-specific rules. The document is that documentation, generated:
-   every operation that is not public names who may call it. *)
+   every operation that reads a check names it, and one that reads none is
+   anyone's. *)
 let test_8_1_1_the_document_says_who_may_call_each_operation () =
   let paths =
     Yojson.Safe.Util.to_assoc
@@ -529,7 +491,7 @@ let test_8_1_1_the_document_says_who_may_call_each_operation () =
           in
           Alcotest.(check bool)
             (meth ^ " " ^ path)
-            (not (String.equal path "/forgotten"))
+            (not (String.equal path "/about"))
             declared)
         (Yojson.Safe.Util.to_assoc operations))
     paths
@@ -543,8 +505,10 @@ let test_8_2_1_a_function_needs_an_explicit_permission () =
   Alcotest.(check bool) "forbidden" true (contains ~sub:{|"forbidden"|} r.body);
   check_status "with it" `OK (call ~user:3 `GET "/admin");
   Alcotest.(check bool)
-    "a function that names no permission does not start" true
-    (contains ~sub:"declares nobody" (refused_with [ undeclared ]))
+    "a function with no check is listed as anyone's" true
+    (List.exists
+       (String.equal "GET /about")
+       (Access.unguarded (about :: routes)))
 
 (* 8.2.2: data-specific access is restricted to consumers with explicit
    permissions to the item, against IDOR and BOLA: every id guessed is
@@ -709,6 +673,19 @@ let test_8_3_3_an_agent_is_judged_as_its_person () =
         (field "spindle.access.subject" l)
   | other -> Alcotest.failf "%d denial lines" (List.length other)
 
+let test_unguarded_names_the_routes_anyone_may_call () =
+  Alcotest.(check (list string))
+    "an application's" [ "GET /about" ]
+    (Access.unguarded (about :: routes));
+  Alcotest.(check (list string))
+    "the probes"
+    [ "GET /livez"; "GET /readyz" ]
+    (Access.unguarded (Spindle.Health.routes []));
+  Alcotest.(check (list string))
+    "the probes, given a check" []
+    (Access.unguarded
+       (Spindle.Health.routes ~guard:(Access.require admin Use) []))
+
 let () =
   Alcotest.run "access"
     [
@@ -755,19 +732,14 @@ let () =
         ] );
       ( "who may call",
         [
-          Alcotest.test_case "a route that declares nobody does not start"
-            `Quick test_a_route_that_declares_nobody_does_not_start;
-          Alcotest.test_case "a test app raises for one" `Quick
-            test_a_test_app_raises_for_one;
-          Alcotest.test_case "a public route starts" `Quick
-            test_a_public_route_starts;
-          Alcotest.test_case "a public route that reads a caller does not start"
-            `Quick test_a_public_route_that_reads_a_caller_does_not_start;
+          Alcotest.test_case "unguarded names the routes anyone may call" `Quick
+            test_unguarded_names_the_routes_anyone_may_call;
+          Alcotest.test_case "a route that reads no check is anyone's" `Quick
+            test_a_route_that_reads_no_check_is_anyones;
           Alcotest.test_case "a route lists who may call it" `Quick
             test_a_route_lists_who_may_call_it;
-          Alcotest.test_case "the framework's routes are public" `Quick
-            test_the_frameworks_routes_are_public;
-          Alcotest.test_case "files are anyone's" `Quick test_files_are_anyones;
+          Alcotest.test_case "the framework's routes are anyone's" `Quick
+            test_the_frameworks_routes_are_anyones;
           Alcotest.test_case "a token is a caller" `Quick
             test_a_token_is_a_caller;
           Alcotest.test_case "a guard says who may call" `Quick

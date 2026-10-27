@@ -175,9 +175,7 @@ A route table that can't be right is refused before the server listens:
 `Spindle.serve` raises `Invalid_argument` naming the route. That covers two
 routes of one method that could answer the same URL, a parameter named twice
 in a path, a `Path.rest` that isn't last, a `Spindle.param` its route's path
-doesn't have, a `HEAD` route, and a route that says nobody may call it --
-neither reading a caller or a check, nor made `Access.public`
-([access control](/spindle/guide/access/)). The one `Spindle.param` this cannot check
+doesn't have, and a `HEAD` route. The one `Spindle.param` this cannot check
 is one inside `Spindle.Dep.bind`, whose inputs are only known when it runs:
 if its route's path lacks the parameter, the request answers `500`.
 

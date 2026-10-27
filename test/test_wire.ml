@@ -149,7 +149,7 @@ let with_server ?max_body ?max_header_bytes ?discard_limit ?body_budget routes f
   Eio.Switch.run @@ fun sw ->
   let connect =
     serve ~sw env ?max_body ?max_header_bytes ?discard_limit ?body_budget
-      (Public.app routes)
+      (Spindle.Test.app routes)
   in
   f (on_connection env connect)
 
@@ -315,7 +315,7 @@ let test_a_compressed_stream_arrives_as_it_is_sent () =
   Eio.Switch.run @@ fun sw ->
   let connect =
     serve ~sw env
-      (Public.app ~compress:Spindle.Compress.default [ streamed_events ])
+      (Spindle.Test.app ~compress:Spindle.Compress.default [ streamed_events ])
   in
   on_connection env connect (fun send r ->
       send
@@ -357,7 +357,9 @@ let test_a_304_is_a_head_alone () =
   in
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  let connect = serve ~sw env (Public.app [ Spindle.Static.route site ]) in
+  let connect =
+    serve ~sw env (Spindle.Test.app [ Spindle.Static.route site ])
+  in
   on_connection env connect @@ fun send r ->
   send (get "/");
   let tag = Option.value (header (read_answer r) "etag") ~default:"" in
@@ -522,7 +524,7 @@ let test_a_client_gone_before_its_continue_is_a_value () =
   in
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  let connect = serve ~sw env (Public.app [ reads ]) in
+  let connect = serve ~sw env (Spindle.Test.app [ reads ]) in
   Eio.Switch.run (fun sw ->
       let flow = connect ~sw in
       Eio.Flow.copy_string
@@ -676,7 +678,7 @@ let test_a_refused_head_is_answered_before_the_connection_goes () =
 let with_mock_clock routes f =
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  let connect = serve ~sw env ~domains:1 (Public.app routes) in
+  let connect = serve ~sw env ~domains:1 (Spindle.Test.app routes) in
   let after span =
     Eio.Time.Mono.sleep_until
       (Eio.Stdenv.mono_clock env)
@@ -868,7 +870,7 @@ let comparable headers =
    is that head with nothing after it -- a stream's producer never runs. *)
 let test_head_is_the_head_on_every_kind () =
   with_server (List.map snd kinds) @@ fun connect ->
-  let served = Public.app (List.map snd kinds) in
+  let served = Spindle.Test.app (List.map snd kinds) in
   List.iter
     (fun (path, _) ->
       Atomic.set ran false;
@@ -916,7 +918,7 @@ let test_a_header_that_could_split_the_response_is_never_written () =
                ~headers:[ ("x-note", "a\r\nx-evil: 1") ]
                "x")))
   in
-  let t = Spindle.Test.call (Public.app [ split ]) `GET "/split" in
+  let t = Spindle.Test.call (Spindle.Test.app [ split ]) `GET "/split" in
   check_status "in-process, ours to fix" 500 t.status;
   with_server [ split ] @@ fun connect ->
   connect @@ fun send r ->
@@ -962,7 +964,7 @@ let test_a_takeover_owns_the_connection_until_the_server_stops () =
   Eio.Switch.run @@ fun sw ->
   let stop, stopping = Eio.Promise.create () in
   let drain = Mtime.Span.(500 * ms) in
-  let connect = serve ~sw env ~stop ~drain (Public.app [ echo_lines ]) in
+  let connect = serve ~sw env ~stop ~drain (Spindle.Test.app [ echo_lines ]) in
   on_connection env connect @@ fun send r ->
   (* The first bytes of the new protocol arrive with the request. *)
   send
@@ -1008,7 +1010,9 @@ let test_a_takeover_answered_during_a_stop_gets_the_drain () =
   Eio.Switch.run @@ fun sw ->
   let stop, stopping = Eio.Promise.create () in
   let connect =
-    serve ~sw env ~stop ~drain:Mtime.Span.(5 * s) (Public.app [ late_echo ])
+    serve ~sw env ~stop
+      ~drain:Mtime.Span.(5 * s)
+      (Spindle.Test.app [ late_echo ])
   in
   on_connection env connect @@ fun send r ->
   send
@@ -1033,7 +1037,7 @@ let test_a_request_arriving_as_a_stop_begins_is_answered () =
   Eio.Switch.run @@ fun sw ->
   let stop, stopping = Eio.Promise.create () in
   let connect =
-    serve ~sw env ~stop ~drain:Mtime.Span.(5 * s) (Public.app [ hello ])
+    serve ~sw env ~stop ~drain:Mtime.Span.(5 * s) (Spindle.Test.app [ hello ])
   in
   on_connection env connect @@ fun send r ->
   send (get "/hello/a");
@@ -1097,7 +1101,7 @@ let test_a_read_left_waiting_shares_nothing_with_the_loop () =
              | Error _ -> "an error"));
        Ok (Spindle.Response.make "left"))
   in
-  let connect = serve ~sw env (Public.app [ leaves_a_reader; hello ]) in
+  let connect = serve ~sw env (Spindle.Test.app [ leaves_a_reader; hello ]) in
   on_connection env connect @@ fun send r ->
   send "POST /leave HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\n\r\n";
   (* A second for the route to return and the loop to wait on the rest. *)

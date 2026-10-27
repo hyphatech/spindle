@@ -115,17 +115,19 @@ val require : ('p, 'a, unit) policy -> 'a -> unit Dep.t
 (** [require policy action]: a check with no object -- a route only an admin may
     call. A denial is {!forbidden}. *)
 
-val public : Route.t -> Route.t
-(** The route, for anyone to call. {!App.make} refuses a route that declares
-    nobody who may call it -- reading no caller and no check -- so a page, a
-    probe or a document anyone may read says so:
+val unguarded : Route.t list -> string list
+(** The routes that read no caller and no check, which anyone may call, each as
+    its method and pattern -- [GET /about] -- in the order given. A route reads
+    a check or it is anyone's, so a check forgotten is a route on this list: an
+    application that wants one caught says, in a test, which routes it means to
+    be anyone's:
 
     {[
-    Spindle.serve env (List.map Access.public pages @ notes)
-    ]}
-
-    and one made public that reads a caller, which is two answers to who may
-    call it. *)
+    let test_only_these_are_public () =
+      Alcotest.(check (list string))
+        "public routes" [ "GET /"; "GET /about" ]
+        (Spindle.Access.unguarded routes)
+    ]} *)
 
 val check : ('p, 'a, 'r) policy -> ('a -> 'r -> ('r, Refusal.t) result) Dep.t
 (** A check for an object that arrives as a value rather than through a

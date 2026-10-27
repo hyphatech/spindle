@@ -271,18 +271,14 @@ let answer_file root o req segments =
               (Response.stream ~status ~headers ~content_type ~length:count
                  (send_file root f ~first ~count)))
 
-(* What a directory holds is anyone's: a file only some may read is a route
-   of its own, behind its check. *)
 let files_route ?(at = Path.root) o root =
   let file = Path.rest "file" in
-  Route_repr.public
-  @@ Route_repr.get ~summary:"A file from disk"
-       ~refuses:[ Refusal.Code.not_found ]
-       Path.(at / file)
-       Returns.response
-       (Dep.map
-          (fun ((segments, req), root) -> answer_file root o req segments)
-          (Dep.both (Dep.both (Input.param file) Conditional.inputs) root))
+  Route_repr.get ~summary:"A file from disk" ~refuses:[ Refusal.Code.not_found ]
+    Path.(at / file)
+    Returns.response
+    (Dep.map
+       (fun ((segments, req), root) -> answer_file root o req segments)
+       (Dep.both (Dep.both (Input.param file) Conditional.inputs) root))
 
 let options ?index ?(dotfiles = false) ?(download = false)
     ?(inline_active = false) ?(types = []) () =

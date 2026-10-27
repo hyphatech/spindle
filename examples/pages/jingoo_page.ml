@@ -19,16 +19,15 @@ let greeting =
   Jg_template.Loaded.from_file "examples/pages/templates/greeting.jingoo"
 
 let routes =
-  List.map Spindle.Access.public
-    [
-      Spindle.get
-        Spindle.Path.(s "hello" / name)
-        Spindle.Returns.html
-        (let+ name = Spindle.param name in
-         Ok
-           (Jg_template.Loaded.eval greeting
-              ~models:[ ("name", Jg_types.Tstr name) ]));
-    ]
+  [
+    Spindle.get
+      Spindle.Path.(s "hello" / name)
+      Spindle.Returns.html
+      (let+ name = Spindle.param name in
+       Ok
+         (Jg_template.Loaded.eval greeting
+            ~models:[ ("name", Jg_types.Tstr name) ]));
+  ]
 
 let () =
   Spindle.Log.setup ();

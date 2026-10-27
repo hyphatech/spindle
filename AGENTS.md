@@ -166,15 +166,16 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   which is not among the framework's codes every route may give. Test: a
   document that promises every route may answer `429`, or a limit a reader
   of the route cannot see; `test_spindle`'s rate case reads the document.
-- **Every route says who may call it.** It reads a caller or a check of
+- **Who may call a route is what it reads.** A caller or a check of
   `Access` -- or `Bearer.claims` or `Bearer.scope`, whose subject is a
-  caller -- or is made `Access.public`, and `App.make` refuses one that does
-  neither and one made public that reads a caller, because a check that was
-  forgotten is broken access control nobody sees until it is used. A route
-  the framework makes is public unless what it reads -- `~auth`, a guard
-  that reads a check -- says otherwise. Test: `test_access` starts a route
-  that declares nobody and one public that reads a caller, and each is
-  refused, naming it.
+  caller -- is a dependency, and a route that reads none is anyone's, with
+  no mark and no other mechanism, because access control is the
+  application's choice and costs nothing until it is made. `Route.info`
+  lists each, the document prints it, and `Access.unguarded` names the
+  routes that read none, for an application's test to hold. Test:
+  `test_access` reads each route's list and the unguarded ones; a route
+  whose access is decided anywhere but its dependencies is this rule
+  broken.
 - **A guarded object reaches a handler only through its check.**
   `Access.resource` keeps the object's loader and `Access.can` is the only
   value that hands the object over, because an object read beside its check

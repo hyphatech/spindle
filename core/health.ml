@@ -32,20 +32,19 @@ let ready_now runs =
 
 let routes ?(live = Path.s "livez") ?(ready = Path.s "readyz")
     ?(guard = Dep.return ()) checks =
-  List.map Route_repr.public_unless_declared
-    [
-      Route_repr.get ~summary:"Whether the process answers" ~meta:debug_access
-        live Returns.text
-        (Dep.map (fun () -> Ok "ok") guard);
-      Route_repr.get ~summary:"Whether the server can serve" ~meta:debug_access
-        ~refuses:[ not_ready ] ready Returns.text
-        (Dep.map
-           (fun ((), runs) -> ready_now runs)
-           (Dep.both guard
-              (List.fold_right
-                 (fun c runs ->
-                   Dep.map
-                     (fun (run, rest) -> (c.name, run) :: rest)
-                     (Dep.both c.run runs))
-                 checks (Dep.return []))));
-    ]
+  [
+    Route_repr.get ~summary:"Whether the process answers" ~meta:debug_access
+      live Returns.text
+      (Dep.map (fun () -> Ok "ok") guard);
+    Route_repr.get ~summary:"Whether the server can serve" ~meta:debug_access
+      ~refuses:[ not_ready ] ready Returns.text
+      (Dep.map
+         (fun ((), runs) -> ready_now runs)
+         (Dep.both guard
+            (List.fold_right
+               (fun c runs ->
+                 Dep.map
+                   (fun (run, rest) -> (c.name, run) :: rest)
+                   (Dep.both c.run runs))
+               checks (Dep.return []))));
+  ]

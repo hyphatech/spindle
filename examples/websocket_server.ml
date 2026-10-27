@@ -25,13 +25,12 @@ let echo ws =
   loop ()
 
 let routes =
-  List.map Spindle.Access.public
-    [
-      Spindle.get
-        Spindle.Path.(s "echo")
-        (Spindle.Returns.websocket protocol)
-        (Spindle.Dep.return (Ok echo));
-    ]
+  [
+    Spindle.get
+      Spindle.Path.(s "echo")
+      (Spindle.Returns.websocket protocol)
+      (Spindle.Dep.return (Ok echo));
+  ]
 
 let () =
   Spindle.Log.setup ();

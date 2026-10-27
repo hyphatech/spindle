@@ -106,10 +106,7 @@ type credential = {
   reads : need list;
 }
 
-type access =
-  | Public
-  | Caller
-  | Checked of { policy : string; action : string option }
+type access = Caller | Checked of { policy : string; action : string option }
 
 type listing = {
   owner : int;

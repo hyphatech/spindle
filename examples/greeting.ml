@@ -6,14 +6,13 @@ let hello name = Ok { text = "Hello, " ^ name ^ "!" }
 let name = Spindle.Path.string "name"
 
 let routes =
-  List.map Spindle.Access.public
-    [
-      Spindle.get
-        Spindle.Path.(s "hello" / name)
-        (Spindle.Returns.json greeting_json)
-        (let+ name = Spindle.param name in
-         hello name);
-    ]
+  [
+    Spindle.get
+      Spindle.Path.(s "hello" / name)
+      (Spindle.Returns.json greeting_json)
+      (let+ name = Spindle.param name in
+       hello name);
+  ]
 
 let () =
   Spindle.Log.setup ();

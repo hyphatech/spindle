@@ -14,18 +14,12 @@
   caller's id and the reason, and every decision is on the request's span.
   `Access.decide` answers what a policy decides, for a test.
 
-- Every route says who may call it, or the server does not start: a route
-  that reads no caller -- `Access.caller`, a check, `Bearer.claims` or
-  `Bearer.scope` -- and is not made `Access.public` is refused by
-  `App.make`, so `Spindle.serve` exits and `Test.app` raises, naming it,
-  where any route started; one made public that reads a caller is refused
-  too. A list of public routes is `List.map Spindle.Access.public routes`.
-  The routes Spindle makes -- `Openapi.routes`, `Health.routes`,
-  `Metrics.routes`, `Static`'s and `Files`', `Bearer.metadata`, and
-  `Spindle_mcp.routes` without `~auth` -- are public unless a `~guard`
-  reads a check. `Route.info` gains `access`, and the OpenAPI document an
-  `x-spindle-access` per operation: each check by its policy and action,
-  `[]` for a route that reads only its caller, none for a public one.
+- Who may call a route is what it reads: `Route.info` gains `access`, a
+  caller and every check its dependencies read, and the OpenAPI document an
+  `x-spindle-access` per operation -- each check by its policy and action,
+  `[]` for a route that reads only its caller, none for one anyone may
+  call. `Access.unguarded routes` names the routes that read no check, so a
+  test of the application's can hold which are meant to be anyone's.
 
 - `Dep.attempt d` hands over `d`'s refusal as a value, refusing nothing and
   declaring neither its codes nor who may call. `Spindle_mcp.routes` reads

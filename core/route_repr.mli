@@ -87,13 +87,6 @@ val make :
   t
 (** As {!Spindle.route}. *)
 
-val public : t -> t
-(** As {!Access.public}. *)
-
-val public_unless_declared : t -> t
-(** Public, unless what it reads already says who may call it: a route the
-    framework makes, given a guard. *)
-
 val get :
   ?refuses:Refusal.Code.t list ->
   ?summary:string ->

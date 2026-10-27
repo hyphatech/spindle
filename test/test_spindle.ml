@@ -53,12 +53,11 @@ let start_app app =
   | Error m -> Alcotest.failf "it did not start: %s" m
 
 let hello =
-  Spindle.Access.public
-  @@ Spindle.get
-       Spindle.Path.(s "hello" / name)
-       Spindle.Returns.response
-       (let+ name = Spindle.param name in
-        Ok (Spindle.Response.json greeting_json { name; times = 1 }))
+  Spindle.get
+    Spindle.Path.(s "hello" / name)
+    Spindle.Returns.response
+    (let+ name = Spindle.param name in
+     Ok (Spindle.Response.json greeting_json { name; times = 1 }))
 
 let echo =
   Spindle.post
@@ -71,14 +70,14 @@ let echo =
 (* Routes *)
 
 let test_path_parameter_reaches_the_handler () =
-  let r = Spindle.Test.call (Public.app [ hello ]) `GET "/hello/kim" in
+  let r = Spindle.Test.call (Spindle.Test.app [ hello ]) `GET "/hello/kim" in
   check_status "ok" 200 r.status;
   check_string "the parameter, encoded" {|{"name":"kim","times":1}|} r.body;
   check_header "json" (Some "application/json")
     (Spindle.Test.header r "content-type")
 
 let test_two_routes_claiming_one_path_are_refused () =
-  match Public.make [ hello; hello ] with
+  match Spindle.App.make [ hello; hello ] with
   | Ok _ -> Alcotest.fail "a second route for GET /hello could never answer"
   | Error m ->
       Alcotest.(check bool)
@@ -92,25 +91,27 @@ let test_the_same_path_under_two_methods_is_fine () =
       Spindle.Returns.response
       (Spindle.Dep.return (Ok (Spindle.Response.empty ())))
   in
-  let a = Public.app [ hello; other ] in
+  let a = Spindle.Test.app [ hello; other ] in
   check_status "GET" 200 (Spindle.Test.call a `GET "/hello/kim").status;
   check_status "DELETE" 204 (Spindle.Test.call a `DELETE "/hello/kim").status
 
 let test_wrong_method_is_405_with_allow () =
-  let r = Spindle.Test.call (Public.app [ hello ]) `POST "/hello/kim" in
+  let r = Spindle.Test.call (Spindle.Test.app [ hello ]) `POST "/hello/kim" in
   check_status "405" 405 r.status;
   check_header "allow, HEAD with GET, and OPTIONS" (Some "GET, HEAD, OPTIONS")
     (Spindle.Test.header r "allow")
 
 let test_unknown_path_is_404_or_the_not_found_answer () =
-  let r = Spindle.Test.call (Public.app [ hello ]) `GET "/nowhere" in
+  let r = Spindle.Test.call (Spindle.Test.app [ hello ]) `GET "/nowhere" in
   check_status "404" 404 r.status;
   check_string "a code and a sentence"
     {|{"error":"not_found","message":"There is nothing here."}|} r.body;
   let not_found =
     Spindle.Dep.return (Ok (Spindle.Response.html ~status:`Not_found "a page"))
   in
-  let r = Spindle.Test.call (Public.app ~not_found [ hello ]) `GET "/nowhere" in
+  let r =
+    Spindle.Test.call (Spindle.Test.app ~not_found [ hello ]) `GET "/nowhere"
+  in
   check_status "at the status it gives" 404 r.status;
   check_string "the application's page answers" "a page" r.body;
   let site =
@@ -119,7 +120,7 @@ let test_unknown_path_is_404_or_the_not_found_answer () =
       Spindle.Returns.text
       (Spindle.Dep.return (Ok "the site"))
   in
-  let behind_a_site = Public.app ~not_found [ hello; site ] in
+  let behind_a_site = Spindle.Test.app ~not_found [ hello; site ] in
   check_string "a rest route at the root takes every path" "the site"
     (Spindle.Test.call behind_a_site `GET "/a/b").body;
   check_status "and every other method there is 405" 405
@@ -138,7 +139,7 @@ let test_the_not_found_answer_reads_dependencies () =
          (Printf.sprintf "nothing here for %s, from %s" who shelf))
   in
   let app =
-    match Public.make ~not_found:page [ hello ] with
+    match Spindle.App.make ~not_found:page [ hello ] with
     | Ok a -> a
     | Error m -> Alcotest.fail m
   in
@@ -163,14 +164,14 @@ let test_the_not_found_answer_reads_dependencies () =
       check_string "in a test given the resource"
         "nothing here for nobody, from the shelf"
         (Spindle.Test.call
-           (Public.app ~not_found:page
+           (Spindle.Test.app ~not_found:page
               ~resources:[ Spindle.Dep.resource database "the shelf" ]
               [ hello ])
            `GET "/nowhere")
           .body
 
 let test_head_is_get_without_the_body () =
-  let r = Spindle.Test.call (Public.app [ hello ]) `HEAD "/hello/kim" in
+  let r = Spindle.Test.call (Spindle.Test.app [ hello ]) `HEAD "/hello/kim" in
   check_status "ok" 200 r.status;
   check_string "no body" "" r.body
 
@@ -192,7 +193,7 @@ let test_nothing_is_an_answer () =
       (Spindle.Returns.empty ~status:`Accepted ())
       (Spindle.Dep.return (Ok ()))
   in
-  let a = Public.app [ quiet; later ] in
+  let a = Spindle.Test.app [ quiet; later ] in
   let r = Spindle.Test.call a `POST "/quiet" in
   check_status "204" 204 r.status;
   check_string "no body" "" r.body;
@@ -205,13 +206,17 @@ let test_nothing_is_an_answer () =
 
 (* A segment arrives as the text it stands for, not as the URL spelled it. *)
 let test_a_segment_is_decoded () =
-  let r = Spindle.Test.call (Public.app [ hello ]) `GET "/hello/Kim%20Li" in
+  let r =
+    Spindle.Test.call (Spindle.Test.app [ hello ]) `GET "/hello/Kim%20Li"
+  in
   check_string "decoded" {|{"name":"Kim Li","times":1}|} r.body
 
 let test_a_trailing_slash_is_another_path () =
   check_status "strict, unless asked" 404
-    (Spindle.Test.call (Public.app [ hello ]) `GET "/hello/kim/").status;
-  let redirecting = Public.app ~trailing_slash:Spindle.App.Redirect [ hello ] in
+    (Spindle.Test.call (Spindle.Test.app [ hello ]) `GET "/hello/kim/").status;
+  let redirecting =
+    Spindle.Test.app ~trailing_slash:Spindle.App.Redirect [ hello ]
+  in
   let r = Spindle.Test.call redirecting `GET "/hello/kim/?x=1" in
   check_status "asked: redirected, the method kept" 308 r.status;
   check_header "to the path without it, and its query" (Some "/hello/kim?x=1")
@@ -229,7 +234,7 @@ let test_a_stream_of_negative_length_is_the_routes_bug () =
   let ran = ref false in
   let r =
     Spindle.Test.call
-      (Public.app
+      (Spindle.Test.app
          [
            Spindle.get
              Spindle.Path.(s "less")
@@ -255,7 +260,7 @@ let test_a_stream_of_negative_length_is_the_routes_bug () =
    the Secure decision. *)
 let test_a_header_the_framework_writes_is_the_routes_bug () =
   let answering headers =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.get
           Spindle.Path.(s "own")
@@ -288,24 +293,25 @@ let test_the_root_answers_slash () =
     Spindle.get Spindle.Path.root Spindle.Returns.response
       (Spindle.Dep.return (Ok (Spindle.Response.make "home")))
   in
-  let r = Spindle.Test.call (Public.app [ home; hello ]) `GET "/" in
+  let r = Spindle.Test.call (Spindle.Test.app [ home; hello ]) `GET "/" in
   check_status "found" 200 r.status;
   check_string "the root's own" "home" r.body;
   check_status "and nothing else is it" 404
-    (Spindle.Test.call (Public.app [ home ]) `GET "//").status
+    (Spindle.Test.call (Spindle.Test.app [ home ]) `GET "//").status
 
 (* ------------------------------------------------------------------ *)
 (* Bodies *)
 
 let test_absent_body_reads_as_an_empty_object () =
-  let r = Spindle.Test.call (Public.app [ echo ]) `POST "/echo" in
+  let r = Spindle.Test.call (Spindle.Test.app [ echo ]) `POST "/echo" in
   check_status "created" 201 r.status;
   check_string "every default" {|{"name":"nobody","times":1}|} r.body
 
 let test_body_is_decoded () =
   let r =
-    Spindle.Test.call (Public.app [ echo ]) `POST "/echo"
-      ~body:{|{"name":"lee","times":3}|}
+    Spindle.Test.call
+      (Spindle.Test.app [ echo ])
+      `POST "/echo" ~body:{|{"name":"lee","times":3}|}
   in
   check_string "round trip" {|{"name":"lee","times":3}|} r.body
 
@@ -313,8 +319,9 @@ let test_body_is_decoded () =
    with its code and a sentence of its own. *)
 let test_malformed_body_is_a_sentence_without_its_detail () =
   let r =
-    Spindle.Test.call (Public.app [ echo ]) `POST "/echo"
-      ~body:{|{"times":"many"}|}
+    Spindle.Test.call
+      (Spindle.Test.app [ echo ])
+      `POST "/echo" ~body:{|{"times":"many"}|}
   in
   check_status "400" 400 r.status;
   check_string "a problem at the member"
@@ -323,7 +330,9 @@ let test_malformed_body_is_a_sentence_without_its_detail () =
   Alcotest.(check bool)
     "and at the body, when it is not JSON at all" true
     (contains ~sub:{|"at":"body","code"|}
-       (Spindle.Test.call (Public.app [ echo ]) `POST "/echo" ~body:"not json")
+       (Spindle.Test.call
+          (Spindle.Test.app [ echo ])
+          `POST "/echo" ~body:"not json")
          .body)
 
 let test_a_raise_is_500_and_says_nothing_of_it () =
@@ -338,7 +347,7 @@ let test_a_raise_is_500_and_says_nothing_of_it () =
   Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
     ~out:(fun l -> lines := l :: !lines)
     ();
-  let r = Spindle.Test.call (Public.app [ boom ]) `GET "/boom" in
+  let r = Spindle.Test.call (Spindle.Test.app [ boom ]) `GET "/boom" in
   check_status "500" 500 r.status;
   Alcotest.(check bool)
     "the exception is not in the body" false
@@ -385,7 +394,7 @@ let test_middleware_runs_in_the_order_listed () =
   in
   ignore
     (Spindle.Test.call
-       (Public.app ~middleware:[ marked "a"; marked "b" ] [ seen ])
+       (Spindle.Test.app ~middleware:[ marked "a"; marked "b" ] [ seen ])
        `GET "/seen");
   Alcotest.(check (list string))
     "outermost first"
@@ -411,7 +420,7 @@ let test_middleware_may_answer_alone () =
   in
   let r =
     Spindle.Test.call
-      (Public.app ~middleware:[ closed ] ~refuses:[ shut ] [ seen ])
+      (Spindle.Test.app ~middleware:[ closed ] ~refuses:[ shut ] [ seen ])
       `GET "/seen"
   in
   check_status "its own answer" 503 r.status;
@@ -422,7 +431,7 @@ let test_a_middleware_that_raises_is_500 () =
   let broken _ _ = raise (Boom "the key is hunter2") in
   let r =
     Spindle.Test.call
-      (Public.app ~middleware:[ broken ] [ hello ])
+      (Spindle.Test.app ~middleware:[ broken ] [ hello ])
       `GET "/hello/kim"
   in
   check_status "500" 500 r.status;
@@ -457,7 +466,7 @@ let test_middleware_can_ask_the_route () =
       (Spindle.Dep.return (Ok (Spindle.Response.empty ())))
   in
   let a =
-    Public.app ~middleware:[ tell ] ~trailing_slash:Spindle.App.Redirect
+    Spindle.Test.app ~middleware:[ tell ] ~trailing_slash:Spindle.App.Redirect
       ~not_found:(Spindle.Dep.return (Ok (Spindle.Response.make "a page")))
       [ hello; limit ]
   in
@@ -487,7 +496,7 @@ let test_headers_reach_every_answer () =
       (Ok (Spindle.Response.make ~content_type:"text/html" "<p>page</p>"))
   in
   let a =
-    Public.app
+    Spindle.Test.app
       ~middleware:
         [
           Spindle.Middleware.headers [ ("x-frame", "every"); ("x-kind", "all") ];
@@ -525,7 +534,7 @@ let test_dependencies_stop_at_the_first_refusal () =
       (let+ () = counted and+ () = no and+ () = counted in
        Ok (Spindle.Response.empty ()))
   in
-  let r = Spindle.Test.call (Public.app [ route ]) `GET "/guarded" in
+  let r = Spindle.Test.call (Spindle.Test.app [ route ]) `GET "/guarded" in
   check_status "the refusal answers" 403 r.status;
   check_int "left to right, and no further" 1 !asked
 
@@ -564,7 +573,8 @@ let test_a_refusal_before_the_body_never_reads_it () =
   in
   let call headers =
     fst
-      (Spindle.App.handle (Public.app [ route ])
+      (Spindle.App.handle
+         (Spindle.Test.app [ route ])
          (Spindle.Request.make ~headers
             ~read_clock:(fun () -> Ptime.epoch)
             `POST "/post")
@@ -587,7 +597,9 @@ let test_bind_after_the_body_reads_it () =
            let+ again = Spindle.body in
            Ok (Spindle.Response.make (first ^ again))))
   in
-  let r = Spindle.Test.call (Public.app [ route ]) `POST "/twice" ~body:"ab" in
+  let r =
+    Spindle.Test.call (Spindle.Test.app [ route ]) `POST "/twice" ~body:"ab"
+  in
   check_string "both sides saw the body" "abab" r.body
 
 (* An app-wide value the program hands over at start: here a name, where a
@@ -656,7 +668,7 @@ let test_a_dependency_runs_once_per_request () =
   let checked = Spindle.Dep.join (Spindle.Dep.map (fun n -> Ok n) user) in
   let quota = Spindle.Dep.map (fun n -> n * 10) checked in
   let app =
-    Public.app
+    Spindle.Test.app
       [
         answer
           (let+ a = checked and+ b = quota and+ c = user in
@@ -681,7 +693,7 @@ let test_uncached_runs_at_every_use () =
          inner)
   in
   let app =
-    Public.app
+    Spindle.Test.app
       [
         answer
           (let+ a = each and+ b = each and+ c = inner in
@@ -706,7 +718,9 @@ let test_a_body_dependency_is_read_once () =
       (let+ a = upper and+ b = Spindle.Dep.map String.length upper in
        Ok (Printf.sprintf "%s %d" a b))
   in
-  let r = Spindle.Test.call (Public.app [ route ]) `POST "/shared" ~body:"ab" in
+  let r =
+    Spindle.Test.call (Spindle.Test.app [ route ]) `POST "/shared" ~body:"ab"
+  in
   check_string "both uses saw it" "AB 2" r.body;
   check_int "parsed once" 1 !parsed
 
@@ -718,7 +732,7 @@ let test_an_input_read_twice_is_one_input () =
     Printf.sprintf "%d %d" p n
   in
   check_int "listed once" 1 (List.length (Spindle.Dep.needs inputs));
-  let app = Public.app [ answer inputs ] in
+  let app = Spindle.Test.app [ answer inputs ] in
   check_string "and read once" "1 2"
     (Spindle.Test.call app `GET "/shared?page=1").body;
   let r = Spindle.Test.call app `GET "/shared?page=x" in
@@ -754,7 +768,7 @@ let test_a_bind_shares_what_it_names () =
         let+ again = named and+ () = fresh and+ () = fresh in
         Printf.sprintf "%d %d" first again)
   in
-  let app = Public.app [ answer inputs ] in
+  let app = Spindle.Test.app [ answer inputs ] in
   check_string "one answer inside and out" "1 1"
     (Spindle.Test.call app `GET "/shared").body;
   check_int "the named value ran once" 1 !ran;
@@ -783,8 +797,9 @@ let test_query_header_cookie_and_clock () =
             ]))
   in
   let r =
-    Spindle.Test.call (Public.app [ route ]) `GET "/who?q=1"
-      ~now:(Instants.of_ms 42_000)
+    Spindle.Test.call
+      (Spindle.Test.app [ route ])
+      `GET "/who?q=1" ~now:(Instants.of_ms 42_000)
       ~headers:[ ("x-thing", "2"); ("cookie", "a=1; b=3"); ("cookie", "c=4") ]
   in
   check_string "all four" {|["1","2","3","1970-01-01T00:00:42-00:00"]|} r.body
@@ -801,7 +816,7 @@ let test_an_input_that_is_not_utf_8_is_refused () =
        and+ h = Spindle.Header.optional "x-name" Wiretype.string in
        Ok [ name; Option.value q ~default:"-"; Option.value h ~default:"-" ])
   in
-  let app = Public.app [ route ] in
+  let app = Spindle.Test.app [ route ] in
   let refused what ~at target headers =
     let r = Spindle.Test.call app `GET target ~headers in
     check_status what 400 r.status;
@@ -829,7 +844,7 @@ let test_a_query_is_read_as_a_form () =
        and+ t = Spindle.Query.list "t" Wiretype.string in
        Ok (Option.fold q ~none:"-" ~some:(fun q -> "q=" ^ q) :: t))
   in
-  let app = Public.app [ route ] in
+  let app = Spindle.Test.app [ route ] in
   let body target = (Spindle.Test.call app `GET target).body in
   check_string "a comma in a value" {|["q=a,b"]|} (body "/search?q=a,b");
   check_string "a comma in a repeated name" {|["-","a,b","c"]|}
@@ -868,7 +883,7 @@ let test_a_header_sent_on_several_lines () =
            Option.fold tags ~none:"-" ~some:(String.concat "|");
          ])
   in
-  let app = Public.app [ route ] in
+  let app = Spindle.Test.app [ route ] in
   check_string "list fields, each line read"
     {|["en, fr;q=0.5","no-cache, max-age=5","20","-","a|b|c"]|}
     (Spindle.Test.call app `GET "/lines"
@@ -911,7 +926,7 @@ let test_a_default_stands_in_for_an_absent_input () =
        and+ size = Spindle.Header.default "x-size" Wiretype.int 20 in
        Ok (Printf.sprintf "%d %d" page size))
   in
-  let app = Public.app [ route ] in
+  let app = Spindle.Test.app [ route ] in
   check_string "both absent" "1 20" (Spindle.Test.call app `GET "/page").body;
   check_string "both given" "3 50"
     (Spindle.Test.call app `GET "/page?page=3" ~headers:[ ("x-size", "50") ])
@@ -940,7 +955,7 @@ let with_cookie =
 let set_cookie ?proxied ?(headers = []) () =
   Spindle.Test.header
     (Spindle.Test.call
-       (Public.app [ with_cookie ])
+       (Spindle.Test.app [ with_cookie ])
        `POST "/in" ?proxied ~headers)
     "set-cookie"
 
@@ -983,7 +998,7 @@ let test_a_cookie_refuses_a_name_it_cannot_hold () =
 (* The Set-Cookie line a route writes for [cookie]. *)
 let written ?keys cookie =
   let app =
-    Public.app ?keys
+    Spindle.Test.app ?keys
       [
         Spindle.post Spindle.Path.root Spindle.Returns.text
           (let+ set_cookie = Spindle.set_cookie in
@@ -1016,7 +1031,7 @@ let utf8_text =
 let plain = Spindle.Cookie.named "k" Wiretype.string
 
 let plain_app =
-  Public.app
+  Spindle.Test.app
     [
       Spindle.post
         Spindle.Path.(s "set" / Spindle.Path.string "v")
@@ -1125,7 +1140,7 @@ let sealed_routes c =
   ]
 
 let sealed_app ?(keys = Spindle.Key.ring new_key []) c =
-  Public.app ~keys (sealed_routes c)
+  Spindle.Test.app ~keys (sealed_routes c)
 
 let issued ?(now = Ptime.epoch) app v =
   let r = Spindle.Test.call ~now app `POST ("/set/" ^ v) in
@@ -1268,7 +1283,7 @@ let test_a_sealed_cookie_ages make =
     "and never lengthen it" true
     (contains ~sub:"Max-Age=60" longer);
   let required =
-    Public.app ~keys:ring
+    Spindle.Test.app ~keys:ring
       [
         Spindle.get
           Spindle.Path.(s "who")
@@ -1325,7 +1340,7 @@ let test_the_server_holds_the_keys () =
        Ok (Spindle.Key.sign keys "invite:7"))
   in
   let started ?keys routes =
-    match Public.make routes with
+    match Spindle.App.make routes with
     | Error m -> Error m
     | Ok app ->
         Spindle.App.start ?keys app ~mono_clock:(Eio.Stdenv.mono_clock env)
@@ -1346,16 +1361,16 @@ let test_the_server_holds_the_keys () =
        (started ~keys:(Spindle.Key.ring new_key []) [ reads; token ]));
   Alcotest.(check bool)
     "a test that calls one is told" true
-    (match Spindle.Test.call (Public.app [ reads ]) `GET "/who" with
+    (match Spindle.Test.call (Spindle.Test.app [ reads ]) `GET "/who" with
     | _ -> false
     | exception Invalid_argument m -> contains ~sub:"~keys" m);
-  let unsealed = Spindle.Test.call (Public.app [ sets ]) `POST "/who" in
+  let unsealed = Spindle.Test.call (Spindle.Test.app [ sets ]) `POST "/who" in
   check_status "one that only sets it is answered 500" 500 unsealed.status;
   Alcotest.(check (option string))
     "and writes no cookie" None
     (Spindle.Test.header unsealed "set-cookie");
   let ring = Spindle.Key.ring new_key [] in
-  let app = Public.app ~keys:ring [ reads; sets; token ] in
+  let app = Spindle.Test.app ~keys:ring [ reads; sets; token ] in
   let cookie =
     match
       Spindle.Test.header (Spindle.Test.call app `POST "/who") "set-cookie"
@@ -1380,7 +1395,7 @@ let test_keys_supplied_as_a_resource_seal () =
     Spindle.Cookie.signed ~max_age:Mtime.Span.hour "who" Wiretype.string
   in
   let app =
-    Public.app
+    Spindle.Test.app
       ~resources:
         [ Spindle.Dep.resource Spindle.keys (Spindle.Key.ring new_key []) ]
       (sealed_routes c)
@@ -1449,7 +1464,7 @@ let session_routes ?mono_clock session =
     | Ok None -> Ok "nobody"
     | Error e -> Error e
   in
-  Public.app ?mono_clock
+  Spindle.Test.app ?mono_clock
     [
       Spindle.get
         Spindle.Path.(s "me")
@@ -1632,7 +1647,7 @@ let test_a_session_ends_by_its_limits () =
       Wiretype.int
   in
   let reads_ints =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.get
           Spindle.Path.(s "n")
@@ -1671,7 +1686,7 @@ let theme =
        [ Light; Dark ])
 
 let theme_app =
-  Public.app
+  Spindle.Test.app
     [
       Spindle.get
         Spindle.Path.(s "page")
@@ -1810,7 +1825,7 @@ let posted =
     Spindle.Returns.response
     (Spindle.Dep.return (Ok (Spindle.Response.make "done")))
 
-let act ?(app = Public.app [ posted; hello ]) ?proxied ?(meth = `POST)
+let act ?(app = Spindle.Test.app [ posted; hello ]) ?proxied ?(meth = `POST)
     ?(path = "/act") headers =
   (Spindle.Test.call app meth path ?proxied ~headers).status
 
@@ -1826,7 +1841,7 @@ let test_a_request_from_another_site_is_refused () =
   check_status "an opaque origin" 403 (act [ here; ("origin", "null") ]);
   check_status "even one a list names" 403
     (act
-       ~app:(Public.app ~trusted_origins:[ "null" ] [ posted; hello ])
+       ~app:(Spindle.Test.app ~trusted_origins:[ "null" ] [ posted; hello ])
        [ here; ("origin", "null"); ("sec-fetch-site", "cross-site") ]);
   check_status "this site, by Sec-Fetch-Site" 200
     (act
@@ -1868,7 +1883,7 @@ let test_a_request_from_another_site_is_refused () =
 
 let test_a_trusted_origin_and_a_trusted_proxy_pass () =
   let trusting =
-    Public.app ~trusted_origins:[ "https://app.example" ] [ posted ]
+    Spindle.Test.app ~trusted_origins:[ "https://app.example" ] [ posted ]
   in
   check_status "a trusted origin" 200
     (act ~app:trusting
@@ -1887,7 +1902,7 @@ let test_a_trusted_origin_and_a_trusted_proxy_pass () =
   check_status "behind a proxy that rewrites Host" 200
     (act ~proxied:true behind);
   check_status "but a client cannot claim to be one" 403 (act behind);
-  let off = Public.app ~check_origin:false [ posted ] in
+  let off = Spindle.Test.app ~check_origin:false [ posted ] in
   check_status "and it can be turned off, by name" 200
     (act ~app:off [ ("sec-fetch-site", "cross-site") ])
 
@@ -1935,7 +1950,7 @@ let test_a_value_sent_twice_is_read_by_its_first () =
     Spindle.route meth Spindle.Path.(s name) Spindle.Returns.text read
   in
   let a =
-    Public.app
+    Spindle.Test.app
       [
         reads `GET "required"
           (let+ v = Spindle.Query.required "role" Wiretype.string in
@@ -1979,7 +1994,7 @@ let test_a_value_sent_twice_is_read_by_its_first () =
     [ ("required", "viewer"); ("optional", "viewer"); ("list", "viewer,admin") ]
 
 let test_a_form's_fields_are_typed_inputs () =
-  let a = Public.app [ profile ] in
+  let a = Spindle.Test.app [ profile ] in
   let post ?(headers = form_headers) body =
     Spindle.Test.call a `POST "/profile" ~headers ~body
   in
@@ -2004,7 +2019,7 @@ let test_a_form's_fields_are_typed_inputs () =
 
 let test_a_form_is_read_once_and_only_as_a_form () =
   let read = ref 0 and ran = ref 0 in
-  let a = Public.app [ profile ] in
+  let a = Spindle.Test.app [ profile ] in
   let call headers body =
     fst
       (Spindle.App.handle a
@@ -2038,7 +2053,9 @@ let test_a_form_is_read_once_and_only_as_a_form () =
        Ok "ran")
   in
   let forged =
-    Spindle.Test.call (Public.app [ counted ]) `POST "/count"
+    Spindle.Test.call
+      (Spindle.Test.app [ counted ])
+      `POST "/count"
       ~headers:
         (("sec-fetch-site", "cross-site")
         :: ("origin", "https://evil.example")
@@ -2048,7 +2065,7 @@ let test_a_form_is_read_once_and_only_as_a_form () =
   check_status "a form from another site" 403 forged.status;
   check_int "is refused before the route runs" 0 !ran;
   let beside body =
-    Public.make
+    Spindle.App.make
       [
         Spindle.post
           Spindle.Path.(s "x")
@@ -2072,7 +2089,9 @@ let test_a_form_is_read_once_and_only_as_a_form () =
           (Spindle.Form.required "b" Wiretype.int |> Spindle.Dep.map ignore)))
 
 let test_a_form_is_described () =
-  match Spindle.Openapi.document (Spindle.App.app (Public.app [ profile ])) with
+  match
+    Spindle.Openapi.document (Spindle.App.app (Spindle.Test.app [ profile ]))
+  with
   | Error _ -> Alcotest.fail "no document"
   | Ok doc ->
       let open Yojson.Safe.Util in
@@ -2156,7 +2175,7 @@ let uploads =
      each parts [])
 
 let test_an_upload_is_read_a_part_at_a_time () =
-  let a = Public.app [ uploads ] in
+  let a = Spindle.Test.app [ uploads ] in
   let post ?(headers = multipart_headers) body =
     Spindle.Test.call a `POST "/uploads" ~headers ~body
   in
@@ -2210,7 +2229,7 @@ let test_a_form's_files_are_inputs () =
             (match a with Some f -> show f | None -> "-")
             (String.concat "," (List.map show d))))
   in
-  let a = Public.app [ route ] in
+  let a = Spindle.Test.app [ route ] in
   let post body =
     (Spindle.Test.call a `POST "/profile" ~headers:multipart_headers ~body).body
   in
@@ -2237,7 +2256,7 @@ let test_a_form's_files_are_inputs () =
   Alcotest.(check bool)
     "parts beside a form are refused when the app is made" true
     (Result.is_error
-       (Public.make
+       (Spindle.App.make
           [
             Spindle.post
               Spindle.Path.(s "x")
@@ -2303,7 +2322,7 @@ let cross_site origin = [ ("sec-fetch-site", "cross-site"); ("origin", origin) ]
 
 let test_a_preflight_is_the_framework's () =
   let a =
-    Public.app
+    Spindle.Test.app
       ~cors:
         (Spindle.Cors.origins ~credentials:true ~routes:api_only [ app_origin ])
       cors_routes
@@ -2347,7 +2366,7 @@ let test_a_preflight_is_the_framework's () =
 
 let test_an_answer_says_who_may_read_it () =
   let a =
-    Public.app
+    Spindle.Test.app
       ~cors:
         (Spindle.Cors.origins ~credentials:true ~routes:api_only [ app_origin ])
       ~middleware:
@@ -2383,7 +2402,7 @@ let test_an_answer_says_who_may_read_it () =
 
 let test_an_allowed_origin_may_write () =
   let named =
-    Public.app
+    Spindle.Test.app
       ~cors:
         (Spindle.Cors.origins ~credentials:true ~routes:api_only [ app_origin ])
       cors_routes
@@ -2399,7 +2418,7 @@ let test_an_allowed_origin_may_write () =
   check_status "and so is one to a route the policy does not cover" 403
     (Spindle.Test.call named `POST "/page" ~headers:(cross_site app_origin))
       .status;
-  let any = Public.app ~cors:(Spindle.Cors.any ()) cors_routes in
+  let any = Spindle.Test.app ~cors:(Spindle.Cors.any ()) cors_routes in
   let from_anywhere = cross_site "https://anyone.example" in
   let r = Spindle.Test.call any `POST "/api/item" ~headers:from_anywhere in
   check_status "under Any, a write with no cookie passes" 200 r.status;
@@ -2476,7 +2495,7 @@ let test_a_stream_compresses_in_process () =
                  let* () = send "data: one\n\n" in
                  send "data: two\n\n"))))
   in
-  let a = Public.app ~compress:Spindle.Compress.default [ events ] in
+  let a = Spindle.Test.app ~compress:Spindle.Compress.default [ events ] in
   let r =
     Spindle.Test.call a `GET "/ticks" ~headers:[ ("accept-encoding", "gzip") ]
   in
@@ -2499,7 +2518,9 @@ let test_a_compression_that_cannot_be_is_refused () =
   ignore (Spindle.Compress.make ~level:9 ())
 
 let test_an_answer_is_compressed_where_it_may_be () =
-  let a = Public.app ~compress:Spindle.Compress.default compressed_routes in
+  let a =
+    Spindle.Test.app ~compress:Spindle.Compress.default compressed_routes
+  in
   let get ?(accept = "gzip, br") ?(meth = `GET) path =
     Spindle.Test.call a meth path ~headers:[ ("accept-encoding", accept) ]
   in
@@ -2543,7 +2564,7 @@ let test_an_answer_is_compressed_where_it_may_be () =
     ];
   check_header "a type not listed does not vary" None
     (Spindle.Test.header (get "/image") "vary");
-  let off = Public.app compressed_routes in
+  let off = Spindle.Test.app compressed_routes in
   check_header "and nothing is compressed unless the app says" None
     (Spindle.Test.header
        (Spindle.Test.call off `GET "/large"
@@ -2556,7 +2577,9 @@ let test_an_answer_is_compressed_where_it_may_be () =
    9110 §13.1.2, §15.4.5); one that sends another, or no longer takes
    gzip, gets the whole answer. *)
 let test_a_compressed_answer_revalidates () =
-  let a = Public.app ~compress:Spindle.Compress.default compressed_routes in
+  let a =
+    Spindle.Test.app ~compress:Spindle.Compress.default compressed_routes
+  in
   let get ?(accept = "gzip") ?(meth = `GET) tags =
     Spindle.Test.call a meth "/large"
       ~headers:[ ("accept-encoding", accept); ("if-none-match", tags) ]
@@ -2608,7 +2631,7 @@ let test_a_burst_is_its_own_figure () =
   let mono_clock = Eio_mock.Clock.Mono.make () in
   let calls = Spindle.Rate.create ~limit:2 ~per:Mtime.Span.s ~burst:5 () in
   let a =
-    Public.app ~mono_clock
+    Spindle.Test.app ~mono_clock
       [
         Spindle.post
           Spindle.Path.(s "call")
@@ -2633,7 +2656,7 @@ let test_a_burst_is_its_own_figure () =
 let test_an_ipv6_client_is_counted_by_its_network () =
   let calls = Spindle.Rate.create ~limit:1 ~per:Mtime.Span.min () in
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.post
           Spindle.Path.(s "call")
@@ -2668,7 +2691,7 @@ let test_a_limit_refuses_past_its_rate () =
       Spindle.Returns.text
       (Spindle.Dep.return (Ok "open"))
   in
-  let a = Public.app ~mono_clock [ route; open_ ] in
+  let a = Spindle.Test.app ~mono_clock [ route; open_ ] in
   let call ?(peer = "10.0.0.1") () =
     Spindle.Test.call ~peer a `POST "/sign-in"
   in
@@ -2714,8 +2737,8 @@ let limited_once_a_minute =
      Ok "in")
 
 let test_two_apps_count_apart () =
-  let first = Public.app [ limited_once_a_minute ]
-  and second = Public.app [ limited_once_a_minute ] in
+  let first = Spindle.Test.app [ limited_once_a_minute ]
+  and second = Spindle.Test.app [ limited_once_a_minute ] in
   let call a = (Spindle.Test.call a `POST "/call").status in
   check_status "the first app's first call" 200 (call first);
   check_status "and its second" 429 (call first);
@@ -2727,7 +2750,7 @@ let test_a_server_times_its_limit_on_its_monotonic_clock () =
   let call a = (Spindle.Test.call a `POST "/call").status in
   let mono_clock = Eio_mock.Clock.Mono.make () in
   let a =
-    match Public.make [ limited_once_a_minute ] with
+    match Spindle.App.make [ limited_once_a_minute ] with
     | Error m -> Alcotest.fail m
     | Ok app -> (
         match Spindle.App.start app ~mono_clock with
@@ -2797,7 +2820,7 @@ let test_a_test_browser_keeps_what_the_app_set () =
   in
   let b =
     Spindle.Test.browser
-      (Public.app
+      (Spindle.Test.app
          ~resources:
            [ Spindle.Dep.resource session_store (Spindle.Session.memory ()) ]
          routes)
@@ -2851,7 +2874,7 @@ let test_a_test_reads_a_stream_that_never_ends () =
               let* () = send "data: one\n\n" in
               Eio.Fiber.await_cancel ())))
   in
-  let a = Public.app [ forever; waits; hello ] in
+  let a = Spindle.Test.app [ forever; waits; hello ] in
   let seen = ref [] in
   (match
      Spindle.Test.events a "/ticks" (fun e ->
@@ -2878,8 +2901,9 @@ let test_a_test_reads_a_stream_that_never_ends () =
 
 let test_json_is_only_json () =
   let with_type ct =
-    (Spindle.Test.call (Public.app [ echo ]) `POST "/echo"
-       ~body:{|{"name":"lee"}|}
+    (Spindle.Test.call
+       (Spindle.Test.app [ echo ])
+       `POST "/echo" ~body:{|{"name":"lee"}|}
        ~headers:(match ct with Some c -> [ ("content-type", c) ] | None -> []))
       .status
   in
@@ -3202,7 +3226,7 @@ let test_a_request_joins_the_trace_it_was_sent () =
                      v Spindle.Log.traceparent;
                    ]))))
   in
-  let app = Public.app [ seen ] in
+  let app = Spindle.Test.app [ seen ] in
   let ask headers =
     match
       String.split_on_char ' '
@@ -3636,7 +3660,7 @@ let test_a_request_and_its_call_are_one_trace () =
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~read_clock:(fun () -> Ptime.epoch)
         ~trace [ socket ]
-        (Public.app [ front; back; broken ]);
+        (Spindle.Test.app [ front; back; broken ]);
       `Stop_daemon);
   let outside =
     Spindle_client.create ~sw ~net ~mono_clock:(Eio.Stdenv.mono_clock env) ()
@@ -4004,7 +4028,7 @@ let test_counting_never_fails_a_request () =
   and pools = Spindle.Metrics.gauge m ~labels:[ "pool" ] "open"
   and took = Spindle.Metrics.histogram m ~buckets:[ 1. ] "took" in
   let app =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.post
           Spindle.Path.(s "count")
@@ -4062,7 +4086,7 @@ let test_a_server_counts_its_requests () =
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~read_clock:(fun () -> Ptime.epoch)
         ~metrics [ socket ]
-        (Public.app (hello :: Spindle.Metrics.routes metrics));
+        (Spindle.Test.app (hello :: Spindle.Metrics.routes metrics));
       `Stop_daemon);
   (* A request is counted out after its answer is written, which can be
      after the client has read it; its connection closes only once it is,
@@ -4114,7 +4138,7 @@ let test_metrics_are_guarded_as_a_route_is () =
   in
   let m = Spindle.Metrics.create () in
   ignore (Spindle.Metrics.gauge m "up");
-  let app = Public.app (Spindle.Metrics.routes ~guard m) in
+  let app = Spindle.Test.app (Spindle.Metrics.routes ~guard m) in
   check_status "refused without" 403
     (Spindle.Test.call app `GET "/metrics").status;
   let r =
@@ -4136,7 +4160,7 @@ let test_probes_and_the_reference_are_guarded () =
         | Some _ | None -> Error (Spindle.Refusal.make forbidden "Not you."))
   in
   let staff = [ ("authorization", "Bearer staff") ] in
-  let probes = Public.app (Spindle.Health.routes ~guard []) in
+  let probes = Spindle.Test.app (Spindle.Health.routes ~guard []) in
   List.iter
     (fun path ->
       check_status
@@ -4146,7 +4170,7 @@ let test_probes_and_the_reference_are_guarded () =
         (Spindle.Test.call probes ~headers:staff `GET path).status)
     [ "/livez"; "/readyz" ];
   let reference =
-    Public.app (hello :: Spindle.Openapi.routes ~guard [ hello ])
+    Spindle.Test.app (hello :: Spindle.Openapi.routes ~guard [ hello ])
   in
   List.iter
     (fun path ->
@@ -4184,7 +4208,7 @@ let test_the_client_answers_times_out_and_reports domains () =
   Spindle.Log.setup ~format:Spindle.Log.Json ~level:(Some Logs.Info)
     ~out:(fun l -> lines := l :: !lines)
     ();
-  let served = Public.app [ hello; slow; events ] in
+  let served = Spindle.Test.app [ hello; slow; events ] in
   let socket =
     Eio.Net.listen net ~sw ~backlog:8 ~reuse_addr:true
       (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
@@ -4747,7 +4771,7 @@ let test_the_client_reads_as_it_arrives () =
       ~clock:(Eio.Stdenv.mono_clock env)
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains:1
-      (Public.app [ stream; forever; hello ])
+      (Spindle.Test.app [ stream; forever; hello ])
   in
   let client =
     Spindle_client.create ~sw ~net ~mono_clock:(Eio.Stdenv.mono_clock env) ()
@@ -4805,7 +4829,8 @@ let test_each_wait_for_a_streamed_answer_is_bounded () =
       Spindle.Server.serve_on ~mono_clock:clock
         ~read_clock:(fun () -> Ptime.epoch)
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-        [ listening ] (Public.app [ slow ]);
+        [ listening ]
+        (Spindle.Test.app [ slow ]);
       `Stop_daemon);
   let net = Eio_mock.Net.make "net" in
   Eio_mock.Net.on_getaddrinfo net
@@ -4853,7 +4878,8 @@ let test_a_failed_read_is_answered_again () =
     serve ~sw ~net
       ~clock:(Eio.Stdenv.mono_clock env)
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-      ~domains:1 (Public.app [ slow ])
+      ~domains:1
+      (Spindle.Test.app [ slow ])
   in
   let front, authenticator = Tls_front.listen ~sw ~net ~port in
   let client =
@@ -4987,7 +5013,7 @@ let test_every_serving_domain_raises_its_minor_heap () =
     serve ~sw ~net ~clock
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains:2
-      (Public.app [ minor_heap ])
+      (Spindle.Test.app [ minor_heap ])
   in
   let rec ask seen left =
     if left = 0 then Alcotest.fail "one domain answered every request"
@@ -5057,7 +5083,7 @@ let test_a_limit_out_of_range_is_refused () =
       ~mono_clock:(Eio.Stdenv.mono_clock env)
       ~read_clock:(fun () -> Ptime.epoch)
       ?domains ?trusted_proxies ~limits:Spindle.Server.Limits.default ~stop
-      [ socket ] (Public.app [])
+      [ socket ] (Spindle.Test.app [])
   in
   List.iter
     (fun (why, f) -> refused why f)
@@ -5089,7 +5115,7 @@ let test_forwarded_is_believed_where_it_is_named domains () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains
       ~clock:(Eio.Stdenv.mono_clock env)
-      ~trusted_proxies ?proxy_header (Public.app [ who ])
+      ~trusted_proxies ?proxy_header (Spindle.Test.app [ who ])
   in
   let client port headers =
     fst
@@ -5146,7 +5172,7 @@ let test_a_forwarded_address_is_believed_only_from_a_trusted_proxy domains () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains
       ~clock:(Eio.Stdenv.mono_clock env)
-      (Public.app [ who ])
+      (Spindle.Test.app [ who ])
   in
   let client, id =
     who_of
@@ -5163,7 +5189,7 @@ let test_a_forwarded_address_is_believed_only_from_a_trusted_proxy domains () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains
       ~clock:(Eio.Stdenv.mono_clock env)
-      ~trusted_proxies:[ "127.0.0.1" ] (Public.app [ who ])
+      ~trusted_proxies:[ "127.0.0.1" ] (Spindle.Test.app [ who ])
   in
   let r =
     call_on ~net
@@ -5191,7 +5217,7 @@ let test_a_forwarded_address_is_believed_only_from_a_trusted_proxy domains () =
       ~domains
       ~clock:(Eio.Stdenv.mono_clock env)
       ~trusted_proxies:[ "127.0.0.0/8"; "10.0.0.0/8" ]
-      (Public.app [ who ])
+      (Spindle.Test.app [ who ])
   in
   let client, id =
     who_of
@@ -5231,7 +5257,8 @@ let test_a_body_past_the_limit_is_413 domains () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains
       ~clock:(Eio.Stdenv.mono_clock env)
-      ~max_body:32 (Public.app [ echo ])
+      ~max_body:32
+      (Spindle.Test.app [ echo ])
   in
   let r =
     call_on ~net
@@ -5265,7 +5292,7 @@ let test_head_says_how_long_get_would_be domains () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains
       ~clock:(Eio.Stdenv.mono_clock env)
-      (Public.app [ hello ])
+      (Spindle.Test.app [ hello ])
   in
   let got =
     call_on ~net ~clock:(Eio.Stdenv.mono_clock env) ~port `GET "/hello/kim"
@@ -5323,7 +5350,7 @@ let test_a_middleware_answer_is_in_the_access_log domains () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains
       ~clock:(Eio.Stdenv.mono_clock env)
-      (Public.app ~middleware:[ closed ] [ hello ])
+      (Spindle.Test.app ~middleware:[ closed ] [ hello ])
   in
   let r =
     call_on ~net ~clock:(Eio.Stdenv.mono_clock env) ~port `GET "/hello/kim"
@@ -5356,7 +5383,7 @@ let test_the_access_log_says_what_went_out domains () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains
       ~clock:(Eio.Stdenv.mono_clock env)
-      (Public.app [ framed; hello ])
+      (Spindle.Test.app [ framed; hello ])
   in
   let call = call_on ~net ~clock:(Eio.Stdenv.mono_clock env) ~port in
   check_int "refused on the way out" 500
@@ -5404,7 +5431,7 @@ let test_an_ipv4_peer_through_the_ipv6_wildcard domains () =
         ~domains
         ~mono_clock:(Eio.Stdenv.mono_clock env)
         ~read_clock:(fun () -> Ptime.epoch)
-        ~trusted_proxies:[ "127.0.0.1" ] [ socket ] (Public.app [ who ]);
+        ~trusted_proxies:[ "127.0.0.1" ] [ socket ] (Spindle.Test.app [ who ]);
       `Stop_daemon);
   let client, _ =
     who_of
@@ -5513,7 +5540,8 @@ let test_a_drain_that_runs_out_ends_on_time domains () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains ~stop
         ~limits:(Spindle.Server.Limits.make ~drain ())
-        [ listening ] (Public.app [ never ]);
+        [ listening ]
+        (Spindle.Test.app [ never ]);
       Eio.Promise.resolve return (Eio.Time.Mono.now clock));
   Eio.Switch.run @@ fun inner ->
   let flow = connect ~sw:inner in
@@ -5568,7 +5596,7 @@ let test_a_stop_lets_answers_finish domains () =
         ~limits:(Spindle.Server.Limits.make ~drain:Mtime.Span.(2 * s) ())
         ~on_stop:(fun () -> Spindle.Broadcast.close hub)
         [ listening ]
-        (Public.app [ slow; events ]);
+        (Spindle.Test.app [ slow; events ]);
       Eio.Promise.resolve return (Eio.Time.Mono.now clock));
   let read_all request =
     Eio.Switch.run @@ fun inner ->
@@ -5626,7 +5654,8 @@ let test_a_stop_lets_a_stream_of_known_length_finish domains () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains ~stop
         ~limits:(Spindle.Server.Limits.make ~drain:Mtime.Span.(2 * s) ())
-        [ listening ] (Public.app [ file ]);
+        [ listening ]
+        (Spindle.Test.app [ file ]);
       Eio.Promise.resolve return (Eio.Time.Mono.now clock));
   let answer = ref "" in
   Eio.Fiber.all
@@ -5703,7 +5732,7 @@ let test_a_client_leaving_a_quiet_topic_ends_its_producer ~read domains () =
   let _, heard_gone = Eio.Promise.create () in
   let connect =
     serve_in_memory ~sw env ~domains ~max_connections:1
-      (Public.app
+      (Spindle.Test.app
          [ quiet_topic ~hub ~returned:return ~heard_gone ~read; hello ])
   in
   open_and_leave connect;
@@ -5727,7 +5756,7 @@ let test_a_producer_that_ignores_the_client_going_ends_at_its_send domains () =
   let gone, heard_gone = Eio.Promise.create () in
   let connect =
     serve_in_memory ~sw env ~domains
-      (Public.app
+      (Spindle.Test.app
          [
            quiet_topic ~hub ~returned:return ~heard_gone
              ~read:(fun _ sub send -> Spindle.Broadcast.forward sub send);
@@ -5747,7 +5776,8 @@ let test_past_the_cap_a_connection_waits domains () =
   In_memory.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let connect =
-    serve_in_memory ~sw env ~domains ~max_connections:1 (Public.app [ hello ])
+    serve_in_memory ~sw env ~domains ~max_connections:1
+      (Spindle.Test.app [ hello ])
   in
   let status flow =
     Eio.Buf_read.line (Eio.Buf_read.of_flow flow ~max_size:4096)
@@ -5801,7 +5831,8 @@ let test_a_failed_accept_is_not_the_servers_end domains () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains
         ~limits:(Spindle.Server.Limits.make ~max_connections:1 ())
-        [ listening ] (Public.app [ hello ]);
+        [ listening ]
+        (Spindle.Test.app [ hello ]);
       `Stop_daemon);
   Eio.Switch.run @@ fun inner ->
   let flow = connect ~sw:inner in
@@ -5839,7 +5870,7 @@ let served_on ~sw ~net ~env ~domains host =
           ~read_clock:(fun () -> Ptime.epoch)
           ~port ?host
           ~ready:(fun where -> Eio.Promise.resolve tell where)
-          (Public.app [ hello ])
+          (Spindle.Test.app [ hello ])
       with
       | Ok () -> `Stop_daemon
       | Error e -> Alcotest.fail (Spindle.Server.listen_error_to_string e));
@@ -5908,7 +5939,7 @@ let refused_to_listen ~sw ~env ?host port =
       ~read_clock:(fun () -> Ptime.epoch)
       ~port ?host
       ~ready:(fun where -> Alcotest.failf "listening on %s" where)
-      (Public.app [ hello ])
+      (Spindle.Test.app [ hello ])
   with
   | Ok () -> Alcotest.fail "the server returned"
   | Error e -> e
@@ -6103,7 +6134,7 @@ let test_run_checks_its_limits_before_it_binds () =
       ~port ~host:"127.0.0.1"
       ~limits:(Spindle.Server.Limits.make ~max_connections:0 ())
       ~ready:(fun where -> Alcotest.failf "ready on %s" where)
-      (Public.app [ hello ])
+      (Spindle.Test.app [ hello ])
   with
   | Ok () -> Alcotest.fail "the server returned"
   | exception Invalid_argument m ->
@@ -6155,7 +6186,7 @@ let test_a_stream_ends_when_its_client_goes domains () =
                  let rec go () = Result.bind (send "data: tick\n\n") go in
                  go ()))))
   in
-  let connect = serve_in_memory ~sw env ~domains (Public.app [ ticks ]) in
+  let connect = serve_in_memory ~sw env ~domains (Spindle.Test.app [ ticks ]) in
   Eio.Switch.run (fun inner ->
       let flow = connect ~sw:inner in
       Eio.Flow.copy_string "GET /ticks HTTP/1.1\r\nHost: t\r\n\r\n" flow;
@@ -6189,7 +6220,7 @@ let test_a_gone_client_ends_its_connection_quietly domains () =
   in
   let connect =
     serve_in_memory ~sw env ~domains ~max_connections:1
-      (Public.app [ ticks; hello ])
+      (Spindle.Test.app [ ticks; hello ])
   in
   Eio.Switch.run (fun inner ->
       let flow = connect ~sw:inner in
@@ -6224,7 +6255,7 @@ let test_a_client_that_never_reads_frees_its_slot domains () =
     serve_in_memory ~sw env ~domains
       ~send_timeout:Mtime.Span.(300 * ms)
       ~max_connections:1
-      (Public.app [ big; hello ])
+      (Spindle.Test.app [ big; hello ])
   in
   Eio.Switch.run @@ fun inner ->
   let stuck = connect ~sw:inner in
@@ -6260,7 +6291,7 @@ let test_a_stream_sent_from_two_fibers_keeps_its_send_limit domains () =
     serve_in_memory ~sw env ~domains
       ~send_timeout:Mtime.Span.(300 * ms)
       ~max_connections:1
-      (Public.app [ two_at_once; hello ])
+      (Spindle.Test.app [ two_at_once; hello ])
   in
   Eio.Switch.run @@ fun inner ->
   let stuck = connect ~sw:inner in
@@ -6287,7 +6318,8 @@ let test_the_send_limit_is_on_a_stop_not_a_length domains () =
       (Spindle.Dep.return (Ok (Spindle.Response.make (String.make size 'x'))))
   in
   let connect =
-    serve_in_memory ~sw env ~domains ~send_timeout:limit (Public.app [ big ])
+    serve_in_memory ~sw env ~domains ~send_timeout:limit
+      (Spindle.Test.app [ big ])
   in
   let buf = Cstruct.create 65536 in
   let rec read_pausing flow total =
@@ -6345,7 +6377,7 @@ let test_a_stream_ends_when_its_client_stops_reading domains () =
   let connect =
     serve_in_memory ~sw env ~domains
       ~send_timeout:Mtime.Span.(300 * ms)
-      (Public.app [ flood ])
+      (Spindle.Test.app [ flood ])
   in
   Eio.Switch.run @@ fun inner ->
   let flow = connect ~sw:inner in
@@ -6373,7 +6405,8 @@ let test_a_jumping_clock_moves_no_duration domains () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains
       ~clock:(Eio.Stdenv.mono_clock env)
-      ~read_clock (Public.app [ hello ])
+      ~read_clock
+      (Spindle.Test.app [ hello ])
   in
   let r =
     call_on ~net ~clock:(Eio.Stdenv.mono_clock env) ~port `GET "/hello/kim"
@@ -6410,7 +6443,7 @@ let test_https_is_never_spoken_as_plain_http domains () =
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains
       ~clock:(Eio.Stdenv.mono_clock env)
-      (Public.app [ hello ])
+      (Spindle.Test.app [ hello ])
   in
   let client =
     Spindle_client.create ~sw ~net
@@ -6441,7 +6474,8 @@ let test_no_header_value_reaches_the_log () =
   let port =
     serve ~sw ~net
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-      ~domains:1 ~clock (Public.app [ hello ])
+      ~domains:1 ~clock
+      (Spindle.Test.app [ hello ])
   in
   let client = Spindle_client.create ~sw ~net ~mono_clock:clock () in
   (match
@@ -6500,7 +6534,7 @@ let test_no_exception_message_reaches_the_log () =
                    raise (Charging secret)))));
     ]
   in
-  let connect = serve_in_memory ~sw env (Public.app routes) in
+  let connect = serve_in_memory ~sw env (Spindle.Test.app routes) in
   List.iter
     (fun request ->
       Eio.Switch.run (fun inner ->
@@ -6541,7 +6575,7 @@ let test_no_refused_byte_reaches_the_log () =
       (let+ body = Spindle.body in
        Ok body)
   in
-  let connect = serve_in_memory ~sw env (Public.app [ read ]) in
+  let connect = serve_in_memory ~sw env (Spindle.Test.app [ read ]) in
   let refused (secret, request) =
     lines := [];
     let answer =
@@ -6604,7 +6638,8 @@ let test_request_ids_are_distinct_across_domains () =
   let port =
     serve ~sw ~net
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-      ~domains:4 ~clock (Public.app [ hello ])
+      ~domains:4 ~clock
+      (Spindle.Test.app [ hello ])
   in
   let client =
     Spindle_client.create ~sw ~net ~mono_clock:clock
@@ -6666,7 +6701,8 @@ let domains_answering env ?domains ?(also = ignore) ~expect () =
           Spindle.Server.serve_on
             ~mono_clock:(Eio.Stdenv.mono_clock env)
             ~read_clock:(fun () -> Ptime.epoch)
-            ~domain_mgr ?domains [ socket ] (Public.app [ where ]));
+            ~domain_mgr ?domains [ socket ]
+            (Spindle.Test.app [ where ]));
       `Stop_daemon);
   let answered () = List.sort_uniq Int.compare (Atomic.get seen) in
   let rec ask () =
@@ -6850,7 +6886,7 @@ let test_a_literal_beats_a_parameter_in_any_order () =
   in
   List.iter
     (fun (order, routes) ->
-      let a = Public.app routes in
+      let a = Spindle.Test.app routes in
       check_string (order ^ ": the literal") "me"
         (Spindle.Test.call a `GET "/users/me").body;
       check_string
@@ -6873,14 +6909,14 @@ let test_a_parameter_that_declines_is_asked_first () =
   in
   List.iter
     (fun routes ->
-      let a = Public.app routes in
+      let a = Spindle.Test.app routes in
       check_string "a number" "number"
         (Spindle.Test.call a `GET "/items/5").body;
       check_string "a name" "name" (Spindle.Test.call a `GET "/items/pen").body)
     [ [ by_number; by_name ]; [ by_name; by_number ] ]
 
 let refused routes =
-  match Public.make routes with
+  match Spindle.App.make routes with
   | Ok _ -> Alcotest.fail "the app was made"
   | Error m -> m
 
@@ -6901,7 +6937,7 @@ let test_routes_that_could_both_answer_are_refused () =
     [ "GET /users/{user_id}"; "GET /users/{name}" ];
   (* Under two methods, one URL is two routes. *)
   ignore
-    (Public.app
+    (Spindle.Test.app
        [
          Spindle.get
            Spindle.Path.(s "users" / user_id)
@@ -6950,7 +6986,7 @@ let test_a_parameter_its_path_lacks_is_refused () =
    what it hides is our bug when it runs, and a 500 that says nothing. *)
 let test_a_parameter_behind_a_bind_is_found_when_it_runs () =
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.get
           Spindle.Path.(s "orders")
@@ -6972,7 +7008,7 @@ let order =
 (* The literals chose the route, so a parameter that does not parse is the
    client's input, said at its place -- not a URL nobody serves. *)
 let test_a_bad_parameter_is_a_problem () =
-  let a = Public.app [ order ] in
+  let a = Spindle.Test.app [ order ] in
   check_string "a number" "7" (Spindle.Test.call a `GET "/orders/7").body;
   List.iter
     (fun target ->
@@ -7004,7 +7040,7 @@ let test_a_custom_segment_is_a_problem_or_not_the_route () =
       (let+ n = Spindle.param p in
        Ok (Spindle.Response.json Wiretype.int (n / 2)))
   in
-  let strict = Public.app [ half (even ()) ] in
+  let strict = Spindle.Test.app [ half (even ()) ] in
   check_string "handed over typed" "4"
     (Spindle.Test.call strict `GET "/half/8").body;
   let r = Spindle.Test.call strict `GET "/half/7" in
@@ -7014,7 +7050,7 @@ let test_a_custom_segment_is_a_problem_or_not_the_route () =
     (contains ~sub:"This is not an even number." r.body);
   check_status "or not this route" 404
     (Spindle.Test.call
-       (Public.app [ half (even ~unparsed:Spindle.Path.Next_route ()) ])
+       (Spindle.Test.app [ half (even ~unparsed:Spindle.Path.Next_route ()) ])
        `GET "/half/7")
       .status
 
@@ -7116,7 +7152,7 @@ let test_the_table_answers_as_the_rule =
                  (Ok (Spindle.Response.make (string_of_int i)))))
           routes
       in
-      match Public.make built with
+      match Spindle.App.make built with
       | Error _ -> QCheck.assume_fail ()
       | Ok a -> (
           let a = start_app a in
@@ -7177,7 +7213,9 @@ let test_a_printed_path_parses_back =
                [ text; string_of_int n; (if red then "r" else "g") ]) )
       with
       | Ok target, Ok expected ->
-          let r = Spindle.Test.call (Public.app [ echo_place ]) `GET target in
+          let r =
+            Spindle.Test.call (Spindle.Test.app [ echo_place ]) `GET target
+          in
           Spindle.Status.to_int r.status = 200 && String.equal r.body expected
       | Error m, _ | _, Error m -> QCheck.Test.fail_report m)
 
@@ -7215,7 +7253,7 @@ let the_rest =
 
 let test_the_rest_of_a_path_is_its_segments () =
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.get
           Spindle.Path.(s "static" / file)
@@ -7235,7 +7273,7 @@ let test_the_rest_of_a_path_is_its_segments () =
    API's, so the site at the root answers it. *)
 let test_the_rest_ranks_last_at_any_depth () =
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.get
           Spindle.Path.(root / file)
@@ -7262,7 +7300,7 @@ let test_the_rest_ranks_last_at_any_depth () =
    an endpoint that only takes POST. *)
 let test_a_rest_takes_only_what_no_route_names () =
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.get
           Spindle.Path.(root / file)
@@ -7330,7 +7368,7 @@ let test_a_site_answers_by_its_three_rules () =
       root
   in
   check_int "every file" 8 (Spindle.Static.files t);
-  let a = Public.app [ Spindle.Static.route t ] in
+  let a = Spindle.Test.app [ Spindle.Static.route t ] in
   let get target = Spindle.Test.call a `GET target in
   let served what target =
     let r = get target in
@@ -7368,7 +7406,7 @@ let notes =
 
 let started ?resources routes =
   Eio_main.run @@ fun env ->
-  match Public.make routes with
+  match Spindle.App.make routes with
   | Error m -> Alcotest.fail m
   | Ok app ->
       Spindle.App.start ?resources app ~fs:(Eio.Stdenv.fs env)
@@ -7391,14 +7429,17 @@ let test_a_route_reads_the_resource_supplied () =
       check_string "served" "notes from the shelf"
         (Spindle.Test.call app `GET "/notes").body);
   check_string "in a test" "notes from the shelf"
-    (Spindle.Test.call (Public.app ~resources [ notes ]) `GET "/notes").body
+    (Spindle.Test.call (Spindle.Test.app ~resources [ notes ]) `GET "/notes")
+      .body
 
 (* Each start is an instance of its own: one app started twice reads, in
    each, what that start was given, so a server and a test of one app share
    nothing. *)
 let test_each_start_reads_its_own_resources () =
   let app =
-    match Public.make [ notes ] with Ok a -> a | Error m -> Alcotest.fail m
+    match Spindle.App.make [ notes ] with
+    | Ok a -> a
+    | Error m -> Alcotest.fail m
   in
   let start shelf =
     match
@@ -7436,7 +7477,7 @@ let test_start_refuses_what_was_not_supplied () =
         Spindle.Dep.resource database "another shelf";
       ];
   match
-    Public.app
+    Spindle.Test.app
       ~resources:[ Spindle.Dep.resource (Spindle.Dep.map Fun.id database) "" ]
       [ notes ]
   with
@@ -7474,7 +7515,7 @@ let test_a_resource_behind_a_bind_is_found_when_it_runs () =
 (* A test supplies only what the routes it calls read; one that calls a
    route reading a resource it was not given has a bug, said by name. *)
 let test_a_test_calling_for_a_resource_it_lacks_raises () =
-  let app = Public.app [ notes; hello ] in
+  let app = Spindle.Test.app [ notes; hello ] in
   check_status "a route that reads none" 200
     (Spindle.Test.call app `GET "/hello/ada").status;
   match Spindle.Test.call app `GET "/notes" with
@@ -7491,7 +7532,7 @@ let test_a_directory_is_read_when_the_server_starts () =
   with_site site @@ fun root ->
   let fs = (fst root, "") and dir = snd root in
   let app routes =
-    match Public.make routes with Ok a -> a | Error m -> Alcotest.fail m
+    match Spindle.App.make routes with Ok a -> a | Error m -> Alcotest.fail m
   in
   let mono_clock = Eio_mock.Clock.Mono.make () in
   (match
@@ -7519,7 +7560,7 @@ let test_a_directory_is_read_when_the_server_starts () =
       Alcotest.(check bool)
         "naming the route" true
         (contains ~sub:"GET /{file*}" m));
-  match Public.app [ Spindle.Static.directory dir ] with
+  match Spindle.Test.app [ Spindle.Static.directory dir ] with
   | _ -> Alcotest.fail "a test served a directory it cannot read"
   | exception Invalid_argument m ->
       Alcotest.(check bool)
@@ -7532,7 +7573,7 @@ let test_each_start_reads_its_own_directory () =
   with_site [ ("a/index.html", "FIRST"); ("b/index.html", "SECOND") ]
   @@ fun root ->
   let app =
-    match Public.make [ Spindle.Static.directory "." ] with
+    match Spindle.App.make [ Spindle.Static.directory "." ] with
     | Ok a -> a
     | Error m -> Alcotest.fail m
   in
@@ -7554,7 +7595,7 @@ let test_each_start_reads_its_own_directory () =
 
 let test_a_site_with_nothing_named_serves_its_files () =
   with_site site @@ fun root ->
-  let a = Public.app [ Spindle.Static.route (loaded root) ] in
+  let a = Spindle.Test.app [ Spindle.Static.route (loaded root) ] in
   let get target = Spindle.Test.call a `GET target in
   check_string "a file" "ABOUT" (get "/about").body;
   let r = get "/nothing" in
@@ -7566,7 +7607,7 @@ let test_a_site_with_nothing_named_serves_its_files () =
 let test_a_site_under_a_prefix () =
   with_site site @@ fun root ->
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.Static.route ~at:Spindle.Path.(s "static") (loaded root);
         Spindle.get
@@ -7584,7 +7625,7 @@ let test_a_site_under_a_prefix () =
 let test_a_file_is_typed_and_revalidated () =
   with_site site @@ fun root ->
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.Static.route
           (loaded ~types:[ (".WASM", "application/wasm") ] root);
@@ -7611,7 +7652,7 @@ let test_a_cache_policy_keeps_what_it_names () =
   with_site site @@ fun root ->
   let year = Some "public, max-age=31536000, immutable" in
   let a =
-    Public.app
+    Spindle.Test.app
       ~middleware:
         [ Spindle.Cache.forever ~under:Spindle.Path.[ s "_astro"; s "made" ] ]
       [
@@ -7660,7 +7701,8 @@ let test_a_cache_policy_keeps_what_it_names () =
 let test_a_matching_tag_is_304 () =
   with_site site @@ fun root ->
   let a =
-    Public.app [ Spindle.Static.route (loaded ~not_found:"/404.html" root) ]
+    Spindle.Test.app
+      [ Spindle.Static.route (loaded ~not_found:"/404.html" root) ]
   in
   let call ?(headers = []) target = Spindle.Test.call ~headers a `GET target in
   let first = call "/about" in
@@ -7710,7 +7752,7 @@ let test_a_site_that_cannot_be_served_is_refused () =
 (* A range of a file in memory is a slice of it; several are the whole. *)
 let test_a_static_file_answers_a_range () =
   with_site site @@ fun root ->
-  let a = Public.app [ Spindle.Static.route (loaded root) ] in
+  let a = Spindle.Test.app [ Spindle.Static.route (loaded root) ] in
   let call headers = Spindle.Test.call ~headers a `GET "/about" in
   let part = call [ ("range", "bytes=1-3") ] in
   check_status "a part" 206 part.status;
@@ -7727,7 +7769,7 @@ let test_a_static_file_answers_a_range () =
 (* Files from disk *)
 
 let files ?index ?dotfiles ?download ?inline_active ?types root =
-  Public.app
+  Spindle.Test.app
     [
       Spindle.Files.route ?index ?dotfiles ?download ?inline_active ?types
         Eio.Path.(root / "files");
@@ -7823,7 +7865,7 @@ let test_a_site_skips_its_dotfiles () =
   @@ fun root ->
   let t = loaded root in
   check_int "the site's files alone" 2 (Spindle.Static.files t);
-  let a = Public.app [ Spindle.Static.route t ] in
+  let a = Spindle.Test.app [ Spindle.Static.route t ] in
   let status target = (Spindle.Test.call a `GET target).status in
   List.iter
     (fun target -> check_status target 404 (status target))
@@ -7849,7 +7891,8 @@ let test_a_file_is_never_sniffed () =
       (Spindle.Test.header r "x-content-type-options")
   in
   let static =
-    Public.app [ Spindle.Static.route (loaded ~not_found:"/404.html" root) ]
+    Spindle.Test.app
+      [ Spindle.Static.route (loaded ~not_found:"/404.html" root) ]
   in
   let r = Spindle.Test.call static `GET "/about" in
   nosniff "a file of the site" r;
@@ -8040,7 +8083,7 @@ let test_a_file_replaced_before_its_body_sends_nothing () =
 
 let test_a_directory_not_there_is_refused_at_start () =
   Eio_main.run @@ fun env ->
-  match Public.make [ Spindle.Files.directory "/nowhere/at/all" ] with
+  match Spindle.App.make [ Spindle.Files.directory "/nowhere/at/all" ] with
   | Error m -> Alcotest.fail m
   | Ok app -> (
       match
@@ -8057,7 +8100,7 @@ let test_a_directory_not_there_is_refused_at_start () =
    refuses a directory read at start, and says what a test does instead:
    serve one it opened itself with [Files.route]. *)
 let test_a_test_is_told_to_serve_files_it_opened () =
-  match Public.app [ Spindle.Files.directory "uploads" ] with
+  match Spindle.Test.app [ Spindle.Files.directory "uploads" ] with
   | _ -> Alcotest.fail "a test served a directory it cannot read"
   | exception Invalid_argument m ->
       Alcotest.(check bool)
@@ -8096,7 +8139,7 @@ let sibling_site =
 
 let test_a_static_file's_precompressed_sibling_is_served () =
   with_site sibling_site @@ fun root ->
-  let a = Public.app [ Spindle.Static.route (loaded root) ] in
+  let a = Spindle.Test.app [ Spindle.Static.route (loaded root) ] in
   check_siblings (fun accept ->
       Spindle.Test.call a `GET "/app.js"
         ~headers:[ ("accept-encoding", accept) ]);
@@ -8115,7 +8158,7 @@ let test_a_static_file's_precompressed_sibling_is_served () =
 let test_a_compressed_static_file_revalidates () =
   with_site [ ("page.txt", String.make 4096 'a') ] @@ fun root ->
   let a =
-    Public.app ~compress:Spindle.Compress.default
+    Spindle.Test.app ~compress:Spindle.Compress.default
       [ Spindle.Static.route (loaded root) ]
   in
   let get headers =
@@ -8136,7 +8179,7 @@ let test_a_compressed_static_file_revalidates () =
 let test_a_file's_precompressed_sibling_is_served () =
   with_site (List.map (fun (n, b) -> ("files/" ^ n, b)) sibling_site)
   @@ fun root ->
-  let a = Public.app [ Spindle.Files.route Eio.Path.(root / "files") ] in
+  let a = Spindle.Test.app [ Spindle.Files.route Eio.Path.(root / "files") ] in
   check_siblings (fun accept ->
       Spindle.Test.call a `GET "/app.js"
         ~headers:[ ("accept-encoding", accept) ])
@@ -8179,7 +8222,7 @@ let test_a_content_type_that_is_no_pattern_is_refused () =
            in
            Ok "")
       in
-      match Public.make [ route ] with
+      match Spindle.App.make [ route ] with
       | Ok _ -> Alcotest.failf "%S was taken" pattern
       | Error m ->
           Alcotest.(check bool)
@@ -8189,7 +8232,7 @@ let test_a_content_type_that_is_no_pattern_is_refused () =
             (contains ~sub:"POST /upload" m && contains ~sub:pattern m))
     [ "json"; "application/ json"; "application/json; charset=utf-8"; "*/json" ];
   (match
-     Public.make
+     Spindle.App.make
        [
          Spindle.post
            Spindle.Path.(s "ok")
@@ -8210,7 +8253,7 @@ let test_a_content_type_that_is_no_pattern_is_refused () =
       Alcotest.(check bool) ("named: " ^ m) true (contains ~sub:{|"json"|} m)
 
 let test_a_streamed_body_is_read_in_parts () =
-  let a = Public.app [ upload ] in
+  let a = Spindle.Test.app [ upload ] in
   let call ?(headers = [ ("content-type", "application/octet-stream") ]) body =
     Spindle.Test.call ~headers ~body a `POST "/upload"
   in
@@ -8230,7 +8273,7 @@ let test_a_streamed_body_is_read_in_parts () =
 let test_a_body_read_after_its_handler_reads_nothing () =
   let late = ref None in
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.post
           Spindle.Path.(s "late")
@@ -8261,7 +8304,7 @@ let test_a_route_reads_one_body () =
   in
   Alcotest.(check bool) "named" true (contains ~sub:"read one way" m);
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.post
           Spindle.Path.(s "twice")
@@ -8315,7 +8358,9 @@ let test_the_rest_prints_and_parses_back () =
             (contains ~sub:"empty segment" m))
     [ [ "a"; ""; "b" ]; [ "a"; "" ]; [ ""; "a" ] ];
   check_string "the pattern" "/static/{file*}" (Spindle.Path.pattern static);
-  let a = Public.app [ Spindle.get static Spindle.Returns.response the_rest ] in
+  let a =
+    Spindle.Test.app [ Spindle.get static Spindle.Returns.response the_rest ]
+  in
   check_string "read back" "a b|c/d"
     (Spindle.Test.call a `GET "/static/a%20b/c%2Fd").body
 
@@ -8337,7 +8382,9 @@ let test_a_dot_segment_is_printed_encoded () =
   Alcotest.(check (result string string))
     "in a rest" (Ok "/static/a/%2E%2E/%2E")
     (rest [ "a"; ".."; "." ]);
-  let a = Public.app [ Spindle.get static Spindle.Returns.response the_rest ] in
+  let a =
+    Spindle.Test.app [ Spindle.get static Spindle.Returns.response the_rest ]
+  in
   check_string "read back" "a|..|."
     (Spindle.Test.call a `GET "/static/a/%2E%2E/%2E").body
 
@@ -8351,7 +8398,8 @@ let test_a_printed_rest_parses_back =
       match Spindle.Path.url static [ Spindle.Path.arg file segs ] with
       | Ok target ->
           let a =
-            Public.app [ Spindle.get static Spindle.Returns.response the_rest ]
+            Spindle.Test.app
+              [ Spindle.get static Spindle.Returns.response the_rest ]
           in
           String.equal (String.concat "|" segs)
             (Spindle.Test.call a `GET target).body
@@ -8370,7 +8418,7 @@ let test_int64_and_a_custom_kind_read_as_sentences () =
          ~print:Int64.to_string Wiretype.string)
   in
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.get
           Spindle.Path.(s "users" / id)
@@ -8413,8 +8461,9 @@ let test_an_answer_encodes_what_the_route_returns () =
        Ok g)
   in
   let r =
-    Spindle.Test.call (Public.app [ made ]) `POST "/made"
-      ~body:{|{"name":"kim","times":2}|}
+    Spindle.Test.call
+      (Spindle.Test.app [ made ])
+      `POST "/made" ~body:{|{"name":"kim","times":2}|}
   in
   check_status "the answer's status" 201 r.status;
   check_string "the value, encoded" {|{"name":"kim","times":2}|} r.body;
@@ -8425,7 +8474,7 @@ let test_an_answer_encodes_what_the_route_returns () =
 
 let test_a_page_and_text_are_their_media_types () =
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.get
           Spindle.Path.(s "page")
@@ -8455,9 +8504,8 @@ let gone = code "gone" `Gone
 let test_serve_refuses_routes_before_it_listens () =
   Eio_main.run @@ fun env ->
   let hello =
-    Spindle.Access.public
-    @@ Spindle.get Spindle.Path.root Spindle.Returns.text
-         (Spindle.Dep.return (Ok "a"))
+    Spindle.get Spindle.Path.root Spindle.Returns.text
+      (Spindle.Dep.return (Ok "a"))
   in
   match Spindle.serve env ~port:0 [ hello; hello ] with
   | () -> Alcotest.fail "it served"
@@ -8474,9 +8522,8 @@ let test_serve_listens_and_stops () =
       told := Some where;
       Eio.Promise.resolve stopped ())
     [
-      Spindle.Access.public
-      @@ Spindle.get Spindle.Path.root Spindle.Returns.text
-           (Spindle.Dep.return (Ok "a"));
+      Spindle.get Spindle.Path.root Spindle.Returns.text
+        (Spindle.Dep.return (Ok "a"));
     ];
   Alcotest.(check bool) "said where" true (Option.is_some !told)
 
@@ -8498,9 +8545,8 @@ let test_serve_takes_only_what_it_uses () =
   Spindle.serve only_these ~port:0 ~domains:1 ~stop
     ~ready:(fun _ -> Eio.Promise.resolve stopped ())
     [
-      Spindle.Access.public
-      @@ Spindle.get Spindle.Path.root Spindle.Returns.text
-           (Spindle.Dep.return (Ok "a"));
+      Spindle.get Spindle.Path.root Spindle.Returns.text
+        (Spindle.Dep.return (Ok "a"));
     ];
   let called =
     Spindle_client.run
@@ -8516,7 +8562,7 @@ let test_serve_takes_only_what_it_uses () =
    refusal. *)
 let test_what_an_endpoint_sets_goes_with_its_answer () =
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.get ~refuses:[ gone ]
           Spindle.Path.(s "set")
@@ -8553,7 +8599,7 @@ let test_what_an_endpoint_sets_goes_with_its_answer () =
    same name gives way: two Retry-After fields say nothing. *)
 let test_a_refusals_own_fields_win () =
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.get
           Spindle.Path.(s "busy")
@@ -8580,7 +8626,7 @@ let test_a_refusals_own_fields_win () =
 let test_a_call_after_the_answer_changes_nothing () =
   let kept = ref None in
   let a =
-    Public.app
+    Spindle.Test.app
       [
         Spindle.get
           Spindle.Path.(s "keep")
@@ -8653,7 +8699,7 @@ let test_a_code_nobody_declared_is_the_routes_bug () =
       (Spindle.Dep.return (Error (Spindle.Refusal.busy ())))
   in
   let a =
-    Public.app
+    Spindle.Test.app
       [
         declared;
         carried;
@@ -8713,7 +8759,7 @@ let test_a_route_answers_the_status_it_chose () =
        | Some true -> Ok `No_content
        | Some false | None -> Ok `Created)
   in
-  let a = Public.app [ upsert; subscribe ] in
+  let a = Spindle.Test.app [ upsert; subscribe ] in
   let made = Spindle.Test.call a `PUT "/users/kim" in
   check_status "made" 201 made.status;
   check_string "with its value" {|"kim"|} made.body;
@@ -8756,7 +8802,7 @@ let test_a_routes_statuses_are_checked () =
   in
   List.iter
     (fun (why, statuses, says) ->
-      match Public.app [ listing statuses ] with
+      match Spindle.Test.app [ listing statuses ] with
       | _ -> Alcotest.failf "%s: the app was made" why
       | exception Invalid_argument m ->
           Alcotest.(check bool) why true (contains ~sub:says m))
@@ -8767,7 +8813,7 @@ let test_a_routes_statuses_are_checked () =
     ];
   (* One status, given as an optional argument, is held to the same. *)
   let refused why route says =
-    match Public.make [ route ] with
+    match Spindle.App.make [ route ] with
     | Ok _ -> Alcotest.failf "%s: the app was made" why
     | Error m -> Alcotest.(check bool) why true (contains ~sub:says m)
   in
@@ -8824,7 +8870,7 @@ let test_a_retry_after_is_at_least_a_second () =
 let test_a_codes_status_is_a_failure () =
   let made_it = code "made_it" `OK and moved = code "moved" `Found in
   (match
-     Public.make
+     Spindle.App.make
        [
          Spindle.get ~refuses:[ made_it ]
            Spindle.Path.(s "x")
@@ -8837,7 +8883,7 @@ let test_a_codes_status_is_a_failure () =
       Alcotest.(check bool)
         "a route's, named" true
         (contains ~sub:"the code made_it in GET /x is 200" m));
-  match Public.make ~refuses:[ moved ] [] with
+  match Spindle.App.make ~refuses:[ moved ] [] with
   | Ok _ -> Alcotest.fail "the application's code of 302 was accepted"
   | Error m ->
       Alcotest.(check bool)
@@ -8859,14 +8905,16 @@ let test_a_middlewares_codes_are_declared () =
       (Spindle.Dep.return (Ok "hello"))
   in
   (match
-     Spindle.Test.call (Public.app ~middleware:[ shut ] [ hello ]) `GET "/hello"
+     Spindle.Test.call
+       (Spindle.Test.app ~middleware:[ shut ] [ hello ])
+       `GET "/hello"
    with
   | _ -> Alcotest.fail "a middleware's undeclared code passed a test"
   | exception Invalid_argument m ->
       Alcotest.(check bool) "naming it" true (contains ~sub:"closed" m));
   check_status "declared, it is answered" 503
     (Spindle.Test.call
-       (Public.app ~middleware:[ shut ] ~refuses:[ closed ] [ hello ])
+       (Spindle.Test.app ~middleware:[ shut ] ~refuses:[ closed ] [ hello ])
        `GET "/hello")
       .status;
   let refusing c =
@@ -8875,14 +8923,16 @@ let test_a_middlewares_codes_are_declared () =
       Spindle.Returns.response
       (Spindle.Dep.return (Ok (Spindle.Response.empty ())))
   in
-  (match Public.make ~refuses:[ code "closed" `Gone ] [ refusing closed ] with
+  (match
+     Spindle.App.make ~refuses:[ code "closed" `Gone ] [ refusing closed ]
+   with
   | Error m ->
       Alcotest.(check bool)
         "one meaning, the application's among them" true
         (contains ~sub:"the application" m)
   | Ok _ -> Alcotest.fail "a middleware's code was given a second meaning");
   match
-    Public.make
+    Spindle.App.make
       ~refuses:
         [
           Spindle.Refusal.Code.make "signed_out" ~status:`Unauthorized
@@ -8924,7 +8974,7 @@ let test_a_bound_is_a_problem_at_its_place () =
             (match ratio with Some r -> string_of_float r | None -> "-")
             (Option.value tag ~default:"-")))
   in
-  let app = Public.app [ listed ] in
+  let app = Spindle.Test.app [ listed ] in
   let problem path ?(headers = []) () =
     (Spindle.Test.call app `GET path ~headers).body
   in
@@ -9002,7 +9052,7 @@ let test_a_bound_holds_in_a_form_and_a_cookie () =
       (let+ n = Spindle.Cookie.optional visits in
        Ok (match n with Some n -> string_of_int n | None -> "none"))
   in
-  let app = Public.app [ quantity; counted ] in
+  let app = Spindle.Test.app [ quantity; counted ] in
   check_string "a field within its bound" "9"
     (Spindle.Test.call app `POST "/order" ~headers:form_headers
        ~body:"quantity=9")
@@ -9035,7 +9085,7 @@ let test_a_segment_out_of_bounds_goes_to_the_next_route () =
       Spindle.Path.(s "posts" / Spindle.Path.string "key")
       Spindle.Returns.response (says "slug")
   in
-  let a = Public.app [ by_number; by_slug ] in
+  let a = Spindle.Test.app [ by_number; by_slug ] in
   check_string "within" "number" (Spindle.Test.call a `GET "/posts/5").body;
   check_string "out of bounds" "slug" (Spindle.Test.call a `GET "/posts/0").body
 
@@ -9097,7 +9147,7 @@ let test_two_reads_that_bound_one_input_apart_are_refused () =
   in
   Alcotest.(check bool) ("names the input: " ^ m) true (contains ~sub:"n" m);
   match
-    Public.make
+    Spindle.App.make
       [
         Spindle.get
           Spindle.Path.(s "a")
@@ -9160,7 +9210,7 @@ let test_a_cookie_its_description_will_not_write_is_a_500 () =
        set_cookie (Spindle.Cookie.make count n);
        Ok (Spindle.Response.make "set"))
   in
-  let a = Public.app [ set ] in
+  let a = Spindle.Test.app [ set ] in
   check_status "within its bounds" 200
     (Spindle.Test.call a `GET "/set/9").status;
   check_status "outside them" 500 (Spindle.Test.call a `GET "/set/10").status
@@ -9191,7 +9241,9 @@ let test_every_problem_is_told_at_once () =
        Ok (Spindle.Response.make "ok"))
   in
   let r =
-    Spindle.Test.call (Public.app [ listed ]) `GET "/orders/x?page=two"
+    Spindle.Test.call
+      (Spindle.Test.app [ listed ])
+      `GET "/orders/x?page=two"
       ~headers:[ ("x-count", "some") ]
   in
   check_status "one 400" 400 r.status;
@@ -9199,7 +9251,7 @@ let test_every_problem_is_told_at_once () =
     {|{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"path.order_id","code":"unexpected_type","message":"This must be a whole number."},{"at":"query.page","code":"unexpected_type","message":"This must be a whole number."},{"at":"header.x-count","code":"unexpected_type","message":"This must be a whole number."}]}|}
     r.body;
   check_string "a missing one says so" {|"code":"required"|}
-    (let r = Spindle.Test.call (Public.app [ listed ]) `GET "/orders/7" in
+    (let r = Spindle.Test.call (Spindle.Test.app [ listed ]) `GET "/orders/7" in
      if contains ~sub:{|"at":"query.page","code":"required"|} r.body then
        {|"code":"required"|}
      else r.body);
@@ -9216,7 +9268,8 @@ let test_every_problem_is_told_at_once () =
        Ok (Spindle.Response.make "ok"))
   in
   check_status "anything else ends it" 401
-    (Spindle.Test.call (Public.app [ guarded ]) `GET "/guarded?page=no").status
+    (Spindle.Test.call (Spindle.Test.app [ guarded ]) `GET "/guarded?page=no")
+      .status
 
 type shade = Blue | Gold
 
@@ -9244,7 +9297,7 @@ let test_typed_inputs () =
              (match n with Some n -> string_of_int n | None -> "-");
            ]))
   in
-  let a = Public.app [ route ] in
+  let a = Spindle.Test.app [ route ] in
   check_string "each, in order" {|["b","g","b","loud","3"]|}
     (Spindle.Test.call a `GET "/typed?tag=blue&tag=gold&tag=blue&loud=true"
        ~headers:[ ("cookie", "n=3") ])
@@ -9290,7 +9343,7 @@ let test_a_stream_sends_its_declared_events () =
               let* () = send (Spindle.Event.comment "keep-alive") in
               send (Spindle.Event.make other "stray"))))
   in
-  let r = Spindle.Test.call (Public.app [ stream ]) `GET "/stream" in
+  let r = Spindle.Test.call (Spindle.Test.app [ stream ]) `GET "/stream" in
   check_header "as events" (Some "text/event-stream")
     (Spindle.Test.header r "content-type");
   check_string "framed"
@@ -9327,7 +9380,7 @@ let test_a_code_means_one_thing () =
     Spindle.Refusal.Code.make "conflict" ~status ~doc:"Somebody was first."
   in
   (match
-     Public.make
+     Spindle.App.make
        [ at "a" (conflict `Conflict); at "b" (conflict `Unprocessable_content) ]
    with
   | Error m ->
@@ -9337,12 +9390,13 @@ let test_a_code_means_one_thing () =
         (contains ~sub:"GET /a" m && contains ~sub:"GET /b" m)
   | Ok _ -> Alcotest.fail "one name, two statuses, was accepted");
   (match
-     Public.make [ at "a" (conflict `Conflict); at "b" (conflict (`Code 409)) ]
+     Spindle.App.make
+       [ at "a" (conflict `Conflict); at "b" (conflict (`Code 409)) ]
    with
   | Ok _ -> ()
   | Error m -> Alcotest.failf "one meaning, spelled twice, was refused: %s" m);
   match
-    Public.make
+    Spindle.App.make
       [
         at "a"
           (Spindle.Refusal.Code.make "not_found" ~status:`Gone ~doc:"Gone.");
@@ -9357,7 +9411,7 @@ let test_a_code_means_one_thing () =
 (* A HEAD is answered by the GET route; a route of its own could never be. *)
 let test_a_head_route_is_refused () =
   match
-    Public.make
+    Spindle.App.make
       [
         Spindle.route `HEAD
           Spindle.Path.(s "x")
@@ -9381,7 +9435,7 @@ let test_a_bodys_own_refusal_is_declared () =
        in
        Ok (Spindle.Response.json greeting_json g))
   in
-  let a = Public.app [ route ] in
+  let a = Spindle.Test.app [ route ] in
   (match Spindle.App.routes (Spindle.App.app a) with
   | [ info ] ->
       Alcotest.(check (list string))
@@ -9583,7 +9637,9 @@ let test_an_app_lists_its_routes () =
       Spindle.Returns.response
       (Spindle.Dep.map (fun _ -> Ok (Spindle.Response.make "")) Spindle.request)
   in
-  match Spindle.App.routes (Spindle.App.app (Public.app [ item; opaque ])) with
+  match
+    Spindle.App.routes (Spindle.App.app (Spindle.Test.app [ item; opaque ]))
+  with
   | [ i; o ] ->
       check_string "the method and pattern" "POST /orders/{order_id}/items"
         (Spindle.Meth.to_string i.meth ^ " " ^ i.pattern);
@@ -9629,7 +9685,7 @@ let test_an_app_lists_its_routes () =
 (* ------------------------------------------------------------------ *)
 (* Health *)
 
-let probes checks = Public.app (Spindle.Health.routes checks)
+let probes checks = Spindle.Test.app (Spindle.Health.routes checks)
 
 (* Liveness asks nothing of what the server depends on: a failed probe is a
    restart, and a restart mends no database. *)
@@ -9709,12 +9765,14 @@ let test_a_check_reads_a_resource () =
       ]
   in
   let up = ref false in
-  let app = Public.app ~resources:[ Spindle.Dep.resource cache up ] routes in
+  let app =
+    Spindle.Test.app ~resources:[ Spindle.Dep.resource cache up ] routes
+  in
   check_status "down" 503 (Spindle.Test.call app `GET "/readyz").status;
   up := true;
   check_status "up" 200 (Spindle.Test.call app `GET "/readyz").status;
   check_status "liveness reads none of it" 200
-    (Spindle.Test.call (Public.app routes) `GET "/livez").status
+    (Spindle.Test.call (Spindle.Test.app routes) `GET "/livez").status
 
 (* Something asks every few seconds, so a probe's access line is there at
    debug and buries nothing at info. *)
@@ -9732,7 +9790,7 @@ let test_a_probe_is_logged_at_debug () =
     serve ~sw ~net
       ~domain_mgr:(Eio.Stdenv.domain_mgr env)
       ~domains:1 ~clock:mono_clock
-      (Public.app (hello :: Spindle.Health.routes []))
+      (Spindle.Test.app (hello :: Spindle.Health.routes []))
   in
   let call path = ignore (call_on ~net ~clock:mono_clock ~port `GET path) in
   let logged sub = List.exists (contains ~sub) !lines in
@@ -10313,7 +10371,7 @@ let test_a_header_is_read_by_its_codec () =
   List.iter
     (fun (Codec_case { name; codec; reads; refuses }) ->
       let a =
-        Public.app
+        Spindle.Test.app
           [
             Spindle.get
               Spindle.Path.(s "h")
@@ -10366,7 +10424,7 @@ let test_an_attempt_hands_over_a_refusal () =
     "declares none of it" false
     (List.exists (String.equal "gone_away") (codes attempted));
   check_string "answers with it in hand" "Gone away."
-    (Spindle.Test.call (Public.app [ attempted ]) `GET "/attempted").body;
+    (Spindle.Test.call (Spindle.Test.app [ attempted ]) `GET "/attempted").body;
   let both =
     Spindle.get
       Spindle.Path.(s "both")

@@ -17,7 +17,7 @@ let sign_in =
     (let+ () = Spindle.Rate.limit sign_ins ~key:Spindle.client_ip in
      Ok "in")
 
-let () = Eio_main.run @@ fun env -> Spindle.serve env [ Spindle.Access.public sign_in ]
+let () = Eio_main.run @@ fun env -> Spindle.serve env [ sign_in ]
 ```
 
 Ten sign-ins a minute per client pass; the eleventh is refused:

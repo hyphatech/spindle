@@ -15,14 +15,13 @@ type note = { id : int; text : string } [@@deriving wiretype]
 let note_id = Spindle.Path.int "note_id"
 
 let routes =
-  List.map Spindle.Access.public
-    [
-      Spindle.get ~summary:"One note"
-        Spindle.Path.(s "notes" / note_id)
-        (Spindle.Returns.json note_json)
-        (let+ id = Spindle.param note_id in
-         Ok { id; text = "Buy milk" });
-    ]
+  [
+    Spindle.get ~summary:"One note"
+      Spindle.Path.(s "notes" / note_id)
+      (Spindle.Returns.json note_json)
+      (let+ id = Spindle.param note_id in
+       Ok { id; text = "Buy milk" });
+  ]
 
 (* The app is only described, never started, so a resource its routes read
    -- a pool, a client -- need not exist. *)
