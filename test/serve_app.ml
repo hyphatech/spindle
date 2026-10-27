@@ -11,8 +11,9 @@ let () =
           Eio_main.run @@ fun env ->
           Spindle.serve env ~host:"127.0.0.1" ~port
             [
-              Spindle.get Spindle.Path.root Spindle.Returns.text
-                (Spindle.Dep.return (Ok "a"));
+              Spindle.Access.public
+                (Spindle.get Spindle.Path.root Spindle.Returns.text
+                   (Spindle.Dep.return (Ok "a")));
             ]
       | None -> exit 2)
   | _ -> exit 2

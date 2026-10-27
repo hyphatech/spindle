@@ -19,6 +19,7 @@ type info = {
   params : param list;
   needs : Dep.need list;
   credentials : Dep.credential list;
+  access : Dep_repr.access list;
   returns : Returns.shape;
   codes : Refusal.Code.t list;
   opaque : bool;
@@ -207,6 +208,7 @@ let make meth ?(refuses = []) ?summary ?doc ?tags ?meta path returns inputs =
         params = params_of_segments segments;
         needs = merge_needs (Dep.needs inputs);
         credentials = Dep.credentials inputs;
+        access = Dep_repr.access inputs;
         returns = Returns_repr.shape returns;
         codes = refuses @ Dep.codes inputs;
         opaque = Dep.opaque inputs;
@@ -235,6 +237,17 @@ let make meth ?(refuses = []) ?summary ?doc ?tags ?meta path returns inputs =
     resources_read = Dep_repr.resources_read inputs;
     start = None;
   }
+
+let public r =
+  match r.info.access with
+  | [ Dep_repr.Public ] -> r
+  | access ->
+      { r with info = { r.info with access = Dep_repr.Public :: access } }
+
+(* The framework's own routes are as public as what they serve, unless a guard
+   they were given says who may call them. *)
+let public_unless_declared r =
+  match r.info.access with [] -> public r | _ :: _ -> r
 
 let get ?refuses = make `GET ?refuses
 let post ?refuses = make `POST ?refuses

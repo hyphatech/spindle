@@ -1,5 +1,39 @@
 # Changes
 
+## Unreleased
+
+- `Spindle.Access`: who may do what. A policy is a function of the caller,
+  an action and the object, answering `Allow` or `Deny reason`;
+  `Access.can action resource` is a dependency that hands a route the
+  object only once its policy allows the action, and answers someone
+  else's object as a missing one, `404`, unless `~deny_as` says otherwise.
+  `Access.require` checks an action with no object and `Access.check` an
+  object held as a value, each refusing `403 forbidden`. The caller is the
+  application's own dependency, read once a request; every denial writes
+  one `warn` line on `spindle.access` naming the policy, the action, the
+  caller's id and the reason, and every decision is on the request's span.
+  `Access.decide` answers what a policy decides, for a test.
+
+- Every route says who may call it, or the server does not start: a route
+  that reads no caller -- `Access.caller`, a check, `Bearer.claims` or
+  `Bearer.scope` -- and is not made `Access.public` is refused by
+  `App.make`, so `Spindle.serve` exits and `Test.app` raises, naming it,
+  where any route started; one made public that reads a caller is refused
+  too. A list of public routes is `List.map Spindle.Access.public routes`.
+  The routes Spindle makes -- `Openapi.routes`, `Health.routes`,
+  `Metrics.routes`, `Static`'s and `Files`', `Bearer.metadata`, and
+  `Spindle_mcp.routes` without `~auth` -- are public unless a `~guard`
+  reads a check. `Route.info` gains `access`, and the OpenAPI document an
+  `x-spindle-access` per operation: each check by its policy and action,
+  `[]` for a route that reads only its caller, none for a public one.
+
+- `Dep.attempt d` hands over `d`'s refusal as a value, refusing nothing and
+  declaring neither its codes nor who may call. `Spindle_mcp.routes` reads
+  every tool's dependency through it, so a tool's dependency may refuse --
+  read the caller, `Access.check` an object its arguments name -- and its
+  refusal is that tool's `isError` when it is called, where `routes` raised
+  `Invalid_argument` for a tool whose dependency might refuse.
+
 ## 0.13.0 (2026-10-26)
 
 - `Broadcast.subscribe hub ~topic tag f` runs `f` with the subscription and

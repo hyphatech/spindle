@@ -11,13 +11,14 @@ let to_fahrenheit celsius = Ok { fahrenheit = (celsius *. 9. /. 5.) +. 32. }
 let celsius = Spindle.Query.required "celsius" Wiretype.number
 
 let routes =
-  [
-    Spindle.get
-      Spindle.Path.(s "fahrenheit")
-      (Spindle.Returns.json reading_json)
-      (let+ celsius = celsius in
-       to_fahrenheit celsius);
-  ]
+  List.map Spindle.Access.public
+    [
+      Spindle.get
+        Spindle.Path.(s "fahrenheit")
+        (Spindle.Returns.json reading_json)
+        (let+ celsius = celsius in
+         to_fahrenheit celsius);
+    ]
 
 let () =
   Spindle.Log.setup ();

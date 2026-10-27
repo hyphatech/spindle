@@ -3,6 +3,11 @@ module Status = Spindle_http.Status
 module Meth = Spindle_http.Meth
 include Route_repr
 
+type access = Dep_repr.access =
+  | Public
+  | Caller
+  | Checked of { policy : string; action : string option }
+
 type ('r, 'a, 'k) maker =
   ?refuses:Refusal.Code.t list ->
   ?summary:string ->

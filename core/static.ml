@@ -181,15 +181,17 @@ let serve_segments t segments req =
                f.body)
       | None -> Error Refusal.not_found)
 
+(* A site's files are anyone's, as a site is. *)
 let site_route ?(at = Path.root) site =
   let file = Path.rest "file" in
-  Route_repr.get ~summary:"A file of the site"
-    ~refuses:[ Refusal.Code.not_found ]
-    Path.(at / file)
-    Returns.response
-    (Dep.map
-       (fun ((segments, req), t) -> serve_segments t segments req)
-       (Dep.both (Dep.both (Input.param file) Conditional.inputs) site))
+  Route_repr.public
+  @@ Route_repr.get ~summary:"A file of the site"
+       ~refuses:[ Refusal.Code.not_found ]
+       Path.(at / file)
+       Returns.response
+       (Dep.map
+          (fun ((segments, req), t) -> serve_segments t segments req)
+          (Dep.both (Dep.both (Input.param file) Conditional.inputs) site))
 
 let route ?at t = site_route ?at (Dep.return t)
 

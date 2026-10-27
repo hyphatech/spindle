@@ -123,11 +123,17 @@ type credential = {
   reads : need list;
 }
 
+type access =
+  | Public
+  | Caller
+  | Checked of { policy : string; action : string option }
+
 type listing = {
   owner : int;
   needs : need list;
   codes : Refusal.Code.t list;
   credentials : credential list;
+  access : access list;
 }
 
 type 'a key = { id : 'a Type.Id.t; cached : bool }
@@ -194,7 +200,16 @@ let first_listings listed =
     listed
 
 let needs d = List.concat_map (fun l -> l.needs) (first_listings d.listed)
-let codes d = List.concat_map (fun l -> l.codes) (first_listings d.listed)
+
+(* Every listing's, not only the first of each identity's: one read through
+   [Dep.attempt] declares nothing, and the same read as it is declares its
+   codes wherever it is listed. *)
+let codes d =
+  List.fold_left
+    (fun acc c ->
+      if List.exists (Refusal.Code.equal c) acc then acc else acc @ [ c ])
+    []
+    (List.concat_map (fun l -> l.codes) d.listed)
 
 (* One scheme is one credential, however many inputs prove it: a document
    that listed a scheme twice would offer either as enough. *)
@@ -222,6 +237,22 @@ let merge_credentials creds =
       else acc @ [ c ])
     [] creds
 
+let same_access a b =
+  match (a, b) with
+  | Public, Public | Caller, Caller -> true
+  | Checked a, Checked b ->
+      String.equal a.policy b.policy
+      && Option.equal String.equal a.action b.action
+  | (Public | Caller | Checked _), _ -> false
+
+(* Each once, in the order first read: two checks of one action are one. As
+   for [codes], every listing's. *)
+let access d =
+  List.fold_left
+    (fun acc a -> if List.exists (same_access a) acc then acc else acc @ [ a ])
+    []
+    (List.concat_map (fun l -> l.access) d.listed)
+
 let credentials d =
   merge_credentials
     (List.concat_map (fun l -> l.credentials) (first_listings d.listed))
@@ -245,16 +276,21 @@ let needs_table d =
 
 (* Listed after what it is made of, [inside]. *)
 let make ?(inside = []) ?(needs = []) ?(codes = []) ?(credentials = [])
-    ?(opaque = false) ?(binds = false) compute =
+    ?(access = []) ?(opaque = false) ?(binds = false) compute =
   let id = Type.Id.make () in
   {
     key = Some { id; cached = true };
-    listed = inside @ [ { owner = Type.Id.uid id; needs; codes; credentials } ];
+    listed =
+      inside @ [ { owner = Type.Id.uid id; needs; codes; credentials; access } ];
     opaque;
     binds;
     resource = None;
     compute;
   }
+
+let mark access d =
+  make ~inside:d.listed ~access:[ access ] ~opaque:d.opaque ~binds:d.binds
+    (exec d)
 
 let find_resource (type a) (id : a Type.Id.t) resources : a option =
   let value_of (type b) (b_id : b Type.Id.t) (value : b) : a option =
@@ -276,6 +312,7 @@ let of_resource name =
           needs = [ Resource name ];
           codes = [];
           credentials = [];
+          access = [];
         };
       ];
     opaque = false;

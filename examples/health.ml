@@ -18,7 +18,9 @@ let in_service =
          else Ok ()))
 
 let routes =
-  Spindle.get Spindle.Path.root Spindle.Returns.text (Spindle.Dep.return hello)
+  Spindle.Access.public
+    (Spindle.get Spindle.Path.root Spindle.Returns.text
+       (Spindle.Dep.return hello))
   :: Spindle.Health.routes [ in_service ]
 
 let () =

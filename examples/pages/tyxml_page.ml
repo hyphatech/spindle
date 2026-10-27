@@ -23,13 +23,14 @@ let greeting name =
       </html>|}]
 
 let routes =
-  [
-    Spindle.get
-      Spindle.Path.(s "hello" / name)
-      Spindle.Returns.html
-      (let+ name = Spindle.param name in
-       Ok (Format.asprintf "%a" (Html.pp ()) (greeting name)));
-  ]
+  List.map Spindle.Access.public
+    [
+      Spindle.get
+        Spindle.Path.(s "hello" / name)
+        Spindle.Returns.html
+        (let+ name = Spindle.param name in
+         Ok (Format.asprintf "%a" (Html.pp ()) (greeting name)));
+    ]
 
 let () =
   Spindle.Log.setup ();

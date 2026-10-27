@@ -636,7 +636,7 @@ let test_a_send_cut_off_mid_frame_ends_the_socket side () =
 let named = Ws.protocol ~subprotocol:"chat" ~client:Ws.text ~server:Ws.text ()
 
 let app =
-  Spindle.Test.app
+  Public.app
     [
       Spindle.get
         Spindle.Path.(s "s")

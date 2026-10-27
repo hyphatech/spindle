@@ -14,7 +14,7 @@ let echo =
      Ok body)
 
 let test_echo () =
-  let app = Spindle.Test.app [ echo ] in
+  let app = Spindle.Test.app [ Spindle.Access.public echo ] in
   let r = Spindle.Test.call app `POST "/echo" ~body:"hi" in
   Alcotest.(check int) "status" 200 (Spindle_http.Status.to_int r.status);
   Alcotest.(check string) "body" "hi" r.body;
@@ -24,7 +24,8 @@ let test_echo () =
 ```
 
 - `Test.app` takes `App.make`'s arguments. It raises `Invalid_argument` for a
-  route table `App.make` refuses, and for a `Static.directory` or
+  route table `App.make` refuses -- a route that says nobody may call it
+  among them, as a server would not start with one -- and for a `Static.directory` or
   `Files.directory` route: load the files with `Static.load` and serve them
   with `Static.route`, or serve a directory the test opened with
   `Files.route`, instead.

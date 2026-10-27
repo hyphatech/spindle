@@ -8,13 +8,14 @@
 open Spindle.Syntax
 
 let routes =
-  [
-    Spindle.get
-      Spindle.Path.(s "charge" / Billing.pence)
-      Spindle.Returns.text
-      (let+ pence = Spindle.param Billing.pence in
-       Billing.charge pence);
-  ]
+  List.map Spindle.Access.public
+    [
+      Spindle.get
+        Spindle.Path.(s "charge" / Billing.pence)
+        Spindle.Returns.text
+        (let+ pence = Spindle.param Billing.pence in
+         Billing.charge pence);
+    ]
 
 (* The framework reads no environment variable: the application hands it
    two strings, and either left unset is the default. *)

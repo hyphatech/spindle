@@ -16,13 +16,14 @@ let count_requests handler request =
 let saw () = Ok (Printf.sprintf "Saw %i request(s)!" (Atomic.get count))
 
 let routes =
-  [
-    (* [let+] over [Dep.return ()] runs [saw] on every request; [Dep.return
+  List.map Spindle.Access.public
+    [
+      (* [let+] over [Dep.return ()] runs [saw] on every request; [Dep.return
        (saw ())] would make the answer once, when the route is. *)
-    Spindle.get Spindle.Path.root Spindle.Returns.text
-      (let+ () = Spindle.Dep.return () in
-       saw ());
-  ]
+      Spindle.get Spindle.Path.root Spindle.Returns.text
+        (let+ () = Spindle.Dep.return () in
+         saw ());
+    ]
 
 let () =
   Spindle.Log.setup ();

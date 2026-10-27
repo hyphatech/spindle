@@ -62,7 +62,7 @@ let routes =
            Ws.send ws msg));
   ]
 
-let app = Spindle.Test.app routes
+let app = Public.app routes
 
 let outcome = function
   | Ok v -> Ok v
@@ -189,7 +189,7 @@ let test_another_sites_page_cannot_open_one () =
 
 let test_a_socket_route_is_a_get () =
   match
-    Spindle.App.make
+    Public.make
       [
         Spindle.post
           Spindle.Path.(s "echo")
@@ -231,7 +231,7 @@ let serve ~sw env ?stop routes =
         ~read_clock:(fun () -> Ptime.epoch)
         ?stop
         ~limits:(Spindle.Server.Limits.make ~drain:Mtime.Span.(100 * ms) ())
-        [ socket ] (Spindle.Test.app routes);
+        [ socket ] (Public.app routes);
       `Stop_daemon);
   port
 
@@ -587,7 +587,7 @@ let test_a_silent_peer_is_pinged_then_dropped () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1
         ~read_clock:(fun () -> Ptime.epoch)
-        [ listening ] (Spindle.Test.app routes);
+        [ listening ] (Public.app routes);
       `Stop_daemon);
   let flow = connect ~sw in
   let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
@@ -635,7 +635,7 @@ let test_a_peer_sending_slowly_is_heard () =
         ~domain_mgr:(Eio.Stdenv.domain_mgr env)
         ~domains:1
         ~read_clock:(fun () -> Ptime.epoch)
-        [ listening ] (Spindle.Test.app routes);
+        [ listening ] (Public.app routes);
       `Stop_daemon);
   let flow = connect ~sw in
   let r = Eio.Buf_read.of_flow flow ~max_size:65536 in
@@ -693,8 +693,7 @@ let test_a_peer_reading_slowly_is_sent_the_whole_message () =
         ~domains:1
         ~limits:(Spindle.Server.Limits.make ~send_timeout:Mtime.Span.s ())
         ~read_clock:(fun () -> Ptime.epoch)
-        [ listening ]
-        (Spindle.Test.app [ large ]);
+        [ listening ] (Public.app [ large ]);
       `Stop_daemon);
   let flow = connect ~sw in
   Eio.Flow.copy_string
@@ -772,7 +771,7 @@ let test_a_socket_whose_peer_stopped_reading_gives_back_its_slot () =
              ~send_timeout:Mtime.Span.s ())
         ~read_clock:(fun () -> Ptime.epoch)
         [ listening ]
-        (Spindle.Test.app [ flood; hello ]);
+        (Public.app [ flood; hello ]);
       `Stop_daemon);
   let never_reads = connect ~sw in
   Eio.Flow.copy_string

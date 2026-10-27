@@ -8,6 +8,7 @@
 (tests
  (names
   test_spindle
+  test_access
   test_openapi
   test_wire
   test_http_rfc

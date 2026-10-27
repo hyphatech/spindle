@@ -81,7 +81,6 @@ type tool = {
   scope : string option;
   input : (Value.t, string) result;  (** [Error] where it is no object *)
   output : Value.t;
-  may_refuse : bool;
   asks : Question.declared list;
   run : (Value.t -> outcome) Dep.t;
 }
@@ -131,9 +130,16 @@ let tool ?title ?doc ?scope ?(asks = []) name arguments result f =
     scope;
     input;
     output;
-    may_refuse = (match Dep.codes f with [] -> false | _ :: _ -> true);
     asks;
-    run = Dep.map call f;
+    (* Every tool's dependency is read on every call, so its refusal is
+       this tool's error, and no other's. *)
+    run =
+      Dep.map
+        (function
+          | Ok f -> call f
+          | Error (refusal : Spindle.Refusal.t) ->
+              fun _ -> Failed refusal.message)
+        (Dep.attempt f);
   }
 
 let src = Logs.Src.create "spindle-mcp" ~doc:"An MCP server's calls"
@@ -252,11 +258,7 @@ let check ~auth tools =
           then
             refuse
               (Printf.sprintf "%S asks two questions keyed %S" t.name q.key))
-        t.asks;
-      if t.may_refuse then
-        refuse
-          (Printf.sprintf
-             "%S's dependency may refuse, which would refuse every call" t.name))
+        t.asks)
     tools
 
 let opt name = function Some v -> [ (name, Value.String v) ] | None -> []
@@ -604,32 +606,44 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
                  capabilities")
   in
   let guard = Option.value guard ~default:(Dep.return ()) in
-  [
-    Spindle.post
-      ~refuses:
-        (match auth with Some _ -> [ Bearer.insufficient_scope ] | None -> [])
-      path Spindle.Returns.response
-      (let+ () = guard
-       and+ claims = claims
-       and+ version_header = header "mcp-protocol-version"
-       and+ method_header = header "mcp-method"
-       and+ name_header = header "mcp-name"
-       and+ runs = runs
-       and+ call = call
-       and+ body = Spindle.body in
-       match P.read body with
-       | Error Parse_error ->
-           json ~status:`Bad_request (P.error P.Code.parse_error "Parse error")
-       | Error (Invalid_request why) ->
-           json ~status:`Bad_request
-             (P.error P.Code.invalid_request ("Invalid request: " ^ why))
-       (* streamable-http §Sending Messages: a notification accepted is 202,
+  (* Anyone's, as a page is, unless [auth] or the guard says who may call. *)
+  let declared r =
+    match (Spindle.Route.info r).access with
+    | [] -> Spindle.Access.public r
+    | _ :: _ -> r
+  in
+  List.map declared
+    [
+      Spindle.post
+        ~refuses:
+          (match auth with
+          | Some _ -> [ Bearer.insufficient_scope ]
+          | None -> [])
+        path Spindle.Returns.response
+        (let+ () = guard
+         and+ claims = claims
+         and+ version_header = header "mcp-protocol-version"
+         and+ method_header = header "mcp-method"
+         and+ name_header = header "mcp-name"
+         and+ runs = runs
+         and+ call = call
+         and+ body = Spindle.body in
+         match P.read body with
+         | Error Parse_error ->
+             json ~status:`Bad_request
+               (P.error P.Code.parse_error "Parse error")
+         | Error (Invalid_request why) ->
+             json ~status:`Bad_request
+               (P.error P.Code.invalid_request ("Invalid request: " ^ why))
+         (* streamable-http §Sending Messages: a notification accepted is 202,
           with no body. *)
-       | Ok (Notification _) -> Ok (Spindle.Response.make ~status:`Accepted "")
-       | Ok (Request { id; meth; params }) ->
-           checked ~id ~meth ~params ~version_header ~method_header ~name_header
-             (fun () -> answer ~id ~meth ~params ~claims ~runs ~call));
-  ]
+         | Ok (Notification _) ->
+             Ok (Spindle.Response.make ~status:`Accepted "")
+         | Ok (Request { id; meth; params }) ->
+             checked ~id ~meth ~params ~version_header ~method_header
+               ~name_header (fun () ->
+                 answer ~id ~meth ~params ~claims ~runs ~call));
+    ]
 
 module Test = struct
   let call ?now ?progress_token ?(path = "/mcp") ?(headers = [])

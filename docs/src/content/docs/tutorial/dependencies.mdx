@@ -129,9 +129,10 @@ the `Authorization` header:
 - `Dep.credential ~scheme:"bearer"` tells the
   [document](/spindle/tutorial/openapi/) that this input proves who is
   asking, so it lists the scheme and which routes need it.
-- The dependency hands over the token, not the account. Looking the account
-  up is a read, and belongs in the handler, next to the work it authorises
-  ([why](/spindle/tutorial/database/#6-open-the-transaction-in-the-handler)).
+- The dependency hands over the token. Whose it is is the *caller*, which
+  `Access.principal` reads from it, and every route says who may call it:
+  the caller, a check of a policy, or anyone
+  ([Access control](/spindle/guide/access/)).
 
 <details>
 <summary>The rest of the app: two routes that need the token</summary>

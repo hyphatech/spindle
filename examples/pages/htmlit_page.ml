@@ -15,13 +15,14 @@ let greeting name =
     (El.body [ El.h1 [ El.txt ("Hello, " ^ name ^ "!") ] ])
 
 let routes =
-  [
-    Spindle.get
-      Spindle.Path.(s "hello" / name)
-      Spindle.Returns.html
-      (let+ name = Spindle.param name in
-       Ok (El.to_string ~doctype:true (greeting name)));
-  ]
+  List.map Spindle.Access.public
+    [
+      Spindle.get
+        Spindle.Path.(s "hello" / name)
+        Spindle.Returns.html
+        (let+ name = Spindle.param name in
+         Ok (El.to_string ~doctype:true (greeting name)));
+    ]
 
 let () =
   Spindle.Log.setup ();

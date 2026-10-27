@@ -328,6 +328,27 @@ let check r =
     let* () = check_texts r in
     check_statuses r
 
+(* A route nobody said may call it is a check forgotten, the break of access
+   control nobody sees; one made public that reads a caller gives two
+   answers to who may call it. *)
+let check_access (r : Route_repr.t) =
+  let is_public = function
+    | Dep_repr.Public -> true
+    | Dep_repr.Caller | Dep_repr.Checked _ -> false
+  in
+  match r.info.access with
+  | [] ->
+      Error
+        (Printf.sprintf
+           "%s declares nobody who may call it: read a caller or a check of \
+            Spindle.Access, or make it Access.public"
+           (route_name r))
+  | access
+    when List.exists is_public access && not (List.for_all is_public access) ->
+      Error
+        (Printf.sprintf "%s is Access.public, but reads a caller" (route_name r))
+  | _ :: _ -> Ok ()
+
 (* A client branches on a code's name, so a name has one status and one doc
    wherever it is declared. *)
 let check_codes ~codes ~not_found routes =
@@ -527,7 +548,10 @@ let make ?(middleware = []) ?(refuses = []) ?not_found ?cors ?compress
             | Error m -> Error (Printf.sprintf "%s: %s" not_found_name m))
         | None -> check_codes ~codes:refuses ~not_found routes)
     | r :: rest -> (
-        match (check r, List.find_opt (could_match_alike r) rest) with
+        match
+          ( Result.bind (check r) (fun () -> check_access r),
+            List.find_opt (could_match_alike r) rest )
+        with
         | Error m, _ -> Error m
         | Ok (), Some other ->
             Error

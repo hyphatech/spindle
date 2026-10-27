@@ -16,6 +16,7 @@ type info = {
   params : param list;
   needs : Dep.need list;
   credentials : Dep.credential list;
+  access : Dep_repr.access list;
   returns : Returns.shape;
   codes : Refusal.Code.t list;
   opaque : bool;
@@ -85,6 +86,13 @@ val make :
   'r Dep_repr.t ->
   t
 (** As {!Spindle.route}. *)
+
+val public : t -> t
+(** As {!Access.public}. *)
+
+val public_unless_declared : t -> t
+(** Public, unless what it reads already says who may call it: a route the
+    framework makes, given a guard. *)
 
 val get :
   ?refuses:Refusal.Code.t list ->

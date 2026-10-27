@@ -16,6 +16,7 @@
   logging
   api_cli
   bearer_auth
+  access
   oauth
   mcp
   mcp_client

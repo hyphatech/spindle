@@ -330,7 +330,7 @@ let notes =
 let routes = [ me; notes ]
 
 let app () =
-  Spindle.Test.app
+  Public.app
     ~resources:
       [
         Spindle.Dep.resource (Bearer.keys auth) (fun ~kid:_ ->
@@ -494,7 +494,7 @@ let test_a_resource_with_no_path () =
   let auth = Bearer.make ~issuer ~resource:"https://api.example.com" in
   let r =
     Spindle.Test.call ~now
-      (Spindle.Test.app [ Bearer.metadata auth [] ])
+      (Public.app [ Bearer.metadata auth [] ])
       `GET "/.well-known/oauth-protected-resource"
   in
   check_status "200" 200 r
@@ -502,7 +502,7 @@ let test_a_resource_with_no_path () =
 (* The API's document names the scheme and each route's scopes. *)
 let test_the_document_names_the_scopes () =
   let doc =
-    match Spindle.App.make routes with
+    match Public.make routes with
     | Error m -> Alcotest.fail m
     | Ok a -> (
         match Spindle.Openapi.document ~title:"Notes" a with
@@ -817,7 +817,7 @@ let called client ~issuer ~resource ~token path =
     ]
   in
   let app =
-    Spindle.Test.app
+    Public.app
       ~resources:
         [
           Spindle.Dep.resource (Bearer.keys auth)
@@ -871,7 +871,7 @@ let test_a_token_of_another_issuer_is_refused () =
   let r =
     Spindle.Test.call ~now:(Ptime_clock.now ())
       ~headers:[ ("authorization", "Bearer " ^ token) ]
-      (Spindle.Test.app
+      (Public.app
          ~resources:
            [
              Spindle.Dep.resource (Bearer.keys auth)
@@ -1285,7 +1285,7 @@ let test_a_person_signs_in_once () =
         ~domains:1 ~read_clock:Ptime_clock.now
         ~limits:(Spindle.Server.Limits.make ~drain:Mtime.Span.(100 * ms) ())
         [ socket ]
-        (Spindle.Test.app
+        (Public.app
            ~resources:
              [
                Spindle.Dep.resource (Bearer.keys auth)

@@ -106,11 +106,17 @@ type credential = {
   reads : need list;
 }
 
+type access =
+  | Public
+  | Caller
+  | Checked of { policy : string; action : string option }
+
 type listing = {
   owner : int;
   needs : need list;
   codes : Refusal.Code.t list;
   credentials : credential list;
+  access : access list;
 }
 (** What one identity reads, refuses and proves. *)
 
@@ -142,6 +148,13 @@ val codes : 'a t -> Refusal.Code.t list
 val credentials : 'a t -> credential list
 (** One a scheme, as {!merge_credentials} makes them. *)
 
+val access : 'a t -> access list
+(** Who may call, as what it reads declares: each once, in the order first read.
+*)
+
+val mark : access -> 'a t -> 'a t
+(** The same answer under an identity of its own, declaring [access]. *)
+
 val merge_credentials : credential list -> credential list
 (** Each scheme once, in the order first read: its scopes and what it reads are
     every one's, and its doc the first given. *)
@@ -159,6 +172,7 @@ val make :
   ?needs:need list ->
   ?codes:Refusal.Code.t list ->
   ?credentials:credential list ->
+  ?access:access list ->
   ?opaque:bool ->
   ?binds:bool ->
   (context -> 'a stage) ->

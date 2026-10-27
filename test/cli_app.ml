@@ -7,21 +7,22 @@ open Spindle.Syntax
 let database : string Spindle.Dep.t = Spindle.Dep.of_resource "database"
 
 let routes =
-  [
-    Spindle.get
-      Spindle.Path.(s "hello")
-      Spindle.Returns.text
-      (Spindle.Dep.return (Ok "Good morning."));
-    Spindle.get
-      Spindle.Path.(s "anything")
-      Spindle.Returns.response
-      (let+ _ = Spindle.request in
-       Ok (Spindle.Response.make ""));
-    Spindle.get
-      Spindle.Path.(s "notes")
-      Spindle.Returns.text
-      (let+ db = database in
-       Ok db);
-  ]
+  List.map Spindle.Access.public
+    [
+      Spindle.get
+        Spindle.Path.(s "hello")
+        Spindle.Returns.text
+        (Spindle.Dep.return (Ok "Good morning."));
+      Spindle.get
+        Spindle.Path.(s "anything")
+        Spindle.Returns.response
+        (let+ _ = Spindle.request in
+         Ok (Spindle.Response.make ""));
+      Spindle.get
+        Spindle.Path.(s "notes")
+        Spindle.Returns.text
+        (let+ db = database in
+         Ok db);
+    ]
 
 let () = Spindle_cli.run ~name:"shop" ~app:(Spindle.App.make routes) ()

@@ -137,10 +137,13 @@ val routes :
     Raises [Invalid_argument] for two tools of one name, a name MCP refuses
     (outside [A-Za-z0-9_.-], or longer than 128), arguments whose description is
     no object, a tool with a [scope] and no [auth], a question whose answer is
-    no form (an object of strings, numbers, integers, booleans and enums), two
-    questions of one key on a tool, or a tool whose dependency may refuse
-    ({!Spindle.Dep.codes}): every one is read on every call, so one that refused
-    would refuse every call. Each is a constant written in source. *)
+    no form (an object of strings, numbers, integers, booleans and enums), or
+    two questions of one key on a tool. Each is a constant written in source.
+
+    Every tool's dependency is read on every call, through
+    {!Spindle.Dep.attempt}: one that refuses -- a caller who is not signed in,
+    for a tool that reads one -- is that tool's error, [isError] with the
+    refusal's sentence, when it is called, and no other tool's. *)
 
 (** Calling the routes in a test, as a client would: the JSON-RPC envelope, the
     [_meta] and the headers MCP asks for, written for the test. *)

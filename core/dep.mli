@@ -219,6 +219,14 @@ val join : ?refuses:Refusal.Code.t list -> ('a, Refusal.t) result t -> 'a t
     value checked after it was read, and still says what it reads. [refuses] is
     the codes [check] may refuse with. *)
 
+val attempt : 'a t -> ('a, Refusal.t) result t
+(** The same dependency, its refusal handed over as a value rather than ending
+    the request: it refuses nothing, and declares neither the codes [d] may
+    refuse with nor who [d] says may call ({!Access}), since it lets the request
+    through either way. What it reads is [d]'s. For what is read for one part of
+    a request among several -- a tool of an MCP endpoint -- whose refusal is
+    that part's. *)
+
 val bind : 'a t -> ('a -> 'b t) -> 'b t
 (** For a dependency that needs another's value to know what to read next. The
     result is {!opaque}: it says what [d] reads, and the codes [d] may refuse

@@ -27,14 +27,15 @@ let greet { name; language } =
            (Printf.sprintf "There is no greeting in %s." language))
 
 let routes =
-  [
-    Spindle.get ~summary:"The languages a greeting can be in"
-      Spindle.Path.(s "languages")
-      (Spindle.Returns.json (Wiretype.list Wiretype.string))
-      (Spindle.Dep.return languages);
-    Spindle.post ~summary:"A greeting, by name" ~refuses:[ unknown_language ]
-      Spindle.Path.(s "greetings")
-      (Spindle.Returns.json greeting_json)
-      (let+ request = Spindle.json greeting_request_json in
-       greet request);
-  ]
+  List.map Spindle.Access.public
+    [
+      Spindle.get ~summary:"The languages a greeting can be in"
+        Spindle.Path.(s "languages")
+        (Spindle.Returns.json (Wiretype.list Wiretype.string))
+        (Spindle.Dep.return languages);
+      Spindle.post ~summary:"A greeting, by name" ~refuses:[ unknown_language ]
+        Spindle.Path.(s "greetings")
+        (Spindle.Returns.json greeting_json)
+        (let+ request = Spindle.json greeting_request_json in
+         greet request);
+    ]

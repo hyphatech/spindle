@@ -151,6 +151,32 @@ let routes =
   `insufficient_scope` naming the scope, so the client can ask for it.
 - The metadata document names every tool's scope in `scopes_supported`.
 
+## Who may do what
+
+A scope says what the *client* may do. Which notes the *person* behind the
+token may delete is a [policy's](/spindle/guide/access/), checked in the
+tool as in a route. A tool's arguments name the object, so it is judged by
+`Access.check`:
+
+```ocaml
+let delete_note =
+  Spindle_mcp.tool "delete_note" note_ref Wiretype.string
+    (let+ checked = Spindle.Access.check notes and+ db = conn in
+     fun r ->
+       let* note = find db r.id in
+       let* note = checked Delete note in
+       remove db note)
+```
+
+- The caller is the person the token was issued for -- your `principal`
+  reads its subject -- never the client calling for them, so an agent may do
+  what its person may and nothing more.
+- A denial is the tool's error, which the model reads, and is logged as a
+  route's is.
+- Every tool's dependency is read on every call, and one that refuses --
+  nobody signed in, for a tool that reads the caller -- is that tool's error
+  when it is called, and no other tool's.
+
 ## What a client is told
 
 The server speaks 2026-07-28 alone, and answers as that revision says:

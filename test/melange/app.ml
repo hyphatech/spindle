@@ -61,93 +61,96 @@ let room = Spindle.Path.string "room"
 let id = Spindle.Path.int "id"
 let pen = { id = 1; name = "pen"; size = Small }
 
+(* Anyone's: what the printers write does not turn on who may call. *)
 let routes =
-  [
-    Spindle.get ~summary:"An item, by its id"
-      Spindle.Path.(s "items" / id)
-      (Spindle.Returns.json item)
-      (let+ id = Spindle.param id
-       and+ lang = Spindle.Query.optional "lang" lang in
-       match (id, lang) with
-       | 1, (None | Some En) -> Ok pen
-       | 1, Some Fr -> Ok { pen with name = "stylo" }
-       | _ -> Error Spindle.Refusal.not_found);
-    Spindle.get
-      Spindle.Path.(s "items")
-      (Spindle.Returns.json (Wiretype.list item))
-      (let+ tags = Spindle.Query.list "tag" Wiretype.string in
-       Ok (List.mapi (fun i name -> { id = i + 1; name; size = Large }) tags));
-    Spindle.post
-      Spindle.Path.(s "items")
-      (Spindle.Returns.json ~status:`Created item)
-      (let+ i = Spindle.json item in
-       Ok { i with id = 2 });
-    Spindle.delete
-      Spindle.Path.(s "items" / id)
-      (Spindle.Returns.empty ())
-      (let+ _ = Spindle.param id in
-       Ok ());
-    Spindle.get
-      Spindle.Path.(s "hello")
-      Spindle.Returns.text
-      (let+ name = Spindle.Header.required "x-name" Wiretype.string in
-       Ok ("Good morning, " ^ name ^ "."));
-    Spindle.post
-      Spindle.Path.(s "notes")
-      (Spindle.Returns.json note)
-      (let+ title = Spindle.Form.required "title" Wiretype.string
-       and+ file = Spindle.Form.File.optional "attachment" in
-       Ok
-         {
-           title;
-           attached =
-             Option.bind file (fun (f : Spindle.Form.File.t) -> f.filename);
-           length =
-             Option.fold ~none:0
-               ~some:(fun (f : Spindle.Form.File.t) -> String.length f.content)
-               file;
-         });
-    Spindle.put
-      Spindle.Path.(s "echo")
-      Spindle.Returns.text
-      (let+ body =
-         Spindle.Dep.of_body ~content_types:[ "text/plain" ] (fun body ->
-             Ok body)
-       in
-       Ok body);
-    Spindle.get
-      Spindle.Path.(s "ticks")
-      (Spindle.Returns.events Spindle.Event.[ declare tick; declare line ])
-      (let+ count = Spindle.Query.required "count" Wiretype.int in
-       Ok
-         (fun send ->
-           let rec from i =
-             if i > count then send (Spindle.Event.make line "done\nfor now")
-             else
-               let* () = send (Spindle.Event.make tick i) in
-               from (i + 1)
-           in
-           from 1));
-    Spindle.get
-      Spindle.Path.(s "chat" / room)
-      (Spindle.Returns.websocket chat)
-      (let+ room = Spindle.param room in
-       Ok
-         (fun ws ->
-           let rec echo () =
-             let* m = Ws.receive ws in
-             let* () = Ws.send ws { text = room ^ ": " ^ m.text } in
-             echo ()
-           in
-           echo ()));
-    (* What a client reads as an item where it called through the wrong
+  List.map Spindle.Access.public
+    [
+      Spindle.get ~summary:"An item, by its id"
+        Spindle.Path.(s "items" / id)
+        (Spindle.Returns.json item)
+        (let+ id = Spindle.param id
+         and+ lang = Spindle.Query.optional "lang" lang in
+         match (id, lang) with
+         | 1, (None | Some En) -> Ok pen
+         | 1, Some Fr -> Ok { pen with name = "stylo" }
+         | _ -> Error Spindle.Refusal.not_found);
+      Spindle.get
+        Spindle.Path.(s "items")
+        (Spindle.Returns.json (Wiretype.list item))
+        (let+ tags = Spindle.Query.list "tag" Wiretype.string in
+         Ok (List.mapi (fun i name -> { id = i + 1; name; size = Large }) tags));
+      Spindle.post
+        Spindle.Path.(s "items")
+        (Spindle.Returns.json ~status:`Created item)
+        (let+ i = Spindle.json item in
+         Ok { i with id = 2 });
+      Spindle.delete
+        Spindle.Path.(s "items" / id)
+        (Spindle.Returns.empty ())
+        (let+ _ = Spindle.param id in
+         Ok ());
+      Spindle.get
+        Spindle.Path.(s "hello")
+        Spindle.Returns.text
+        (let+ name = Spindle.Header.required "x-name" Wiretype.string in
+         Ok ("Good morning, " ^ name ^ "."));
+      Spindle.post
+        Spindle.Path.(s "notes")
+        (Spindle.Returns.json note)
+        (let+ title = Spindle.Form.required "title" Wiretype.string
+         and+ file = Spindle.Form.File.optional "attachment" in
+         Ok
+           {
+             title;
+             attached =
+               Option.bind file (fun (f : Spindle.Form.File.t) -> f.filename);
+             length =
+               Option.fold ~none:0
+                 ~some:(fun (f : Spindle.Form.File.t) ->
+                   String.length f.content)
+                 file;
+           });
+      Spindle.put
+        Spindle.Path.(s "echo")
+        Spindle.Returns.text
+        (let+ body =
+           Spindle.Dep.of_body ~content_types:[ "text/plain" ] (fun body ->
+               Ok body)
+         in
+         Ok body);
+      Spindle.get
+        Spindle.Path.(s "ticks")
+        (Spindle.Returns.events Spindle.Event.[ declare tick; declare line ])
+        (let+ count = Spindle.Query.required "count" Wiretype.int in
+         Ok
+           (fun send ->
+             let rec from i =
+               if i > count then send (Spindle.Event.make line "done\nfor now")
+               else
+                 let* () = send (Spindle.Event.make tick i) in
+                 from (i + 1)
+             in
+             from 1));
+      Spindle.get
+        Spindle.Path.(s "chat" / room)
+        (Spindle.Returns.websocket chat)
+        (let+ room = Spindle.param room in
+         Ok
+           (fun ws ->
+             let rec echo () =
+               let* m = Ws.receive ws in
+               let* () = Ws.send ws { text = room ^ ": " ^ m.text } in
+               echo ()
+             in
+             echo ()));
+      (* What a client reads as an item where it called through the wrong
        origin: text, which no item is. *)
-    Spindle.get
-      Spindle.Path.(s "elsewhere" / s "items" / id)
-      Spindle.Returns.text
-      (let+ _ = Spindle.param id in
-       Ok "not an item");
-  ]
+      Spindle.get
+        Spindle.Path.(s "elsewhere" / s "items" / id)
+        Spindle.Returns.text
+        (let+ _ = Spindle.param id in
+         Ok "not an item");
+    ]
 
 let app =
   match Spindle.App.make routes with Ok a -> a | Error m -> invalid_arg m

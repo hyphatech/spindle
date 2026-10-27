@@ -34,15 +34,17 @@ let page_name = Spindle.Path.string "page"
 let path = Spindle.Path.(s "pages" / page_name)
 
 let locked =
-  Spindle.get path Spindle.Returns.text
-    (let+ page = Spindle.param page_name in
-     let n = Eio.Mutex.use_rw ~protect:false lock (fun () -> visit page) in
-     Ok (Printf.sprintf "%s: visit number %d\n" page n))
+  Spindle.Access.public
+  @@ Spindle.get path Spindle.Returns.text
+       (let+ page = Spindle.param page_name in
+        let n = Eio.Mutex.use_rw ~protect:false lock (fun () -> visit page) in
+        Ok (Printf.sprintf "%s: visit number %d\n" page n))
 
 let unlocked =
-  Spindle.get path Spindle.Returns.text
-    (let+ page = Spindle.param page_name in
-     Ok (Printf.sprintf "%s: visit number %d\n" page (visit page)))
+  Spindle.Access.public
+  @@ Spindle.get path Spindle.Returns.text
+       (let+ page = Spindle.param page_name in
+        Ok (Printf.sprintf "%s: visit number %d\n" page (visit page)))
 
 let () =
   Spindle.Log.setup ();

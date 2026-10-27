@@ -18,7 +18,7 @@ let contains ~sub s =
   go 0
 
 let made routes =
-  match Spindle.App.make routes with Ok a -> a | Error m -> Alcotest.fail m
+  match Public.make routes with Ok a -> a | Error m -> Alcotest.fail m
 
 let json_of_doc a =
   match Spindle.Openapi.document ~title:"Orders" ~version:"1" a with
@@ -61,21 +61,22 @@ let session =
 let order_id = Spindle.Path.int "order_id"
 
 let add =
-  Spindle.post ~summary:"Add an item" ~tags:[ "orders" ] ~refuses:[ gone ]
-    Spindle.Path.(s "orders" / order_id / s "items")
-    (Spindle.Returns.json ~status:`Created
-       ~examples:[ { name = "pen"; size = Small; note = None } ]
-       item_json)
-    (let+ _ = Spindle.param order_id
-     and+ _ = session
-     and+ _ = Spindle.Query.optional "page" Wiretype.int
-     and+ _ = Spindle.Query.optional "weight" Wiretype.number
-     and+ _ = Spindle.Query.default "limit" Wiretype.int 20
-     and+ _ = Spindle.Query.optional "since" Wiretype.date
-     and+ _ = Spindle.Query.optional "after" Wiretype.instant
-     and+ _ = Spindle.Header.optional "x-request" (Wiretype.uuid ())
-     and+ i = Spindle.json item_json in
-     Ok i)
+  Spindle.Access.public
+  @@ Spindle.post ~summary:"Add an item" ~tags:[ "orders" ] ~refuses:[ gone ]
+       Spindle.Path.(s "orders" / order_id / s "items")
+       (Spindle.Returns.json ~status:`Created
+          ~examples:[ { name = "pen"; size = Small; note = None } ]
+          item_json)
+       (let+ _ = Spindle.param order_id
+        and+ _ = session
+        and+ _ = Spindle.Query.optional "page" Wiretype.int
+        and+ _ = Spindle.Query.optional "weight" Wiretype.number
+        and+ _ = Spindle.Query.default "limit" Wiretype.int 20
+        and+ _ = Spindle.Query.optional "since" Wiretype.date
+        and+ _ = Spindle.Query.optional "after" Wiretype.instant
+        and+ _ = Spindle.Header.optional "x-request" (Wiretype.uuid ())
+        and+ i = Spindle.json item_json in
+        Ok i)
 
 let described = made [ add ]
 
@@ -299,7 +300,7 @@ let test_two_reads_of_one_input_are_one_parameter () =
          ^ Yojson.Safe.to_string (member [ "required" ] p))
        params);
   let refused what ~says route =
-    match Spindle.App.make [ route ] with
+    match Public.make [ route ] with
     | Ok _ -> Alcotest.failf "%s: the app was made" what
     | Error m ->
         Alcotest.(check bool) (what ^ ": " ^ m) true (contains ~sub:says m)
@@ -352,7 +353,7 @@ let test_a_body_is_required_where_an_empty_one_is_refused () =
        Ok "")
   in
   let a =
-    Spindle.Test.app
+    Public.app
       [
         add;
         post "defaults" (Spindle.json note);
@@ -744,7 +745,7 @@ let test_a_body_refused_for_its_type_says_415 () =
       ("raw", false, route "raw" (Spindle.Dep.map ignore Spindle.body));
     ]
   in
-  let a = Spindle.Test.app (List.map (fun (_, _, r) -> r) routes) in
+  let a = Public.app (List.map (fun (_, _, r) -> r) routes) in
   let doc = json_of_doc (Spindle.App.app a) in
   List.iter
     (fun (path, refuses, _) ->
@@ -804,9 +805,7 @@ let test_nothing_is_said_as_its_status () =
 (* The document and the reference over it are the application's own, and
    the reference asks no other host for anything. *)
 let test_docs_are_served_from_here () =
-  let a =
-    Spindle.Test.app (add :: Spindle.Openapi.routes ~title:"Orders" [ add ])
-  in
+  let a = Public.app (add :: Spindle.Openapi.routes ~title:"Orders" [ add ]) in
   let get path = Spindle.Test.call a `GET path in
   let doc = get "/openapi.json" in
   Alcotest.(check int)
@@ -833,7 +832,7 @@ let test_docs_are_served_from_here () =
    moving one moves what the page asks for. *)
 let test_docs_can_be_moved () =
   let a =
-    Spindle.Test.app
+    Public.app
       (add
       :: Spindle.Openapi.routes
            ~at:Spindle.Path.(s "reference")
@@ -949,7 +948,7 @@ let test_a_member_s_access_holds_through_a_route () =
        seen := Some u;
        Ok { u with id = 7 })
   in
-  let a = Spindle.Test.app [ add ] in
+  let a = Public.app [ add ] in
   let r =
     Spindle.Test.call a `POST "/users"
       ~headers:[ ("content-type", "application/json") ]
@@ -1027,7 +1026,7 @@ let test_a_value_outside_its_bounds_is_the_route_s_bug () =
       (Spindle.Returns.json few)
       (Spindle.Dep.return (Ok 11))
   in
-  let r = Spindle.Test.call (Spindle.Test.app [ count ]) `GET "/count" in
+  let r = Spindle.Test.call (Public.app [ count ]) `GET "/count" in
   Alcotest.(check int) "500" 500 (Spindle_http.Status.to_int r.status);
   Alcotest.(check bool)
     "nothing of the value answered" false

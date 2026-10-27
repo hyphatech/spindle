@@ -258,6 +258,34 @@ let security (r : D.route) =
             @ if r.anonymous then [ Obj [] ] else []) );
       ]
 
+(* Who may call, as the route declares it, so the document is the
+   authorization documentation ASVS 8.1.1 asks for: each check by its policy
+   and action, none for a route only a caller reads, and nothing at all for a
+   public one. *)
+let access (r : D.route) =
+  let is_public = function
+    | Route.Public -> true
+    | Route.Caller | Route.Checked _ -> false
+  in
+  if List.exists is_public r.info.access then []
+  else
+    [
+      ( "x-spindle-access",
+        List
+          (List.filter_map
+             (function
+               | Route.Checked { policy; action } ->
+                   Some
+                     (Obj
+                        (("policy", String policy)
+                        ::
+                        (match action with
+                        | Some a -> [ ("action", String a) ]
+                        | None -> [])))
+               | Route.Public | Route.Caller -> None)
+             r.info.access) );
+    ]
+
 let request_body (r : D.route) =
   match r.body with
   | Some (D.Json_body { schema = s; examples = xs; required }) ->
@@ -393,7 +421,7 @@ let operation (r : D.route) =
     @ (match parameters r with [] -> [] | ps -> [ ("parameters", List ps) ])
     @ request_body r
     @ [ ("responses", responses r) ]
-    @ security r)
+    @ security r @ access r)
 
 let schemes (d : D.t) =
   List.fold_left
@@ -536,22 +564,23 @@ let make ?(at = Path.s "docs") ?document:(document_at = Path.s "openapi.json")
       guard
   in
   Ok
-    [
-      Route_repr.get ~summary:"This API, as an OpenAPI 3.2 document" document_at
-        Returns.response
-        (served_file "application/json" doc);
-      Route_repr.get ~summary:"This API's reference, to read and to try" at
-        Returns.response
-        (served_file "text/html; charset=utf-8"
-           (page ~title ~document:document_url ~scalar:scalar_url
-              ~start:start_url));
-      Route_repr.get ~summary:"The reference's script" scalar_at
-        Returns.response
-        (served_file "text/javascript; charset=utf-8" Scalar.js);
-      Route_repr.get ~summary:"What starts the reference" start_at
-        Returns.response
-        (served_file "text/javascript; charset=utf-8" start);
-    ]
+    (List.map Route_repr.public_unless_declared
+       [
+         Route_repr.get ~summary:"This API, as an OpenAPI 3.2 document"
+           document_at Returns.response
+           (served_file "application/json" doc);
+         Route_repr.get ~summary:"This API's reference, to read and to try" at
+           Returns.response
+           (served_file "text/html; charset=utf-8"
+              (page ~title ~document:document_url ~scalar:scalar_url
+                 ~start:start_url));
+         Route_repr.get ~summary:"The reference's script" scalar_at
+           Returns.response
+           (served_file "text/javascript; charset=utf-8" Scalar.js);
+         Route_repr.get ~summary:"What starts the reference" start_at
+           Returns.response
+           (served_file "text/javascript; charset=utf-8" start);
+       ])
 
 (* What [make] refuses is a constant in source, so it raises, as
    [Spindle.serve] does: the program ends before it listens, saying why. *)

@@ -94,6 +94,7 @@ module Returns = Returns
 module Meta = Meta
 module Dep = Dep
 module Bearer = Bearer
+module Access = Access
 module Query = Query
 module Form = Form
 module Header = Header

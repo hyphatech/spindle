@@ -14,13 +14,14 @@ let books_on { Paging.page; per_page } =
   Ok (List.filteri (fun i _ -> i / per_page = page - 1) books)
 
 let routes =
-  [
-    Spindle.get
-      Spindle.Path.(s "books")
-      (Spindle.Returns.json (Wiretype.list Wiretype.string))
-      (let+ paging = Paging.paging in
-       books_on paging);
-  ]
+  List.map Spindle.Access.public
+    [
+      Spindle.get
+        Spindle.Path.(s "books")
+        (Spindle.Returns.json (Wiretype.list Wiretype.string))
+        (let+ paging = Paging.paging in
+         books_on paging);
+    ]
 
 let () =
   Spindle.Log.setup ();

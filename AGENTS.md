@@ -48,8 +48,8 @@ docs/       the documentation site, a Starlight site in Hypha's look, from
             Starlight's <Code>
 examples/   the programs the site shows, each a whole file, built and run
 test/       the suites: the framework, HTTP and WebSocket rows by RFC
-            section, OAuth's by RFC and MCP's by the specification's
-            section, the wire, the Postgres and SQLite kits, and test_docs,
+            section, OAuth's by RFC, MCP's by the specification's
+            section and access control's by OWASP ASVS's, the wire, the Postgres and SQLite kits, and test_docs,
             every example on a page
 prds/       the PRDs of work being decided and built, by PRD.md, and its
             README.md: which document owns each fact once the work lands
@@ -92,8 +92,7 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   scope-token), `Spindle_client.Oauth.create` (for a metadata document that
   is no https URL with a path), `Spindle_mcp.routes` (for two tools of one name, a name MCP
   refuses, arguments whose description is no object, a scope with no
-  `~auth`, a question that is no form or two of one key on a tool, or a
-  tool whose dependency may refuse, which would refuse every call), 
+  `~auth`, or a question that is no form or two of one key on a tool),
   `Spindle.Query.default` and `Spindle.Header.default` (for a default its
   description will not write), `Spindle.Server.Limits.make` (for
   a limit out of its range), `Spindle.Server.run`, `serve_on` and
@@ -167,6 +166,20 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   which is not among the framework's codes every route may give. Test: a
   document that promises every route may answer `429`, or a limit a reader
   of the route cannot see; `test_spindle`'s rate case reads the document.
+- **Every route says who may call it.** It reads a caller or a check of
+  `Access` -- or `Bearer.claims` or `Bearer.scope`, whose subject is a
+  caller -- or is made `Access.public`, and `App.make` refuses one that does
+  neither and one made public that reads a caller, because a check that was
+  forgotten is broken access control nobody sees until it is used. A route
+  the framework makes is public unless what it reads -- `~auth`, a guard
+  that reads a check -- says otherwise. Test: `test_access` starts a route
+  that declares nobody and one public that reads a caller, and each is
+  refused, naming it.
+- **A guarded object reaches a handler only through its check.**
+  `Access.resource` keeps the object's loader and `Access.can` is the only
+  value that hands the object over, because an object read beside its check
+  is a check skipped. Symptom: `rg -n 'resource ->' core/access.mli` finds
+  a value other than `can`.
 - **A secret has no span.** No header value, body, query string, statement
   parameter or message of an exception the framework did not catch by name
   is a span's attribute, as none is a log field: a request's span carries
@@ -177,7 +190,10 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   method, `postgresql` or `sqlite`, never a path or a string a caller
   chose, since a name per URL is a series per URL in every
   collector. A bearer token and its claims are in no line, a refusal's
-  detail naming the check that failed and nothing of the token. Test: a
+  detail naming the check that failed and nothing of the token; a denial's
+  line names its caller by the id the application's `Access.principal ~id`
+  gives -- its own identifier, never a token's claim -- since an audit that
+  names nobody is no audit. Test: a
   token in a collector, or a card number in a log line;
   `test_spindle` sends one in a header and a query and searches every
   attribute of the trace, and raises one from a handler, a stream and a
@@ -254,6 +270,12 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   generator chooses, through a reader smaller than a frame.
   Symptom: a frame one end misreads that no peer in the suite happens to
   send -- as a reply written after a close was, until a row asked.
+- **An access rule is a row.** A requirement of OWASP ASVS 5.0's V8,
+  Authorization, that Spindle meets has a row in `test_access`, named by its
+  number, and each row is seen failing when the check it guards is broken.
+  Review by example misses the requirement nobody thought of. Symptom: a
+  denial no row of ours happened to make -- a check a header or a path's
+  spelling skips.
 - **An MCP rule is a row.** A requirement of MCP 2026-07-28 that Spindle
   meets, as a server or as a client, has a row in `test_mcp_spec`, named by the specification's page and
   section, as does one of JSON-RPC 2.0 as MCP uses it. Review by example

@@ -115,6 +115,17 @@ let both a b =
                     | a -> pair_results a (kb body))));
   }
 
+(* What [d] is made of is still listed, for what it reads, but declares
+   nothing: its refusal no longer ends the request. *)
+let attempt d =
+  make
+    ~inside:(List.map (fun l -> { l with codes = []; access = [] }) d.listed)
+    ~opaque:d.opaque ~binds:d.binds
+    (fun c ->
+      match exec d c with
+      | Now v -> Now (Ok v)
+      | Later k -> Later (fun body -> Ok (k body)))
+
 (* What [f] reads is unknown until [d] answers, so the result is opaque. It
    runs in the first stage when [d] needs no body. *)
 let bind d f =

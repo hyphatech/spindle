@@ -25,29 +25,30 @@ let session =
 let user = Spindle.Path.string "user"
 
 let routes =
-  [
-    Spindle.post
-      Spindle.Path.(s "sign-in" / user)
-      Spindle.Returns.text
-      (let+ user = Spindle.param user and+ session = session in
-       let* () = Spindle.Session.rotate session in
-       let* () = Spindle.Session.put session { user } in
-       Ok "Signed in.\n");
-    Spindle.get
-      Spindle.Path.(s "me")
-      Spindle.Returns.text
-      (let+ session = session in
-       let* visit = Spindle.Session.get session in
-       match visit with
-       | Some { user } -> Ok (Printf.sprintf "You are %s.\n" user)
-       | None -> Ok "Nobody is signed in.\n");
-    Spindle.post
-      Spindle.Path.(s "sign-out")
-      Spindle.Returns.text
-      (let+ session = session in
-       let* () = Spindle.Session.destroy session in
-       Ok "Signed out.\n");
-  ]
+  List.map Spindle.Access.public
+    [
+      Spindle.post
+        Spindle.Path.(s "sign-in" / user)
+        Spindle.Returns.text
+        (let+ user = Spindle.param user and+ session = session in
+         let* () = Spindle.Session.rotate session in
+         let* () = Spindle.Session.put session { user } in
+         Ok "Signed in.\n");
+      Spindle.get
+        Spindle.Path.(s "me")
+        Spindle.Returns.text
+        (let+ session = session in
+         let* visit = Spindle.Session.get session in
+         match visit with
+         | Some { user } -> Ok (Printf.sprintf "You are %s.\n" user)
+         | None -> Ok "Nobody is signed in.\n");
+      Spindle.post
+        Spindle.Path.(s "sign-out")
+        Spindle.Returns.text
+        (let+ session = session in
+         let* () = Spindle.Session.destroy session in
+         Ok "Signed out.\n");
+    ]
 
 let () =
   Spindle.Log.setup ();

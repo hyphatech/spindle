@@ -62,6 +62,7 @@ let split b =
   Ok { each = total /. float b.people }
 
 let routes =
+  List.map Spindle.Access.public
   [
     Spindle.post
       Spindle.Path.(s "split")

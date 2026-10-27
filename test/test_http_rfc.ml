@@ -357,7 +357,7 @@ let routes =
          (Error (Spindle.Refusal.make signed_out "Please sign in.")));
   ]
 
-let app = Spindle.Test.app routes
+let app = Public.app routes
 let max_body_on_the_server = 64
 let max_head_on_the_server = 1024
 let discard_on_the_server = 1024
@@ -2542,11 +2542,11 @@ let test_a_401_without_a_challenge_is_refused () =
   in
   Alcotest.(check bool)
     "App.make says no" true
-    (Result.is_error (Spindle.App.make [ route ]))
+    (Result.is_error (Public.make [ route ]))
 
 let test_501_comes_before_the_not_found_answer () =
   let app =
-    Spindle.Test.app
+    Public.app
       ~not_found:
         (Spindle.Dep.return (Ok (Spindle.Response.make "the not-found answer")))
       routes
@@ -3869,7 +3869,7 @@ let test_a_malformed_media_type_is_refused () =
       (let+ s = Spindle.json Wiretype.string in
        Ok s)
   in
-  let app = Spindle.Test.app [ route ] in
+  let app = Public.app [ route ] in
   let status content_type =
     Status.to_int
       (Spindle.Test.call app `POST "/echo" ~body:{|"hi"|}
@@ -4301,7 +4301,7 @@ let test_a_representation_answers_as_the_rfc_says () =
   Eio.Path.save ~create:(`Or_truncate 0o644)
     Eio.Path.(root / "f.txt")
     "0123456789";
-  let app = Spindle.Test.app [ Spindle.Files.route root ] in
+  let app = Public.app [ Spindle.Files.route root ] in
   let call headers =
     Spindle.Test.call
       ~now:(Instants.of_ms 3_000_000_000_000)
@@ -4363,8 +4363,7 @@ let test_a_compressed_representation_answers_as_the_rfc_says () =
     | Error m -> Alcotest.failf "the site was refused: %s" m
   in
   let app =
-    Spindle.Test.app ~compress:Spindle.Compress.default
-      [ Spindle.Static.route site ]
+    Public.app ~compress:Spindle.Compress.default [ Spindle.Static.route site ]
   in
   let call headers =
     Spindle.Test.call
@@ -4427,7 +4426,7 @@ let test_a_compressed_representation_answers_as_the_rfc_says () =
                (Option.value if_match ~default:"-")
                (Option.value if_none_match ~default:"-"))))
   in
-  let app = Spindle.Test.app ~compress:Spindle.Compress.default [ seen ] in
+  let app = Public.app ~compress:Spindle.Compress.default [ seen ] in
   Alcotest.(check string)
     "9110 §13.1.1, §13.1.2: a route sees the tags it set, not their marks"
     {|"v1" "v1", W/"v2"|}

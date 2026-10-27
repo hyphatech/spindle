@@ -237,7 +237,10 @@ let make ~issuer ~resource =
     metadata_location (https_url "the resource" resource)
   in
   let keys = Dep.of_resource ("the keys of " ^ issuer) in
-  let claims = claims_of ~issuer ~resource ~metadata_url ~keys in
+  (* A token's subject is whoever is calling. *)
+  let claims =
+    Dep_repr.mark Caller (claims_of ~issuer ~resource ~metadata_url ~keys)
+  in
   { issuer; resource; metadata_url; metadata_path; keys; claims }
 
 let keys t = t.keys
@@ -332,6 +335,8 @@ let metadata (t : t) routes =
       bearer_methods_supported = [ "header" ];
     }
   in
-  Route_repr.get t.metadata_path
-    (Returns.json document_json)
-    (Dep.return (Ok document))
+  (* RFC 9728 §3: read by a client before it holds a token. *)
+  Route_repr.public
+    (Route_repr.get t.metadata_path
+       (Returns.json document_json)
+       (Dep.return (Ok document)))

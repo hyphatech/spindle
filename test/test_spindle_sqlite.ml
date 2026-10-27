@@ -317,10 +317,11 @@ let store_of pool ?table () =
     Spindle.Test.app
       ~resources:[ Spindle.Dep.resource db pool ]
       [
-        Spindle.get Spindle.Path.root Spindle.Returns.text
-          (let+ store = read in
-           kept := Some store;
-           Ok "kept");
+        Spindle.Access.public
+        @@ Spindle.get Spindle.Path.root Spindle.Returns.text
+             (let+ store = read in
+              kept := Some store;
+              Ok "kept");
       ]
   in
   ignore (Spindle.Test.call app `GET "/");
@@ -430,7 +431,9 @@ let test_sessions_read_the_pool_as_a_resource () =
   in
   let b =
     Spindle.Test.browser
-      (Spindle.Test.app ~resources:[ Spindle.Dep.resource db pool ] routes)
+      (Spindle.Test.app
+         ~resources:[ Spindle.Dep.resource db pool ]
+         (List.map Spindle.Access.public routes))
   in
   ignore (Spindle.Test.Browser.call b `POST "/sign-in");
   Alcotest.(check string)

@@ -54,6 +54,14 @@ type param = Route_repr.param = {
 }
 (** A parameter of the route's path. *)
 
+(** Who may call a route, as it declares: {!Access}'s. *)
+type access = Dep_repr.access =
+  | Public  (** anyone: {!Access.public} *)
+  | Caller  (** whoever is calling: a caller read ({!Access.caller}, a check) *)
+  | Checked of { policy : string; action : string option }
+      (** a policy's check of an action, by their names: [None] for
+          {!Access.check}, whose actions are known only as it runs *)
+
 type info = Route_repr.info = {
   meth : Spindle_http.Meth.t;
   pattern : string;  (** [/orders/{order_id}] *)
@@ -63,6 +71,9 @@ type info = Route_repr.info = {
           where and name -- a header's name without case -- are one need,
           required where either is *)
   credentials : Dep.credential list;
+  access : access list;
+      (** who may call it, each once: a caller and every check it reads, or
+          [Public] *)
   returns : Returns.shape;
   codes : Refusal.Code.t list;
       (** its own and its inputs'; the framework's its document lists from what

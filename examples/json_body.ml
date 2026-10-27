@@ -35,13 +35,14 @@ let place ({ item; quantity } : order) =
            (Printf.sprintf "There is no %s left today." item))
 
 let routes =
-  [
-    Spindle.post ~refuses:[ sold_out ]
-      Spindle.Path.(s "orders")
-      (Spindle.Returns.json ~status:`Created placed_json)
-      (let+ order = Spindle.json order_json in
-       place order);
-  ]
+  List.map Spindle.Access.public
+    [
+      Spindle.post ~refuses:[ sold_out ]
+        Spindle.Path.(s "orders")
+        (Spindle.Returns.json ~status:`Created placed_json)
+        (let+ order = Spindle.json order_json in
+         place order);
+    ]
 
 let () =
   Spindle.Log.setup ();
