@@ -34,6 +34,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       # Use setup-ocaml's switch instead of the Makefile's.
       - run: make docs OPAM="opam exec --"
+        # The header's version, stars and forks, asked of GitHub's API: with
+        # the token, past its limit for a runner's shared address.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _build/docs
