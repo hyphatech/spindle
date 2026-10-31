@@ -327,14 +327,14 @@ let tls_identity t target =
                 cannot_send "a host that is neither a name nor an address: %s"
                   target.host))
 
-(* A socket to [addr], on a switch of its own that a fiber on [sw] holds
-   until the returned promise is resolved, or [sw] ends: [Eio.Net.connect]
-   attaches a socket to its switch before connecting, so one that fails is
+(* A socket [open_socket] connects, on a switch of its own that a fiber on
+   [sw] holds until the returned promise is resolved, or [sw] ends: the
+   socket is attached to its switch before it connects, so one that fails is
    closed as its attempt ends rather than kept until [sw] does -- a domain's
    switch, the server's lifetime. The fiber is a daemon, so nothing idle
    holds [sw] open. What fails once the socket is handed over is the
    fiber's, and fails [sw] as any fiber's does. *)
-let connect_to ~sw net addr =
+let connect_with ~sw open_socket =
   Eio.Switch.check sw;
   let opened, open_ = Eio.Promise.create () in
   let released, release = Eio.Promise.create () in
@@ -343,8 +343,8 @@ let connect_to ~sw net addr =
          Eio.Switch.run (fun sw ->
              Eio.Fiber.first
                (fun () ->
-                 let socket = Eio.Net.connect ~sw net addr in
-                 Eio.Promise.resolve open_ (Ok ((socket :> flow), sw));
+                 let socket = open_socket sw in
+                 Eio.Promise.resolve open_ (Ok (socket, sw));
                  Eio.Fiber.await_cancel ())
                (fun () -> Eio.Promise.await released))
        with
@@ -361,6 +361,29 @@ let connect_to ~sw net addr =
   | exception (Eio.Cancel.Cancelled _ as ex) ->
       Eio.Promise.resolve release ();
       raise ex
+
+let connect_to ~sw net addr =
+  connect_with ~sw (fun sw -> (Eio.Net.connect ~sw net addr :> flow))
+
+(* A Unix socket is connected through [Unix] itself, the same calls on every
+   system, and handed to Eio connected: every failure is then [Unix]'s error,
+   raised here -- a path too long as its address is made -- where a backend's
+   own connect may raise one outside the calling fiber. Non-blocking, as a
+   socket Eio reads must be; a connect that cannot finish at once is waited
+   on until writable, then asked how it ended. *)
+let connect_unix ~sw path =
+  connect_with ~sw (fun sw ->
+      let fd = Unix.socket ~cloexec:true Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+      let socket = Eio_unix.Net.import_socket_stream ~sw ~close_unix:true fd in
+      Unix.set_nonblock fd;
+      (match Unix.connect fd (Unix.ADDR_UNIX path) with
+      | () -> ()
+      | exception Unix.Unix_error (Unix.EINPROGRESS, _, _) -> (
+          Eio_unix.await_writable fd;
+          match Unix.getsockopt_error fd with
+          | None -> ()
+          | Some code -> raise (Unix.Unix_error (code, "connect", path))));
+      (socket :> flow))
 
 (* Never on a caller's switch, since a kept connection outlives its call:
    [sw] is the call's owner ({!with_owner}), and a WebSocket's its bracket's,
@@ -383,14 +406,8 @@ let connect ~sw t target =
   let socket, switch, release =
     match target.unix with
     | Some path -> (
-        match connect_to ~sw t.net (`Unix path) with
+        match connect_unix ~sw path with
         | opened -> opened
-        | exception (Eio.Io _ as ex) ->
-            cannot_send "cannot reach the socket %s: %s" path
-              (Printexc.to_string ex)
-        (* Linux's backend refuses a path too long for a socket as it turns
-           it into an address, before any I/O, and so raises [Unix]'s own
-           error rather than [Eio.Io]. *)
         | exception Unix.Unix_error (code, _, _) ->
             cannot_send "cannot reach the socket %s: %s" path
               (Unix.error_message code))

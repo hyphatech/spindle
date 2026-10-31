@@ -10,7 +10,7 @@
   wiretype
   eio
   eio.unix
-  ; A socket's path too long, which Linux's backend refuses as Unix's error.
+  ; A Unix socket, connected the same way on every system.
   unix
   cstruct
   iomux
