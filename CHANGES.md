@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.14.1 (2026-10-31)
 
 - `Broadcast.dropped sub` says whether the hub dropped a subscriber as slow,
   so a reader whose `forward` or `next` has ended can tell a drop, which
