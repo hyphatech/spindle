@@ -10,6 +10,8 @@
   wiretype
   eio
   eio.unix
+  ; A socket's path too long, which Linux's backend refuses as Unix's error.
+  unix
   cstruct
   iomux
   mtime

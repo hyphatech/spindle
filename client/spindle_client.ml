@@ -387,7 +387,13 @@ let connect ~sw t target =
         | opened -> opened
         | exception (Eio.Io _ as ex) ->
             cannot_send "cannot reach the socket %s: %s" path
-              (Printexc.to_string ex))
+              (Printexc.to_string ex)
+        (* Linux's backend refuses a path too long for a socket as it turns
+           it into an address, before any I/O, and so raises [Unix]'s own
+           error rather than [Eio.Io]. *)
+        | exception Unix.Unix_error (code, _, _) ->
+            cannot_send "cannot reach the socket %s: %s" path
+              (Unix.error_message code))
     | None -> (
         match Resolver.lookup t.resolver target.host ~port:target.port with
         | Error ex -> cannot_send "%s" (Printexc.to_string ex)

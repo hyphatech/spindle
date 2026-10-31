@@ -56,6 +56,33 @@ let echo =
     Spindle.Returns.response
     (Spindle.Dep.map (fun b -> Ok (Spindle.Response.make b)) Spindle.body)
 
+let ( let* ) = Result.bind
+
+type said = { text : string }
+
+let said_json =
+  Wiretype.Object.map ~kind:"said" (fun text -> { text })
+  |> Wiretype.Object.mem "text" Wiretype.string ~enc:(fun s -> s.text)
+  |> Wiretype.Object.finish
+
+let chat =
+  Spindle.Websocket.(
+    protocol ~client:(json said_json) ~server:(json said_json) ())
+
+let echo_socket =
+  Spindle.get
+    Spindle.Path.(s "ws")
+    (Spindle.Returns.websocket chat)
+    (Spindle.Dep.return
+       (Ok
+          (fun ws ->
+            let rec loop () =
+              let* said = Spindle.Websocket.receive ws in
+              let* () = Spindle.Websocket.send ws said in
+              loop ()
+            in
+            loop ())))
+
 (* {1 The client} *)
 
 (* A server of the test's own on a socket, answering every request with a
@@ -126,7 +153,40 @@ let test_an_unreachable_socket_is_unsent () =
   Unix.close fd;
   unsent ~naming:dead (Spindle_client.call client `GET (url_of dead "/"));
   let long = Filename.concat dir (String.make 200 'x') in
-  unsent ~naming:long (Spindle_client.call client `GET (url_of long "/"))
+  unsent ~naming:long (Spindle_client.call client `GET (url_of long "/"));
+  (* A socket in a directory this user may not enter. *)
+  let shut = Filename.concat dir "shut" in
+  Unix.mkdir shut 0o700;
+  let inside = Filename.concat shut "s.sock" in
+  let fd = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+  Unix.bind fd (Unix.ADDR_UNIX inside);
+  Unix.listen fd 1;
+  Unix.chmod shut 0o000;
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.chmod shut 0o700;
+      Unix.close fd)
+    (fun () ->
+      unsent ~naming:inside
+        (Spindle_client.call client `GET (url_of inside "/")))
+
+let test_a_websocket_reaches_a_socket () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let path = Filename.concat (private_dir ()) "s.sock" in
+  let socket = opened (Spindle.Server.Unix_socket.listen ~sw path) in
+  serve ~sw env socket (Spindle.Test.app [ echo_socket ]);
+  let got =
+    Spindle_client.websocket (client ~sw env) chat
+      ("ws+unix://" ^ Uri.pct_encode ~component:`Host path ^ "/ws")
+      (fun ws ->
+        let* () = Spindle.Websocket.send ws { text = "hi" } in
+        let* back = Spindle.Websocket.receive ws in
+        Ok back.text)
+  in
+  match got with
+  | Ok text -> check_string "echoed" "hi" text
+  | Error e -> Alcotest.fail (Spindle_client.websocket_error_to_string e)
 
 (* {1 The server} *)
 
@@ -286,6 +346,8 @@ let () =
             test_a_call_reaches_a_socket;
           Alcotest.test_case "an unreachable socket is unsent" `Quick
             test_an_unreachable_socket_is_unsent;
+          Alcotest.test_case "a WebSocket reaches a socket" `Quick
+            test_a_websocket_reaches_a_socket;
         ] );
       ( "server",
         [
