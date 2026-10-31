@@ -21,8 +21,9 @@ OAuth suite's authorization server, and `make docs` Bun. Without
 `SPINDLE_TEST_PG` the suites that need a server are skipped, and without
 `SPINDLE_TEST_OIDC` the rows that need the authorization server, and the
 test output says so. CI runs `make lint` and `make test`, against the same
-compose Postgres, on OCaml 5.5, and `make test` again on the oldest
-versions the opam files allow. `docs.yml` publishes the site to GitHub
+compose Postgres, on OCaml 5.5 on Linux, and `make test` again on the
+oldest versions the opam files allow; and every suite but the database's
+on macOS, Apple silicon and Intel, whose runners have no Podman. `docs.yml` publishes the site to GitHub
 Pages on every push to `main`.
 
 ## Layout

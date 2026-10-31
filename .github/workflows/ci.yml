@@ -34,6 +34,29 @@ jobs:
       # database every contributor does.
       - run: make test OPAM="opam exec --"
 
+  # macOS, on Apple silicon and Intel, where Eio runs on another backend
+  # than Linux's: what a socket or a file does differs there, and one
+  # system's run proves nothing of the other's. The runners have no Podman,
+  # so the database suites skip, saying so, and are Linux's to run.
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.5"
+          opam-repositories: |
+            hypha: https://github.com/hyphatech/opam-repository.git
+            default: https://opam.ocaml.org
+      - uses: oven-sh/setup-bun@v2
+      - run: opam install . --deps-only --with-test -y
+      - run: cd test/oidc && bun install --frozen-lockfile
+      - run: SPINDLE_TEST_OIDC=$PWD/test/oidc opam exec -- dune test --force
+
   # The oldest versions the opam file allows, as opam-repository checks.
   lower-bounds:
     runs-on: ubuntu-24.04
