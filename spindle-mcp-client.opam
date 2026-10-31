@@ -3,7 +3,7 @@ opam-version: "2.0"
 synopsis:
   "Calling another server's tools over the Model Context Protocol, with no framework"
 description:
-  "MCP 2026-07-28 over HTTP on spindle-client alone: server/discover, tools/list and tools/call, typed by Wiretype descriptions or as plain JSON, a server's questions answered through a function. Its protocol library, spindle-mcp-client.protocol, is MCP's messages, which spindle-mcp's server is built on too."
+  "MCP 2026-07-28 over HTTP on spindle-client alone: server/discover, tools/list and tools/call, typed by Wiretype descriptions or as plain JSON, a server's questions answered through a function; resources and templates listed and read, and watched through subscriptions/listen. Its protocol library, spindle-mcp-client.protocol, is MCP's messages, which spindle-mcp's server is built on too."
 maintainer: ["Hypha Technologies Ltd <dev@hyphatech.io>"]
 authors: ["Hypha Technologies Ltd"]
 license: "MIT"
@@ -17,6 +17,7 @@ depends: [
   "wiretype" {>= "0.6.1" & < "0.7.0"}
   "base64" {>= "3.5.2"}
   "logs" {>= "0.10.0"}
+  "mtime" {>= "2.1.0"}
   "odoc" {with-doc}
 ]
 build: [

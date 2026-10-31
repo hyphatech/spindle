@@ -144,6 +144,27 @@ let answer_checked app req ~body =
 (* What the server reads at once. *)
 let part_bytes = 65_536
 
+(* As the server hands a body over: whole, or in parts, too large before any
+   is read, as a declared length is. *)
+let given_body body =
+  let s = Option.value body ~default:"" and at = ref 0 in
+  {
+    Body.whole =
+      (fun ?max_body ?body_timeout:_ ?min_body_rate:_ () ->
+        match max_body with
+        | Some max when String.length s > max -> Error Body.Too_large
+        | Some _ | None -> Ok s);
+    part =
+      (fun ?(max_body = max_int) ?body_timeout:_ ?min_body_rate:_ () ->
+        if String.length s > max_body then Error Body.Too_large
+        else if !at >= String.length s then Ok `End
+        else
+          let n = Int.min part_bytes (String.length s - !at) in
+          let part = String.sub s !at n in
+          at := !at + n;
+          Ok (`Data part));
+  }
+
 let call ?(now = Ptime.epoch) ?(peer = "127.0.0.1") ?proxied ?proxy_header
     ?version ?(headers = []) ?body app meth target =
   let req =
@@ -151,28 +172,7 @@ let call ?(now = Ptime.epoch) ?(peer = "127.0.0.1") ?proxied ?proxy_header
       ~read_clock:(fun () -> now)
       meth target
   in
-  (* As the server hands it over: whole, or in parts, too large before any is
-     read, as a declared length is. *)
-  let body =
-    let s = Option.value body ~default:"" and at = ref 0 in
-    {
-      Body.whole =
-        (fun ?max_body ?body_timeout:_ ?min_body_rate:_ () ->
-          match max_body with
-          | Some max when String.length s > max -> Error Body.Too_large
-          | Some _ | None -> Ok s);
-      part =
-        (fun ?(max_body = max_int) ?body_timeout:_ ?min_body_rate:_ () ->
-          if String.length s > max_body then Error Body.Too_large
-          else if !at >= String.length s then Ok `End
-          else
-            let n = Int.min part_bytes (String.length s - !at) in
-            let part = String.sub s !at n in
-            at := !at + n;
-            Ok (`Data part));
-    }
-  in
-  let wire = answer_checked app req ~body in
+  let wire = answer_checked app req ~body:(given_body body) in
   {
     status = Status.of_int (Status.to_int wire.status);
     headers = wire.headers;
@@ -350,14 +350,16 @@ let browser app = { Browser.app; jar = [] }
 (* ------------------------------------------------------------------ *)
 (* An events route, read an event at a time *)
 
-let events ?(now = Ptime.epoch) ?(headers = []) app target f =
+let events ?(now = Ptime.epoch) ?(headers = []) ?(meth = `GET) ?body app target
+    f =
   let req =
     Request.make ~peer:"127.0.0.1"
       ~headers:(("accept", "text/event-stream") :: headers)
       ~read_clock:(fun () -> now)
-      `GET target
+      meth target
   in
-  let wire = answer_checked app req ~body:no_body in
+  let body = match body with Some _ -> given_body body | None -> no_body in
+  let wire = answer_checked app req ~body in
   match wire.body with
   | Wire.Chunks stream | Wire.Until_close stream ->
       let reader = Spindle_http.Event_stream.reader () in

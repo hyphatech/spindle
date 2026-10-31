@@ -748,13 +748,598 @@ let test_routes_refuses_what_is_no_form () =
     [ Mcp.Question.declare sure; Mcp.Question.declare sure ]
 
 (* ------------------------------------------------------------------ *)
+(* Resources *)
+
+(* Journals of numbered lines, as HAF's server keeps one an intent: what a
+   template reads, held by the server as a pool would be. *)
+let journals : (string -> string list option) Spindle.Dep.t =
+  Spindle.Dep.of_resource "journals"
+
+let lines id =
+  List.assoc_opt id [ ("0197", [ "a"; "b"; "c" ]); ("secret", [ "x" ]) ]
+
+let machine =
+  Mcp.resource "haf://machine" ~name:"machine" ~title:"This machine"
+    ~doc:"Where HAF runs." ~mime:"text/plain"
+    (Spindle.Dep.return (fun () -> Ok [ Mcp.Text "one machine" ]))
+
+let logo =
+  Mcp.resource "haf://logo" ~name:"logo" ~mime:"image/png"
+    (Spindle.Dep.return (fun () -> Ok [ Mcp.Blob "\x89PNG" ]))
+
+let busy =
+  Mcp.resource "haf://busy" ~name:"busy"
+    (Spindle.Dep.refuse (Spindle.Refusal.rate_limited ~retry_after_s:3))
+
+let journal_variables =
+  Mcp.Template.(
+    let+ id = required "id" Wiretype.string
+    and+ from = optional "from" (Wiretype.int_bounded ~min:1 ()) in
+    (id, from))
+
+(* Someone else's journal is refused as Access refuses it with ~deny_as, and
+   a broken one as a disk that failed. *)
+let journal =
+  Mcp.template "haf://intents/{id}/journal{?from}" ~name:"journal"
+    ~mime:"application/jsonl" ~ttl_ms:0 journal_variables
+    (let+ journals = journals in
+     fun (id, from) ->
+       match (id, journals id) with
+       | "secret", _ ->
+           Error (Spindle.Refusal.make Spindle.Access.forbidden "Not yours.")
+       | "broken", _ -> Error (Spindle.Refusal.internal ~detail:"the disk")
+       | _, None -> Error Spindle.Refusal.not_found
+       | _, Some ls ->
+           let from = Option.value from ~default:1 in
+           Ok
+             [
+               Mcp.Text
+                 (String.concat "\n"
+                    (List.filteri (fun i _ -> i + 1 >= from) ls));
+             ])
+
+let word =
+  Mcp.template "haf://words/{word}" ~name:"word"
+    Mcp.Template.(required "word" Wiretype.string)
+    (Spindle.Dep.return (fun w -> Ok [ Mcp.Text w ]))
+
+let resources = [ machine; logo; busy; journal; word ]
+
+let resources_app () =
+  Spindle.Test.app
+    ~resources:[ Spindle.Dep.resource journals lines ]
+    (Mcp.routes ~name:"haf" ~version:"1" ~resources [])
+
+let read uri =
+  Mcp.Test.call (resources_app ()) "resources/read"
+    [ ("uri", Value.String uri) ]
+
+(* The one content's text, as JSON. *)
+let read_text uri =
+  match at [ "result"; "contents" ] (json (read uri)) with
+  | `List [ c ] -> Yojson.Safe.to_string (Yojson.Safe.Util.member "text" c)
+  | j -> Alcotest.failf "no one content: %s" (Yojson.Safe.to_string j)
+
+(* resources §Capabilities: a server with resources names them. *)
+let test_a_server_with_resources_names_them () =
+  check_string "capabilities" {|{"tools":{},"resources":{}}|}
+    (text
+       [ "result"; "capabilities" ]
+       (Mcp.Test.call (resources_app ()) "server/discover" []))
+
+(* resources §Listing Resources: each resource, in the order given, with what
+   it says of itself; caching hints. A template is not listed here. *)
+let test_resources_are_listed () =
+  let r = Mcp.Test.call (resources_app ()) "resources/list" [] in
+  check_string "each"
+    {|[{"uri":"haf://machine","name":"machine","title":"This machine","description":"Where HAF runs.","mimeType":"text/plain"},{"uri":"haf://logo","name":"logo","mimeType":"image/png"},{"uri":"haf://busy","name":"busy"}]|}
+    (text [ "result"; "resources" ] r);
+  check_string "ttlMs" "300000" (text [ "result"; "ttlMs" ] r);
+  check_string "cacheScope" {|"public"|} (text [ "result"; "cacheScope" ] r);
+  check_error "a cursor this server never gave" ~status:200 ~code:(-32602)
+    (Mcp.Test.call (resources_app ()) "resources/list"
+       [ ("cursor", Value.String "next") ])
+
+(* resources §Resource Templates: each template, its RFC 6570 text. *)
+let test_templates_are_listed () =
+  let r = Mcp.Test.call (resources_app ()) "resources/templates/list" [] in
+  check_string "each"
+    {|[{"uriTemplate":"haf://intents/{id}/journal{?from}","name":"journal","mimeType":"application/jsonl"},{"uriTemplate":"haf://words/{word}","name":"word"}]|}
+    (text [ "result"; "resourceTemplates" ] r);
+  check_string "ttlMs" "300000" (text [ "result"; "ttlMs" ] r)
+
+(* resources §Reading Resources: the contents, each with the URI read and the
+   resource's type, text as it is and bytes in base64; ttlMs, the resource's
+   own where it has one, and cacheScope, both required. *)
+let test_a_resource_is_read () =
+  let r = read "haf://machine" in
+  check_string "complete" {|"complete"|} (text [ "result"; "resultType" ] r);
+  check_string "text"
+    {|[{"uri":"haf://machine","mimeType":"text/plain","text":"one machine"}]|}
+    (text [ "result"; "contents" ] r);
+  check_string "ttlMs" "300000" (text [ "result"; "ttlMs" ] r);
+  check_string "cacheScope" {|"public"|} (text [ "result"; "cacheScope" ] r);
+  check_string "a blob"
+    {|[{"uri":"haf://logo","mimeType":"image/png","blob":"iVBORw=="}]|}
+    (text [ "result"; "contents" ] (read "haf://logo"));
+  check_string "the resource's ttlMs" "0"
+    (text [ "result"; "ttlMs" ] (read "haf://intents/0197/journal"))
+
+(* RFC 6570 §3.2.2: a simple variable is one segment, percent-decoded, and
+   never a slash. *)
+let test_a_variable_is_one_segment () =
+  check_string "decoded" {|"café"|} (read_text "haf://words/caf%C3%A9");
+  check_error "never across a slash" ~status:200 ~code:(-32602)
+    (read "haf://words/a/b");
+  check_error "never empty" ~status:200 ~code:(-32602) (read "haf://words/")
+
+(* RFC 6570 §3.2.8: a form-style query, each variable free to be absent and a
+   member the template does not name ignored. *)
+let test_a_query_is_read_as_a_form () =
+  check_string "the whole" {|"a\nb\nc"|}
+    (read_text "haf://intents/0197/journal");
+  check_string "from a line" {|"b\nc"|}
+    (read_text "haf://intents/0197/journal?from=2");
+  check_string "a member not named" {|"c"|}
+    (read_text "haf://intents/0197/journal?x=1&from=3")
+
+(* resources §Error Handling: a URI no resource has is -32602, naming it, and
+   so is one whose function finds nothing or refuses this caller its object,
+   alike, so a read reveals no more than a missing one would. *)
+let test_a_resource_not_found () =
+  let r = read "haf://nothing" in
+  check_error "none matches" ~status:200 ~code:(-32602) r;
+  check_string "naming it" {|"haf://nothing"|}
+    (text [ "error"; "data"; "uri" ] r);
+  let message r = text [ "error"; "message" ] r in
+  let none = read "haf://intents/none/journal"
+  and secret = read "haf://intents/secret/journal" in
+  check_error "its function found none" ~status:200 ~code:(-32602) none;
+  check_error "someone else's" ~status:200 ~code:(-32602) secret;
+  check_string "told alike" (message none) (message secret);
+  check_string "as one none matches" (message r) (message secret)
+
+(* resources §Error Handling: a variable that does not read is -32602,
+   naming it. *)
+let test_a_variable_that_does_not_read () =
+  let r = read "haf://intents/0197/journal?from=twelve" in
+  check_error "invalid" ~status:200 ~code:(-32602) r;
+  let message = text [ "error"; "message" ] r in
+  check_bool ("naming it: " ^ message) true
+    (List.exists
+       (fun w -> String.starts_with ~prefix:"from" w)
+       (String.split_on_char ' ' message))
+
+(* resources §Error Handling: a function's other refusal is an internal
+   error; a refusal of the resource's dependency is the refusal itself. *)
+let test_a_refusal_of_a_read () =
+  check_error "internal" ~status:200 ~code:(-32603)
+    (read "haf://intents/broken/journal");
+  let r = read "haf://busy" in
+  check_status "429" 429 r;
+  check_string "its Retry-After" "3"
+    (Option.value ~default:"" (Spindle.Test.header r "retry-after"))
+
+let scoped_machine =
+  Mcp.resource "haf://machine" ~name:"machine" ~scope:"machine:read"
+    (Spindle.Dep.return (fun () -> Ok [ Mcp.Text "one machine" ]))
+
+let scoped_journal =
+  Mcp.template "haf://intents/{id}/journal" ~name:"journal"
+    ~scope:"journal:read"
+    Mcp.Template.(required "id" Wiretype.string)
+    (Spindle.Dep.return (fun _ -> Ok [ Mcp.Text "a" ]))
+
+let authed_resources () =
+  let routes =
+    Mcp.routes ~auth ~name:"haf" ~version:"1"
+      ~resources:[ scoped_machine; scoped_journal; word ]
+      []
+  in
+  Spindle.Test.app
+    ~resources:
+      [
+        Spindle.Dep.resource (Spindle.Bearer.keys auth) (fun ~kid:_ -> [ key ]);
+      ]
+    (routes @ [ Spindle.Bearer.metadata auth routes ])
+
+let authed_resource_call t meth params =
+  Mcp.Test.call ~now
+    ~headers:[ ("authorization", "Bearer " ^ token t) ]
+    (authed_resources ()) meth params
+
+(* resources §Capabilities, as tools': a resource whose scope the token does
+   not grant is left out of both lists and its read refused 403, naming the
+   scope; the metadata names every resource's scope. *)
+let test_a_resources_scope () =
+  let names t meth key =
+    Yojson.Safe.to_string
+      (`List
+         (List.map
+            (fun r -> at [ "name" ] r)
+            (Yojson.Safe.Util.to_list
+               (at [ "result"; key ] (json (authed_resource_call t meth []))))))
+  in
+  check_string "with the scope" {|["machine"]|}
+    (names "machine:read" "resources/list" "resources");
+  check_string "without it" "[]" (names "profile" "resources/list" "resources");
+  check_string "templates, with it" {|["journal","word"]|}
+    (names "journal:read" "resources/templates/list" "resourceTemplates");
+  check_string "templates, without it" {|["word"]|}
+    (names "profile" "resources/templates/list" "resourceTemplates");
+  check_string "private" {|"private"|}
+    (text [ "result"; "cacheScope" ]
+       (authed_resource_call "profile" "resources/list" []));
+  let r =
+    authed_resource_call "profile" "resources/read"
+      [ ("uri", Value.String "haf://intents/0197/journal") ]
+  in
+  check_status "403" 403 r;
+  check_status "granted" 200
+    (authed_resource_call "journal:read" "resources/read"
+       [ ("uri", Value.String "haf://intents/0197/journal") ]);
+  check_string "the metadata names both" {|["machine:read","journal:read"]|}
+    (text [ "scopes_supported" ]
+       (Spindle.Test.call (authed_resources ()) `GET
+          "/.well-known/oauth-protected-resource/mcp"))
+
+let test_routes_refuses_what_no_uri_reads_back () =
+  let refused name ?auth resources =
+    check_bool name true
+      (match Mcp.routes ?auth ~name:"w" ~version:"1" ~resources [] with
+      | _ -> false
+      | exception Invalid_argument _ -> true)
+  in
+  let text = Spindle.Dep.return (fun _ -> Ok [ Mcp.Text "" ]) in
+  let one t =
+    Mcp.template t ~name:"t" Mcp.Template.(required "a" Wiretype.string) text
+  in
+  List.iter
+    (fun t -> refused ("the operator of " ^ t) [ one t ])
+    [
+      "x://{+a}";
+      "x://{#a}";
+      "x://y{/a}";
+      "x://y{.a}";
+      "x://y{;a}";
+      "x://y{&a}";
+      "x://{a:3}";
+      "x://{a*}";
+      "x://{a,b}";
+      "x://{a";
+      "x://a}";
+      "x://{}";
+    ];
+  refused "two variables side by side"
+    [
+      Mcp.template "x://{a}{b}" ~name:"t"
+        Mcp.Template.(
+          let+ a = required "a" Wiretype.string
+          and+ b = required "b" Wiretype.string in
+          (a, b))
+        (Spindle.Dep.return (fun _ -> Ok []));
+    ];
+  refused "a query not last"
+    [
+      Mcp.template "x://y{?a}/z" ~name:"t"
+        Mcp.Template.(optional "a" Wiretype.string)
+        (Spindle.Dep.return (fun _ -> Ok []));
+    ];
+  refused "a variable named and not read" [ one "x://{a}/{b}" ];
+  refused "a variable read and not named" [ one "x://y" ];
+  refused "a variable read twice"
+    [
+      Mcp.template "x://{a}" ~name:"t"
+        Mcp.Template.(
+          let+ a = required "a" Wiretype.string
+          and+ b = required "a" Wiretype.string in
+          (a, b))
+        (Spindle.Dep.return (fun _ -> Ok []));
+    ];
+  refused "two resources of one URI" [ machine; machine ];
+  refused "two templates of one text" [ word; word ];
+  refused "a scope with no auth" [ scoped_machine ]
+
+(* ------------------------------------------------------------------ *)
+(* Listening *)
+
+let ours = "haf://intents/0197/journal"
+
+let listening_app ?(resources = resources) changes =
+  Spindle.Test.app
+    ~resources:[ Spindle.Dep.resource journals lines ]
+    (Mcp.routes ~name:"haf" ~version:"1" ~resources ~changes [])
+
+let notifications uris =
+  [
+    ( "notifications",
+      Value.Object
+        [
+          ( "resourceSubscriptions",
+            Value.Array (List.map (fun u -> Value.String u) uris) );
+        ] );
+  ]
+
+(* Every message of a listen, [on] each as it arrives; a listen is left
+   once [on] answers [`Stop]. *)
+let listen ?(on = fun _ -> `Continue) ?(params = []) app uris =
+  let got = ref [] in
+  let ended =
+    Eio_main.run @@ fun _ ->
+    Mcp.Test.events app "subscriptions/listen"
+      (notifications uris @ params)
+      (fun (e : Spindle_http.Event_stream.event) ->
+        let m = Yojson.Safe.from_string e.data in
+        got := m :: !got;
+        on m)
+  in
+  (match ended with
+  | Ok () -> ()
+  | Error r ->
+      Alcotest.failf "no stream: %d %s" (Spindle.Status.to_int r.status) r.body);
+  List.rev !got
+
+let method_of m = Yojson.Safe.to_string (at [ "method" ] m)
+
+let is_ack m =
+  String.equal (method_of m) {|"notifications/subscriptions/acknowledged"|}
+
+let honoured m = Yojson.Safe.to_string (at [ "params"; "notifications" ] m)
+
+(* subscriptions §Opening a Stream: the acknowledgment first, the subset
+   honoured, the listen's id; then each change to a URI it watches, tagged
+   with that id, and none to a URI it does not. *)
+let test_a_listen_is_acknowledged_then_told () =
+  let changes = Mcp.Changes.create () in
+  let on m =
+    if is_ack m then (
+      Mcp.Changes.updated changes "haf://machine";
+      Mcp.Changes.updated changes ours;
+      `Continue)
+    else `Stop
+  in
+  match listen ~on (listening_app changes) [ ours ] with
+  | [ ack; updated ] ->
+      check_bool "the acknowledgment first" true (is_ack ack);
+      check_string "its subset"
+        {|{"resourceSubscriptions":["haf://intents/0197/journal"]}|}
+        (honoured ack);
+      check_string "its id" "1"
+        (Yojson.Safe.to_string
+           (at
+              [ "params"; "_meta"; "io.modelcontextprotocol/subscriptionId" ]
+              ack));
+      check_string "then the change" {|"notifications/resources/updated"|}
+        (method_of updated);
+      check_string "to the URI watched"
+        ({|"|} ^ ours ^ {|"|})
+        (Yojson.Safe.to_string (at [ "params"; "uri" ] updated));
+      check_string "tagged" "1"
+        (Yojson.Safe.to_string
+           (at
+              [ "params"; "_meta"; "io.modelcontextprotocol/subscriptionId" ]
+              updated))
+  | l -> Alcotest.failf "%d messages, not 2" (List.length l)
+
+(* A listen is subscribed before it is acknowledged: a change made the
+   instant the acknowledgment is written reaches it. *)
+let test_a_change_after_the_acknowledgment_is_never_missed () =
+  for _ = 1 to 100 do
+    let changes = Mcp.Changes.create () in
+    let on m =
+      if is_ack m then (
+        Mcp.Changes.updated changes ours;
+        `Continue)
+      else `Stop
+    in
+    check_int "acknowledged, then told" 2
+      (List.length (listen ~on (listening_app changes) [ ours ]))
+  done
+
+(* subscriptions §Opening a Stream: the subset the server honours. A URI
+   this caller may not read -- one no resource has, one whose function finds
+   nothing, someone else's -- is left out alike, and no list's changes are
+   honoured, since what is served is fixed. *)
+let test_a_listen_honours_what_a_read_would_answer () =
+  let changes = Mcp.Changes.create () in
+  let first =
+    listen
+      ~on:(fun _ -> `Stop)
+      ~params:[] (listening_app changes)
+      [
+        "haf://nothing";
+        "haf://intents/none/journal";
+        "haf://intents/secret/journal";
+        ours;
+        ours;
+      ]
+  in
+  (match first with
+  | [ ack ] ->
+      check_string "only ours, once"
+        {|{"resourceSubscriptions":["haf://intents/0197/journal"]}|}
+        (honoured ack)
+  | l -> Alcotest.failf "%d messages, not 1" (List.length l));
+  let ack =
+    Eio_main.run @@ fun _ ->
+    let got = ref `Null in
+    ignore
+      (Mcp.Test.events (listening_app changes) "subscriptions/listen"
+         [
+           ( "notifications",
+             Value.Object
+               [
+                 ("toolsListChanged", Value.Bool true);
+                 ("resourcesListChanged", Value.Bool true);
+                 ("promptsListChanged", Value.Bool true);
+                 ("resourceSubscriptions", Value.Array [ Value.String ours ]);
+               ] );
+         ]
+         (fun e ->
+           got := Yojson.Safe.from_string e.data;
+           `Stop)
+        : (unit, Spindle.Test.response) result);
+    !got
+  in
+  check_string "no list's changes"
+    {|{"resourceSubscriptions":["haf://intents/0197/journal"]}|} (honoured ack)
+
+(* A scope the token does not grant leaves the URI out, as a read would
+   refuse it. *)
+let test_a_listen_honours_only_what_the_token_grants () =
+  let changes = Mcp.Changes.create () in
+  let routes =
+    Mcp.routes ~auth ~name:"haf" ~version:"1"
+      ~resources:[ scoped_journal; word ] ~changes []
+  in
+  let app =
+    Spindle.Test.app
+      ~resources:
+        [
+          Spindle.Dep.resource (Spindle.Bearer.keys auth) (fun ~kid:_ ->
+              [ key ]);
+        ]
+      routes
+  in
+  let ack t =
+    Eio_main.run @@ fun _ ->
+    let got = ref `Null in
+    ignore
+      (Mcp.Test.events ~now
+         ~headers:[ ("authorization", "Bearer " ^ token t) ]
+         app "subscriptions/listen"
+         (notifications [ ours; "haf://words/hi" ])
+         (fun e ->
+           got := Yojson.Safe.from_string e.data;
+           `Stop)
+        : (unit, Spindle.Test.response) result);
+    honoured !got
+  in
+  check_string "granted"
+    {|{"resourceSubscriptions":["haf://intents/0197/journal","haf://words/hi"]}|}
+    (ack "journal:read");
+  check_string "not granted" {|{"resourceSubscriptions":["haf://words/hi"]}|}
+    (ack "profile")
+
+(* At most 64 URIs a listen, each a read as it opens and a subscription for
+   as long as it lasts. *)
+let test_a_listen_watches_at_most_64 () =
+  let changes = Mcp.Changes.create () in
+  let uris = List.init 65 (fun i -> Printf.sprintf "haf://words/w%d" i) in
+  match listen ~on:(fun _ -> `Stop) (listening_app changes) uris with
+  | [ ack ] ->
+      check_int "64" 64
+        (List.length
+           (Yojson.Safe.Util.to_list
+              (at [ "params"; "notifications"; "resourceSubscriptions" ] ack)))
+  | l -> Alcotest.failf "%d messages, not 1" (List.length l)
+
+let graceful = function
+  | `Assoc members -> (
+      match List.assoc_opt "result" members with
+      | Some result ->
+          String.equal
+            (Yojson.Safe.to_string (at [ "resultType" ] result))
+            {|"complete"|}
+      | None -> false)
+  | _ -> false
+
+(* subscriptions §Cancellation: a server that ends a listen sends the
+   graceful result, carrying the listen's id, and never
+   notifications/cancelled, which HTTP has no use for (#3348, read as the
+   Subscriptions page has it). *)
+let test_a_server_ends_a_listen_gracefully () =
+  let changes = Mcp.Changes.create () in
+  let on m =
+    if is_ack m then Mcp.Changes.close changes;
+    `Continue
+  in
+  match listen ~on (listening_app changes) [ ours ] with
+  | [ _; result ] ->
+      check_bool "the graceful result" true (graceful result);
+      check_string "the listen's id" "1"
+        (Yojson.Safe.to_string
+           (at
+              [ "result"; "_meta"; "io.modelcontextprotocol/subscriptionId" ]
+              result));
+      check_string "the response to the listen" "1"
+        (Yojson.Safe.to_string (at [ "id" ] result))
+  | l -> Alcotest.failf "%d messages, not 2" (List.length l)
+
+(* A listen ends gracefully only when the server ended it: one dropped as
+   slow ends with no result, so its client listens again. *)
+let test_a_listen_dropped_as_slow_ends_without_a_result () =
+  let changes = Mcp.Changes.create ~depth:1 () in
+  let on m =
+    if is_ack m then
+      for _ = 1 to 3 do
+        Mcp.Changes.updated changes ours
+      done;
+    `Continue
+  in
+  match listen ~on (listening_app changes) [ ours ] with
+  | ack :: rest ->
+      check_bool "acknowledged" true (is_ack ack);
+      check_bool "no result" false (List.exists graceful rest)
+  | [] -> Alcotest.fail "nothing at all"
+
+(* streamable-http §Cancellation: a client closing the stream ends the
+   listen, and nothing of it is kept. *)
+let test_a_client_that_leaves_leaves_nothing () =
+  let changes = Mcp.Changes.create () in
+  ignore
+    (listen ~on:(fun _ -> `Stop) (listening_app changes) [ ours ]
+      : Yojson.Safe.t list);
+  check_int "nothing watched" 0
+    (Eio_main.run @@ fun _ -> List.length (Mcp.Changes.watched changes))
+
+(* A listen that watches nothing is acknowledged with nothing and ends at
+   once, gracefully: as an event stream nothing between may hold. *)
+let test_a_listen_of_nothing_ends_at_once () =
+  let changes = Mcp.Changes.create () in
+  let r =
+    Mcp.Test.call (listening_app changes) "subscriptions/listen"
+      (notifications [ "haf://nothing" ])
+  in
+  check_string "an event stream" "text/event-stream"
+    (Option.value ~default:"" (Spindle.Test.header r "content-type"));
+  check_string "nothing holds it" "no"
+    (Option.value ~default:"" (Spindle.Test.header r "x-accel-buffering"));
+  match events r.body with
+  | [ ack; result ] ->
+      check_string "acknowledged with nothing" "{}" (honoured ack);
+      check_bool "then the result" true (graceful result)
+  | l -> Alcotest.failf "%d messages, not 2: %s" (List.length l) r.body
+
+(* subscriptions §Opening a Stream: notifications is required. *)
+let test_a_listen_names_what_it_wants () =
+  check_error "-32602" ~status:200 ~code:(-32602)
+    (Mcp.Test.call
+       (listening_app (Mcp.Changes.create ()))
+       "subscriptions/listen" [])
+
+(* resources §Capabilities: subscribe is named where the server listens,
+   and a server that does not answers listen as a method not served. *)
+let test_subscribe_is_named_where_served () =
+  check_string "subscribe" {|{"tools":{},"resources":{"subscribe":true}}|}
+    (text
+       [ "result"; "capabilities" ]
+       (Mcp.Test.call
+          (listening_app (Mcp.Changes.create ()))
+          "server/discover" []));
+  check_error "not served" ~status:404 ~code:(-32601)
+    (Mcp.Test.call (resources_app ()) "subscriptions/listen"
+       (notifications [ ours ]))
+
+(* ------------------------------------------------------------------ *)
 (* The client *)
 
 module Client = Spindle_mcp_client
 
 (* A Spindle server on a socket of its own, and a client to call it. *)
 let over_a_socket ?elicit
-    ?(routes = Mcp.routes ~name:"weather" ~version:"1.0.0" tools) f =
+    ?(routes = Mcp.routes ~name:"weather" ~version:"1.0.0" tools) ?(given = [])
+    f =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let socket =
@@ -775,7 +1360,7 @@ let over_a_socket ?elicit
         ~limits:(Spindle.Server.Limits.make ~drain:Mtime.Span.(100 * ms) ())
         [ socket ]
         (Spindle.Test.app
-           ~resources:[ Spindle.Dep.resource weather temperatures ]
+           ~resources:(Spindle.Dep.resource weather temperatures :: given)
            routes);
       `Stop_daemon);
   Spindle_client.run env @@ fun client ->
@@ -1007,6 +1592,278 @@ let test_every_page_is_read () =
       check_string "both pages" "a,b"
         (String.concat "," (List.map (fun (t : Client.tool) -> t.name) tools)))
 
+let over_resources f =
+  over_a_socket
+    ~routes:(Mcp.routes ~name:"haf" ~version:"1" ~resources [])
+    ~given:[ Spindle.Dep.resource journals lines ]
+    f
+
+(* resources §Listing Resources, §Resource Templates: our client lists our
+   server's resources and templates, each with what it says of itself. *)
+let test_our_client_lists_our_resources () =
+  over_resources @@ fun c ->
+  let resources = ok (Client.resources c) in
+  check_string "each resource" "haf://machine,haf://logo,haf://busy"
+    (String.concat ","
+       (List.map (fun (r : Client.resource) -> r.uri) resources));
+  (match resources with
+  | m :: _ ->
+      check_string "its name" "machine" m.name;
+      check_string "its title" "This machine" (Option.value ~default:"" m.title);
+      check_string "its description" "Where HAF runs."
+        (Option.value ~default:"" m.description);
+      check_string "its type" "text/plain" (Option.value ~default:"" m.mime)
+  | [] -> Alcotest.fail "no resources");
+  check_string "each template"
+    "haf://intents/{id}/journal{?from},haf://words/{word}"
+    (String.concat ","
+       (List.map
+          (fun (t : Client.template) -> t.uri_template)
+          (ok (Client.templates c))))
+
+(* resources §Reading Resources: our client reads text as it is and a blob
+   decoded, each with its URI and type, the URI mirrored in Mcp-Name. *)
+let test_our_client_reads_our_resources () =
+  over_resources @@ fun c ->
+  (match ok (Client.read c "haf://intents/0197/journal?from=2") with
+  | [ { uri; mime; data = Text t } ] ->
+      check_string "the URI read" "haf://intents/0197/journal?from=2" uri;
+      check_string "its type" "application/jsonl"
+        (Option.value ~default:"" mime);
+      check_string "its text" "b\nc" t
+  | _ -> Alcotest.fail "not one text");
+  (match ok (Client.read c "haf://logo") with
+  | [ { data = Blob b; _ } ] -> check_string "the bytes" "\x89PNG" b
+  | _ -> Alcotest.fail "not one blob");
+  match Client.read c "haf://nothing" with
+  | Error (`Refused { code = Some -32602; _ }) -> ()
+  | Ok _ -> Alcotest.fail "a resource none has was read"
+  | Error e -> Alcotest.failf "not -32602: %s" (Client.error_to_string e)
+
+(* pagination: every page of resources and of templates is read. *)
+let test_every_page_of_resources_is_read () =
+  against
+    (fun r ->
+      let key =
+        match at [ "method" ] (body_json r) with
+        | `String "resources/list" -> "resources"
+        | _ -> "resourceTemplates"
+      and field =
+        match at [ "method" ] (body_json r) with
+        | `String "resources/list" -> "uri"
+        | _ -> "uriTemplate"
+      in
+      match at [ "params"; "cursor" ] (body_json r) with
+      | `Null ->
+          answer
+            (result (id_of r)
+               (Printf.sprintf
+                  {|%S:[{%S:"x://a","name":"a"}],"nextCursor":"2","ttlMs":0,"cacheScope":"public"|}
+                  key field))
+      | _ ->
+          answer
+            (result (id_of r)
+               (Printf.sprintf
+                  {|%S:[{%S:"x://b","name":"b"}],"ttlMs":0,"cacheScope":"public"|}
+                  key field)))
+    (fun ~client ~url ~asked:_ ->
+      let c = Client.create client ~url in
+      check_string "both pages of resources" "x://a,x://b"
+        (String.concat ","
+           (List.map
+              (fun (r : Client.resource) -> r.uri)
+              (ok (Client.resources c))));
+      check_string "both pages of templates" "x://a,x://b"
+        (String.concat ","
+           (List.map
+              (fun (t : Client.template) -> t.uri_template)
+              (ok (Client.templates c)))))
+
+let over_listening ?(changes = Mcp.Changes.create ()) f =
+  over_a_socket
+    ~routes:(Mcp.routes ~name:"haf" ~version:"1" ~resources ~changes [])
+    ~given:[ Spindle.Dep.resource journals lines ]
+    (f changes)
+
+(* subscriptions §Opening a Stream, as a client: the acknowledgment first,
+   then each change, until the caller stops. *)
+let test_our_client_listens_to_our_server () =
+  over_listening @@ fun changes c ->
+  let told = ref [] in
+  let ended =
+    Client.listen c [ ours; "haf://nothing" ] (fun n ->
+        told := n :: !told;
+        match n with
+        | Acknowledged _ ->
+            Mcp.Changes.updated changes ours;
+            `Continue
+        | Updated _ -> `Stop)
+  in
+  (match ok ended with
+  | Stopped -> ()
+  | Completed | Dropped _ -> Alcotest.fail "not stopped by the caller");
+  match List.rev !told with
+  | [ Acknowledged honoured; Updated uri ] ->
+      check_string "the acknowledgment names what is watched" ours
+        (String.concat "," honoured);
+      check_string "then the change" ours uri
+  | l -> Alcotest.failf "%d notifications, not 2" (List.length l)
+
+(* subscriptions §Cancellation, as a client: the server's graceful result is
+   Completed, which the caller does not listen again after. *)
+let test_a_listen_the_server_ends_is_completed () =
+  over_listening @@ fun changes c ->
+  match
+    Client.listen c [ ours ] (function
+      | Acknowledged _ ->
+          Mcp.Changes.close changes;
+          `Continue
+      | Updated _ -> `Continue)
+  with
+  | Ok Completed -> ()
+  | Ok (Stopped | Dropped _) -> Alcotest.fail "not completed"
+  | Error e -> Alcotest.fail (Client.error_to_string e)
+
+let acknowledged id =
+  Printf.sprintf
+    {|event: message
+data: {"jsonrpc":"2.0","method":"notifications/subscriptions/acknowledged","params":{"_meta":{"io.modelcontextprotocol/subscriptionId":%s},"notifications":{"resourceSubscriptions":["x://a"]}}}
+
+|}
+    id
+
+let updated ~id uri =
+  Printf.sprintf
+    {|event: message
+data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":%S,"_meta":{"io.modelcontextprotocol/subscriptionId":%s}}}
+
+|}
+    uri id
+
+(* A stream that ends without the result is Dropped, which the caller
+   listens again after; a notification of another listen is not told. The
+   request asks for the URIs, in the headers and the body 2026-07-28 asks. *)
+let test_a_listen_cut_off_is_dropped () =
+  against
+    (fun r ->
+      let id = id_of r in
+      answer ~content_type:"text/event-stream"
+        (acknowledged id ^ updated ~id:"999" "x://other" ^ updated ~id "x://a"))
+    (fun ~client ~url ~asked ->
+      let told = ref [] in
+      let ended =
+        Client.listen (Client.create client ~url) [ "x://a" ] (fun n ->
+            told := n :: !told;
+            `Continue)
+      in
+      (match ok ended with
+      | Dropped _ -> ()
+      | Stopped | Completed -> Alcotest.fail "not dropped");
+      check_int "the acknowledgment and our change" 2 (List.length !told);
+      match asked () with
+      | [ r ] ->
+          check_string "the method" {|"subscriptions/listen"|}
+            (Yojson.Safe.to_string (at [ "method" ] (body_json r)));
+          check_string "the URIs" {|["x://a"]|}
+            (Yojson.Safe.to_string
+               (at
+                  [ "params"; "notifications"; "resourceSubscriptions" ]
+                  (body_json r)));
+          check_string "Mcp-Method" "subscriptions/listen"
+            (Option.value ~default:"" (List.assoc_opt "mcp-method" r.headers))
+      | l -> Alcotest.failf "%d requests, not 1" (List.length l))
+
+(* basic §Errors, as a listen: a refusal before the acknowledgment is an
+   error, never an end. *)
+let test_a_listen_refused_is_an_error () =
+  against
+    (fun r ->
+      Stub_server.reply
+        ~headers:[ ("content-type", "application/json") ]
+        `Not_found
+        (Printf.sprintf
+           {|{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"Method not found"}}|}
+           (id_of r)))
+    (fun ~client ~url ~asked:_ ->
+      match
+        Client.listen (Client.create client ~url) [ "x://a" ] (fun _ ->
+            `Continue)
+      with
+      | Error (`Refused { code = Some -32601; _ }) -> ()
+      | Ok _ -> Alcotest.fail "an end"
+      | Error e -> Alcotest.failf "not -32601: %s" (Client.error_to_string e))
+
+(* A journal that grows as it is watched, numbered lines from 1. *)
+type book = { lock : Eio.Mutex.t; mutable written : string list }
+
+let book : book Spindle.Dep.t = Spindle.Dep.of_resource "book"
+
+let growing =
+  Mcp.template "haf://intents/{id}/journal{?from}" ~name:"journal" ~ttl_ms:0
+    journal_variables
+    (let+ book = book in
+     fun (_, from) ->
+       match from with
+       | None -> Ok []
+       | Some from ->
+           Eio.Mutex.use_ro book.lock (fun () ->
+               Ok
+                 (List.filteri
+                    (fun i _ -> i + 1 >= from)
+                    (List.rev_map (fun l -> Mcp.Text l) book.written))))
+
+(* Verification: a client watching a journal as 200 lines are written --
+   listens dropped as slow, a hub one change deep, and listens the client
+   leaves at points a seeded generator chooses -- ends holding every line,
+   once, in order. *)
+let test_a_watch_misses_no_line () =
+  let lines = 200 in
+  let changes = Mcp.Changes.create ~depth:1 () in
+  let written = { lock = Eio.Mutex.create (); written = [] } in
+  over_a_socket
+    ~routes:
+      (Mcp.routes ~name:"haf" ~version:"1" ~resources:[ growing ] ~changes [])
+    ~given:[ Spindle.Dep.resource book written ]
+  @@ fun c ->
+  let rng = Random.State.make [| 7 |] in
+  let got = ref [] in
+  let have () = List.length !got in
+  let catch_up () =
+    match Client.read c (Printf.sprintf "%s?from=%d" ours (have () + 1)) with
+    | Ok contents ->
+        List.iter
+          (fun (content : Client.content) ->
+            match content.data with
+            | Text l -> got := l :: !got
+            | Blob _ -> Alcotest.fail "a blob")
+          contents
+    | Error e -> Alcotest.fail (Client.error_to_string e)
+  in
+  let rec watch () =
+    if have () < lines then
+      match
+        Client.listen c [ ours ] (fun _ ->
+            catch_up ();
+            if have () >= lines || Random.State.int rng 8 = 0 then `Stop
+            else `Continue)
+      with
+      | Ok (Stopped | Dropped _) -> watch ()
+      | Ok Completed -> Alcotest.fail "the server ended it"
+      | Error e -> Alcotest.fail (Client.error_to_string e)
+  in
+  Eio.Fiber.both
+    (fun () ->
+      for n = 1 to lines do
+        Eio.Mutex.use_rw ~protect:true written.lock (fun () ->
+            written.written <- string_of_int n :: written.written);
+        Mcp.Changes.updated changes ours;
+        Eio.Fiber.yield ()
+      done)
+    watch;
+  check_string "every line, once, in order"
+    (String.concat "," (List.init lines (fun i -> string_of_int (i + 1))))
+    (String.concat "," (List.rev !got))
+
 let asks =
   {|"resultType":"input_required","inputRequests":{"confirm":{"method":"elicitation/create","params":{"mode":"form","message":"Sure?","requestedSchema":{"type":"object","properties":{"ok":{"type":"boolean"}}}}}},"requestState":"opaque-7"|}
 
@@ -1168,6 +2025,56 @@ let () =
           Alcotest.test_case "9728 §2: the metadata names every scope" `Quick
             test_the_metadata_names_every_tools_scope;
         ] );
+      ( "resources",
+        [
+          Alcotest.test_case "resources §Capabilities: discovery names them"
+            `Quick test_a_server_with_resources_names_them;
+          Alcotest.test_case "resources §Listing: each resource" `Quick
+            test_resources_are_listed;
+          Alcotest.test_case "resources §Templates: each template" `Quick
+            test_templates_are_listed;
+          Alcotest.test_case "resources §Reading: the contents" `Quick
+            test_a_resource_is_read;
+          Alcotest.test_case "6570 §3.2.2: a variable is one segment" `Quick
+            test_a_variable_is_one_segment;
+          Alcotest.test_case "6570 §3.2.8: a query is read as a form" `Quick
+            test_a_query_is_read_as_a_form;
+          Alcotest.test_case "resources §Errors: not found, alike" `Quick
+            test_a_resource_not_found;
+          Alcotest.test_case "resources §Errors: a variable that does not read"
+            `Quick test_a_variable_that_does_not_read;
+          Alcotest.test_case "resources §Errors: a read's refusal" `Quick
+            test_a_refusal_of_a_read;
+          Alcotest.test_case "resources §Capabilities: a resource's scope"
+            `Quick test_a_resources_scope;
+          Alcotest.test_case "routes refuses what no URI reads back" `Quick
+            test_routes_refuses_what_no_uri_reads_back;
+        ] );
+      ( "listening",
+        [
+          Alcotest.test_case "subscriptions §Opening: acknowledged, then told"
+            `Quick test_a_listen_is_acknowledged_then_told;
+          Alcotest.test_case "a change after the acknowledgment is never missed"
+            `Quick test_a_change_after_the_acknowledgment_is_never_missed;
+          Alcotest.test_case "subscriptions §Opening: what a read would answer"
+            `Quick test_a_listen_honours_what_a_read_would_answer;
+          Alcotest.test_case "subscriptions §Opening: what the token grants"
+            `Quick test_a_listen_honours_only_what_the_token_grants;
+          Alcotest.test_case "a listen watches at most 64" `Quick
+            test_a_listen_watches_at_most_64;
+          Alcotest.test_case "subscriptions §Cancellation: the server's result"
+            `Quick test_a_server_ends_a_listen_gracefully;
+          Alcotest.test_case "a listen dropped as slow ends without a result"
+            `Quick test_a_listen_dropped_as_slow_ends_without_a_result;
+          Alcotest.test_case "streamable-http §Cancellation: nothing is kept"
+            `Quick test_a_client_that_leaves_leaves_nothing;
+          Alcotest.test_case "a listen of nothing ends at once" `Quick
+            test_a_listen_of_nothing_ends_at_once;
+          Alcotest.test_case "subscriptions §Opening: notifications required"
+            `Quick test_a_listen_names_what_it_wants;
+          Alcotest.test_case "resources §Capabilities: subscribe" `Quick
+            test_subscribe_is_named_where_served;
+        ] );
       ( "questions",
         [
           Alcotest.test_case "mrtr §Basic: a tool's questions, at once" `Quick
@@ -1213,6 +2120,22 @@ let () =
             `Quick test_a_tool_with_a_bad_annotation_is_left_out;
           Alcotest.test_case "pagination: every page is read" `Quick
             test_every_page_is_read;
+          Alcotest.test_case "resources §Listing: our client lists ours" `Quick
+            test_our_client_lists_our_resources;
+          Alcotest.test_case "resources §Reading: our client reads ours" `Quick
+            test_our_client_reads_our_resources;
+          Alcotest.test_case "pagination: every page of resources" `Quick
+            test_every_page_of_resources_is_read;
+          Alcotest.test_case "subscriptions §Opening: our client listens" `Quick
+            test_our_client_listens_to_our_server;
+          Alcotest.test_case "subscriptions §Cancellation: completed" `Quick
+            test_a_listen_the_server_ends_is_completed;
+          Alcotest.test_case "subscriptions §Cancellation: cut off, dropped"
+            `Quick test_a_listen_cut_off_is_dropped;
+          Alcotest.test_case "basic §Errors: a listen refused is an error"
+            `Quick test_a_listen_refused_is_an_error;
+          Alcotest.test_case "verification: a watch misses no line" `Quick
+            test_a_watch_misses_no_line;
           Alcotest.test_case "mrtr §Client: a question is answered, retried"
             `Quick test_a_question_is_answered_and_the_call_retried;
           Alcotest.test_case "mrtr §Server 7: no elicit, unanswered" `Quick

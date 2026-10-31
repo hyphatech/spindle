@@ -17,6 +17,7 @@ and ('tag, 'event) subscription = {
   topic : string;
   queue : 'event option Eio.Stream.t;
   mutable alive : bool; [@atomic]
+  mutable slow : bool; [@atomic]
 }
 
 let create ?(depth = 16) () =
@@ -57,6 +58,7 @@ let subscribe t ~topic tag f =
       topic;
       queue = Eio.Stream.create (t.depth + 1);
       alive = true;
+      slow = false;
     }
   in
   locked t (fun () ->
@@ -119,7 +121,10 @@ let publish t ~topic event =
   locked t (fun () ->
       List.iter
         (fun s ->
-          if Eio.Stream.length s.queue >= t.depth then drop_subscription t s
+          if Eio.Stream.length s.queue >= t.depth then begin
+            s.slow <- true;
+            drop_subscription t s
+          end
           else Eio.Stream.add s.queue (Some event))
         (subscriptions_of t topic))
 
@@ -129,3 +134,5 @@ let topics t =
 
 let subscribers t ~topic =
   locked t (fun () -> List.map (fun s -> s.tag) (subscriptions_of t topic))
+
+let dropped s = s.slow

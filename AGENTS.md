@@ -40,8 +40,9 @@ sqlite/     spindle-sqlite: a server's SQLite, over rowtype's backend, and
 cli/        spindle-cli: the API, described on the command line
 mcp/        spindle-mcp: an MCP server, routes a battery adds, on spindle's
             public interface alone
-mcp-client/ spindle-mcp-client: calling another server's tools, on client/
-            alone, and MCP's messages in protocol/, which both ends share
+mcp-client/ spindle-mcp-client: calling another server's tools, and reading
+            and watching its resources, on client/ alone, and MCP's
+            messages in protocol/, which both ends share
 docs/       the documentation site, a Starlight site in Hypha's look, from
             starlight-theme-hypha: its pages in src/content/docs/, each
             importing the examples it shows as @examples/<file>?raw into
@@ -83,7 +84,8 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   since it is written into each statement),
   `Spindle.Metrics`'s registrations (for a name, a label or buckets
   Prometheus cannot read, or a name registered twice),
-  `Spindle.Broadcast.create` (for a depth below one), `Spindle.Compress.make`
+  `Spindle.Broadcast.create` and `Spindle_mcp.Changes.create` (for a depth
+  below one), `Spindle.Compress.make`
   (for a level deflate has not, a negative size, or a type that is no media
   type pattern), `Spindle.Rate.create` (for a limit or a burst below one, or a
   period shorter than a nanosecond a call), `Spindle.Bearer.make` (for an
@@ -92,7 +94,10 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   scope-token), `Spindle_client.Oauth.create` (for a metadata document that
   is no https URL with a path), `Spindle_mcp.routes` (for two tools of one name, a name MCP
   refuses, arguments whose description is no object, a scope with no
-  `~auth`, or a question that is no form or two of one key on a tool),
+  `~auth`, a question that is no form or two of one key on a tool, a
+  template outside the part of RFC 6570 that reads back, two variables side
+  by side, a variable named and not read or read and not named, or two
+  resources of one URI or templates of one text),
   `Spindle.Query.default` and `Spindle.Header.default` (for a default its
   description will not write), `Spindle.Server.Limits.make` and
   `Spindle.Route.Limits.make` (for a limit out of its range), `Spindle.Server.run`, `serve_on` and
@@ -295,9 +300,31 @@ out you broke it, as it is true today. Cite one by its bold phrase.
   client refuses that no row of ours happened to send.
 - **An MCP server keeps nothing between requests.** No table of sessions or
   clients: 2026-07-28 has none, each call is answered on its own, and what
-  spans calls is a handle the application mints. A server of several domains,
-  or behind a balancer, has no other way to be right. Symptom: a
-  `Hashtbl` or a `ref` in `mcp/` that outlives a request.
+  spans calls is a handle the application mints. The one value that
+  outlives a request is the application's `Spindle_mcp.Changes`, whose hub
+  lists a listen only while its request is open. A server of several
+  domains, or behind a balancer, has no other way to be right. Symptom: a
+  `Hashtbl` or a `ref` in `mcp/` that outlives a request, or a subscriber
+  listed after its stream ended.
+- **A listen reveals nothing a read would not.** It watches a URI only where
+  `resources/read` would answer it for this caller, checked as the listen
+  opens by the resource's own dependency and function, and leaves a refused
+  one out of its acknowledgment without an error; a read answers a refusal
+  of this caller for this object -- `not_found`, or `Access.forbidden` -- as
+  not found, never `403`. An open stream tells its holder when a resource
+  changes, which is itself something a read guards. Test: `test_mcp_spec`
+  listens to a URI whose function refuses this caller and to one no
+  resource has, and finds both left out alike, and reads them and finds
+  both told alike.
+- **A listen is subscribed before it is acknowledged**, because a client
+  reads its resource once acknowledged, and a change made between the two
+  would otherwise reach nobody: a line written and never shown. Test:
+  `test_mcp_spec` publishes a change the instant the acknowledgment is
+  written, and finds its `updated`.
+- **A listen ends gracefully only when the server ended it**, because a
+  client told "complete" does not listen again, and one dropped as slow has
+  missed changes. Test: `test_mcp_spec` drops a slow listen and finds no
+  result on its stream, and closes the hub and finds one.
 - **A battery uses the framework's public interface alone.** `spindle-mcp`
   names nothing of `spindle` its `.mli` files do not export, so it is a
   battery anyone outside could have written, and what it needs and cannot

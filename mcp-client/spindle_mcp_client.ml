@@ -175,9 +175,10 @@ let bearer_challenge headers =
 
 (* MCP's authorization: the token kept for the server goes with every
    request; a 401 signs in where its challenge says, and a 403 for a scope
-   steps up to it, each retried once. *)
-let exchange ?on_event t ~headers ~body =
-  let send () =
+   steps up to it, each retried once. [head] is an answer's status and
+   headers, where it is one a sign-in could change. *)
+let authorized t ~headers ~head send =
+  let attempt () =
     let* bearer =
       match t.oauth with
       | None -> Ok []
@@ -187,35 +188,13 @@ let exchange ?on_event t ~headers ~body =
           | Ok None -> Ok []
           | Error e -> Error e)
     in
-    let headers = headers @ bearer in
-    match on_event with
-    | None -> Spindle_client.call t.client ~headers ~body `POST t.url
-    (* Each event handed on as it arrives, and the whole kept for the
-       answer's reading, as {!Spindle_client.call} would give it. *)
-    | Some on_event ->
-        Result.join
-          (Spindle_client.stream t.client ~headers ~body `POST t.url
-             (fun (answer : Spindle_client.Body.t Spindle_client.response) ->
-               let whole = Buffer.create 256
-               and reader = Event_stream.reader () in
-               let rec read () =
-                 match Spindle_client.Body.read answer.body with
-                 | Ok (`Data d) ->
-                     Buffer.add_string whole d;
-                     (match Event_stream.feed reader d with
-                     | Ok events -> List.iter on_event events
-                     | Error _ -> ());
-                     read ()
-                 | Ok `End -> Ok { answer with body = Buffer.contents whole }
-                 | Error e -> Error e
-               in
-               read ()))
+    send (headers @ bearer)
   in
-  let* answer = send () in
-  match t.oauth with
-  | None -> Ok answer
-  | Some o -> (
-      let param n = List.assoc_opt n (bearer_challenge answer.headers) in
+  let* answer = attempt () in
+  match (t.oauth, head answer) with
+  | None, _ | _, None -> Ok answer
+  | Some o, Some (status, answer_headers) -> (
+      let param n = List.assoc_opt n (bearer_challenge answer_headers) in
       let scopes =
         Option.map
           (fun s ->
@@ -230,16 +209,44 @@ let exchange ?on_event t ~headers ~body =
             ?metadata:(param "resource_metadata")
             ?scopes ()
         in
-        send ()
+        attempt ()
       in
-      match (answer.status, param "error") with
+      match (status, param "error") with
       | `Unauthorized, _ -> again ()
       | `Forbidden, Some "insufficient_scope" -> again ()
       | _ -> Ok answer)
 
-let request ?progress t ~meth ?name ?(mirrored = []) params =
+let exchange ?on_event t ~headers ~body =
+  authorized t ~headers
+    ~head:(fun (a : string Spindle_client.response) ->
+      Some (a.status, a.headers))
+    (fun headers ->
+      match on_event with
+      | None -> Spindle_client.call t.client ~headers ~body `POST t.url
+      (* Each event handed on as it arrives, and the whole kept for the
+         answer's reading, as {!Spindle_client.call} would give it. *)
+      | Some on_event ->
+          Result.join
+            (Spindle_client.stream t.client ~headers ~body `POST t.url
+               (fun (answer : Spindle_client.Body.t Spindle_client.response) ->
+                 let whole = Buffer.create 256
+                 and reader = Event_stream.reader () in
+                 let rec read () =
+                   match Spindle_client.Body.read answer.body with
+                   | Ok (`Data d) ->
+                       Buffer.add_string whole d;
+                       (match Event_stream.feed reader d with
+                       | Ok events -> List.iter on_event events
+                       | Error _ -> ());
+                       read ()
+                   | Ok `End -> Ok { answer with body = Buffer.contents whole }
+                   | Error e -> Error e
+                 in
+                 read ())))
+
+(* A request's id, the headers 2026-07-28 asks for, and its body. *)
+let message ?progress_token t ~meth ?name ?(mirrored = []) params =
   let id = Atomic.fetch_and_add t.next_id 1 in
-  let token = Value.String ("progress-" ^ string_of_int id) in
   let capabilities =
     Value.Object
       (match t.elicit with
@@ -256,36 +263,9 @@ let request ?progress t ~meth ?name ?(mirrored = []) params =
         | Some i -> [ ("io.modelcontextprotocol/clientInfo", i) ]
         | None -> [])
       @
-      match progress with
-      | Some _ -> [ ("progressToken", token) ]
+      match progress_token with
+      | Some token -> [ ("progressToken", token id) ]
       | None -> [])
-  in
-  (* progress §Progress Flow: a report naming this call's token is told the
-     caller; any other event is the answer's, or not this call's. *)
-  let on_event =
-    Option.map
-      (fun tell (e : Event_stream.event) ->
-        match Wiretype.decode Value.json e.data with
-        | Ok v -> (
-            match (string_member "method" v, member "params" v) with
-            | Some "notifications/progress", Some p
-              when Option.equal Value.equal (member "progressToken" p)
-                     (Some token) -> (
-                match member "progress" p with
-                | Some (Value.Number progress) ->
-                    tell
-                      {
-                        progress;
-                        total =
-                          (match member "total" p with
-                          | Some (Value.Number n) -> Some n
-                          | _ -> None);
-                        message = string_member "message" p;
-                      }
-                | _ -> ())
-            | _ -> ())
-        | Error _ -> ())
-      progress
   in
   let body =
     Value.Object
@@ -313,6 +293,43 @@ let request ?progress t ~meth ?name ?(mirrored = []) params =
       | None -> [])
     @ List.map (fun (h, v) -> ("mcp-param-" ^ h, header_value v)) mirrored
     @ t.headers
+  in
+  Ok (id, headers, text)
+
+let request ?progress t ~meth ?name ?mirrored params =
+  let token id = Value.String ("progress-" ^ string_of_int id) in
+  let* id, headers, text =
+    message
+      ?progress_token:(Option.map (fun _ -> token) progress)
+      t ~meth ?name ?mirrored params
+  in
+  let token = token id in
+  (* progress §Progress Flow: a report naming this call's token is told the
+     caller; any other event is the answer's, or not this call's. *)
+  let on_event =
+    Option.map
+      (fun tell (e : Event_stream.event) ->
+        match Wiretype.decode Value.json e.data with
+        | Ok v -> (
+            match (string_member "method" v, member "params" v) with
+            | Some "notifications/progress", Some p
+              when Option.equal Value.equal (member "progressToken" p)
+                     (Some token) -> (
+                match member "progress" p with
+                | Some (Value.Number progress) ->
+                    tell
+                      {
+                        progress;
+                        total =
+                          (match member "total" p with
+                          | Some (Value.Number n) -> Some n
+                          | _ -> None);
+                        message = string_member "message" p;
+                      }
+                | _ -> ())
+            | _ -> ())
+        | Error _ -> ())
+      progress
   in
   let* answer = exchange ?on_event t ~headers ~body:text in
   let content_type = List.assoc_opt "content-type" answer.headers in
@@ -447,17 +464,18 @@ let tool_of v =
           m "a tool with no name or no object inputSchema is left out");
       None
 
-let tools t =
-  let rec pages seen cursor acc =
+(* pagination: every page of a list, each item of [key] read by [item]. *)
+let pages t ~meth ~key item =
+  let rec page seen cursor acc =
     let* r =
-      request t ~meth:"tools/list"
+      request t ~meth
         (match cursor with
         | Some c -> [ ("cursor", Value.String c) ]
         | None -> [])
     in
     let here =
-      match member "tools" r with
-      | Some (Value.Array l) -> List.filter_map tool_of l
+      match member key r with
+      | Some (Value.Array l) -> List.filter_map item l
       | _ -> []
     in
     match string_member "nextCursor" r with
@@ -465,9 +483,12 @@ let tools t =
     (* A cursor met before would page for ever. *)
     | Some c when List.exists (String.equal c) seen ->
         Error (`Unreadable "a cursor given twice")
-    | Some c -> pages (c :: seen) (Some c) (acc @ here)
+    | Some c -> page (c :: seen) (Some c) (acc @ here)
   in
-  let* listed = pages [] None [] in
+  page [] None []
+
+let tools t =
+  let* listed = pages t ~meth:"tools/list" ~key:"tools" tool_of in
   Atomic.set t.listed (Some listed);
   Ok (List.map (fun l -> l.tool) listed)
 
@@ -592,3 +613,225 @@ let call ?progress t name arguments value result =
           `Unreadable
             (String.concat "; " (List.map Wiretype.Problem.to_string problems)))
         (Wiretype.of_value result v)
+
+type resource = {
+  uri : string;
+  name : string;
+  title : string option;
+  description : string option;
+  mime : string option;
+}
+
+type template = {
+  uri_template : string;
+  name : string;
+  title : string option;
+  description : string option;
+  mime : string option;
+}
+
+type data = Text of string | Blob of string
+type content = { uri : string; mime : string option; data : data }
+
+let resources t =
+  pages t ~meth:"resources/list" ~key:"resources" (fun v ->
+      match (string_member "uri" v, string_member "name" v) with
+      | Some uri, Some name ->
+          Some
+            {
+              uri;
+              name;
+              title = string_member "title" v;
+              description = string_member "description" v;
+              mime = string_member "mimeType" v;
+            }
+      | _ ->
+          L.warn (fun m -> m "a resource with no uri or no name is left out");
+          None)
+
+let templates t =
+  pages t ~meth:"resources/templates/list" ~key:"resourceTemplates" (fun v ->
+      match (string_member "uriTemplate" v, string_member "name" v) with
+      | Some uri_template, Some name ->
+          Some
+            {
+              uri_template;
+              name;
+              title = string_member "title" v;
+              description = string_member "description" v;
+              mime = string_member "mimeType" v;
+            }
+      | _ ->
+          L.warn (fun m ->
+              m "a template with no uriTemplate or no name is left out");
+          None)
+
+(* resources §Reading Resources: each content text or base64 bytes. *)
+let content_of v =
+  let uri = Option.value (string_member "uri" v) ~default:"" in
+  let mime = string_member "mimeType" v in
+  match (string_member "text" v, string_member "blob" v) with
+  | Some text, _ -> Ok { uri; mime; data = Text text }
+  | None, Some blob -> (
+      match Base64.decode blob with
+      | Ok bytes -> Ok { uri; mime; data = Blob bytes }
+      | Error _ -> Error (`Unreadable "a blob that is no base64"))
+  | None, None -> Error (`Unreadable "a content with no text and no blob")
+
+let read t uri =
+  let* r =
+    request t ~meth:"resources/read" ~name:uri [ ("uri", Value.String uri) ]
+  in
+  match member "contents" r with
+  | Some (Value.Array contents) ->
+      List.fold_right
+        (fun v acc ->
+          let* rest = acc in
+          let* c = content_of v in
+          Ok (c :: rest))
+        contents (Ok [])
+  | _ -> Error (`Unreadable "a read with no contents")
+
+type notification = Acknowledged of string list | Updated of string
+type ended = Stopped | Completed | Dropped of string
+
+(* Four of a Spindle server's keep-alives, so a quiet stream is never taken
+   for a lost one. *)
+let listen_read_timeout = Mtime.Span.(60 * s)
+
+(* How the stream's reading came out, before it is an end or an error. *)
+type listened =
+  | Ended of ended
+  | Refused_with of string Spindle_client.response
+  | Failed of error
+
+let listen ?(read_timeout = listen_read_timeout) t uris f =
+  let* id, headers, text =
+    message t ~meth:"subscriptions/listen"
+      [
+        ( "notifications",
+          Value.Object
+            [
+              ( "resourceSubscriptions",
+                Value.Array (List.map (fun u -> Value.String u) uris) );
+            ] );
+      ]
+  in
+  let ours v =
+    Option.equal Value.equal
+      (at [ "_meta"; "io.modelcontextprotocol/subscriptionId" ] v)
+      (Some (Value.Number (float_of_int id)))
+  in
+  let is_stream (answer : _ Spindle_client.response) =
+    match
+      Option.map Media_type.parse (List.assoc_opt "content-type" answer.headers)
+    with
+    | Some (Ok m) ->
+        Media_type.matches "text/event-stream" m
+        && Spindle_http.Status.to_int answer.status = 200
+    | Some (Error _) | None -> false
+  in
+  (* subscriptions §Opening a Stream: the acknowledgment first, then each
+     change; the response to the listen is the server ending it. *)
+  let rec read (answer : Spindle_client.Body.t Spindle_client.response) reader
+      acknowledged =
+    match Spindle_client.Body.read answer.body with
+    | Ok (`Data d) -> (
+        match Event_stream.feed reader d with
+        | Error why -> Failed (`Unreadable why)
+        | Ok events -> each answer reader acknowledged events)
+    | Ok `End ->
+        if acknowledged then Ended (Dropped "the stream ended with no result")
+        else Failed (`Lost "the stream ended before it was acknowledged")
+    | Error e ->
+        if acknowledged then Ended (Dropped (Spindle_client.error_to_string e))
+        else Failed (e :> error)
+  and each answer reader acknowledged = function
+    | [] -> read answer reader acknowledged
+    | (e : Event_stream.event) :: rest -> (
+        let v = Result.to_option (Wiretype.decode Value.json e.data) in
+        let params = Option.bind v (member "params") in
+        let tell n k =
+          match f n with `Continue -> k () | `Stop -> Ended Stopped
+        in
+        match
+          ( Option.bind v (string_member "method"),
+            Option.bind v (member "id"),
+            Option.bind v (member "result") )
+        with
+        | _, Some (Value.Number n), Some _ when Float.equal n (float_of_int id)
+          ->
+            Ended Completed
+        | Some "notifications/subscriptions/acknowledged", _, _
+          when (not acknowledged) && Option.fold ~none:false ~some:ours params
+          ->
+            let honoured =
+              match
+                Option.bind params
+                  (at [ "notifications"; "resourceSubscriptions" ])
+              with
+              | Some (Value.Array l) ->
+                  List.filter_map
+                    (function Value.String u -> Some u | _ -> None)
+                    l
+              | _ -> []
+            in
+            tell (Acknowledged honoured) (fun () ->
+                each answer reader true rest)
+        | Some "notifications/resources/updated", _, _
+          when acknowledged && Option.fold ~none:false ~some:ours params -> (
+            match Option.bind params (string_member "uri") with
+            | Some uri ->
+                tell (Updated uri) (fun () -> each answer reader true rest)
+            | None -> each answer reader acknowledged rest)
+        | _ ->
+            L.warn (fun m ->
+                m "a listen's message that is not its own is dropped: %s"
+                  (Option.value ~default:"no method"
+                     (Option.bind v (string_member "method"))));
+            each answer reader acknowledged rest)
+  in
+  let* listened =
+    authorized t ~headers
+      ~head:(function
+        | Refused_with (a : string Spindle_client.response) ->
+            Some (a.status, a.headers)
+        | Ended _ | Failed _ -> None)
+      (fun headers ->
+        Spindle_client.stream t.client ~read_timeout ~headers ~body:text `POST
+          t.url (fun answer ->
+            if is_stream answer then read answer (Event_stream.reader ()) false
+            else
+              (* The answer whole, as a refusal is read. *)
+              let whole = Buffer.create 256 in
+              let rec drain () =
+                match Spindle_client.Body.read answer.body with
+                | Ok (`Data d) ->
+                    Buffer.add_string whole d;
+                    drain ()
+                | Ok `End ->
+                    Refused_with { answer with body = Buffer.contents whole }
+                | Error e -> Failed (e :> error)
+              in
+              drain ()))
+  in
+  match listened with
+  | Ended e -> Ok e
+  | Failed e -> Error (e : error :> [> error ])
+  | Refused_with answer -> (
+      let refused code message =
+        Error (`Refused { status = answer.status; code; message })
+      in
+      match Result.to_option (Wiretype.decode Value.json answer.body) with
+      | Some v -> (
+          match member "error" v with
+          | Some e ->
+              refused
+                (match member "code" e with
+                | Some (Value.Number c) -> Some (int_of_float c)
+                | _ -> None)
+                (Option.value (string_member "message" e) ~default:"")
+          | None ->
+              refused None
+                (Option.value (string_member "message" v) ~default:""))
+      | None -> refused None "")

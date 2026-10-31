@@ -218,7 +218,7 @@
  (name spindle-mcp-client)
  (synopsis "Calling another server's tools over the Model Context Protocol, with no framework")
  (description
-  "MCP 2026-07-28 over HTTP on spindle-client alone: server/discover, tools/list and tools/call, typed by Wiretype descriptions or as plain JSON, a server's questions answered through a function. Its protocol library, spindle-mcp-client.protocol, is MCP's messages, which spindle-mcp's server is built on too.")
+  "MCP 2026-07-28 over HTTP on spindle-client alone: server/discover, tools/list and tools/call, typed by Wiretype descriptions or as plain JSON, a server's questions answered through a function; resources and templates listed and read, and watched through subscriptions/listen. Its protocol library, spindle-mcp-client.protocol, is MCP's messages, which spindle-mcp's server is built on too.")
  (depends
   (ocaml
    (>= 5.5))
@@ -231,13 +231,15 @@
   (base64
    (>= 3.5.2))
   (logs
-   (>= 0.10.0))))
+   (>= 0.10.0))
+  (mtime
+   (>= 2.1.0))))
 
 (package
  (name spindle-mcp)
  (synopsis "A Model Context Protocol server: the routes an agent calls tools through")
  (description
-  "MCP 2026-07-28 over Streamable HTTP, as routes added to a Spindle application's own: server/discover, tools/list and tools/call, each tool a name, its arguments' and its result's descriptions, and a dependency giving its function.")
+  "MCP 2026-07-28 over Streamable HTTP, as routes added to a Spindle application's own: server/discover, tools/list and tools/call, each tool a name, its arguments' and its result's descriptions, and a dependency giving its function; resources and RFC 6570 templates read through resources/read, and watched through subscriptions/listen.")
  (depends
   (ocaml
    (>= 5.5))

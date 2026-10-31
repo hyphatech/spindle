@@ -121,12 +121,15 @@ val browser : App.instance -> Browser.t
 val events :
   ?now:Ptime.t ->
   ?headers:(string * string) list ->
+  ?meth:Spindle_http.Meth.t ->
+  ?body:string ->
   App.instance ->
   string ->
   (Spindle_http.Event_stream.event -> [ `Continue | `Stop ]) ->
   (unit, response) result
-(** [events app target f] runs the events route at [target] and hands each event
-    -- its name, data and id, read as a client reads it
+(** [events app target f] runs the events route at [target] -- a [GET], or
+    [meth] with [body], for a stream a [POST] opens -- and hands each event --
+    its name, data and id, read as a client reads it
     ({!Spindle_http.Event_stream}) -- to [f], until the stream ends or [f]
     answers [`Stop]: a stream that never ends can be read three events of and
     left. Stopping is the client going, so the route's next [send] is

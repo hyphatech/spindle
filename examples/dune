@@ -20,6 +20,8 @@
   oauth
   mcp
   mcp_client
+  mcp_journal
+  mcp_watch
   middleware
   cookie
   session

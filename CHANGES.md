@@ -1,5 +1,45 @@
 # Changes
 
+## Unreleased
+
+- `Broadcast.dropped sub` says whether the hub dropped a subscriber as slow,
+  so a reader whose `forward` or `next` has ended can tell a drop, which
+  missed events and should come back, from an unsubscribe or a hub closed by
+  a server stopping, which should not.
+
+- `Spindle_mcp` serves resources: `resource uri ~name f` and `template text
+  ~name variables f`, given to `routes ~resources`, are listed by
+  `resources/list` and `resources/templates/list` and read by
+  `resources/read`, with `ttlMs` and `cacheScope`, and named among the
+  capabilities. A template is RFC 6570's `{name}` and a form-style query
+  last, its variables each read by its own description through
+  `Spindle_mcp.Template`. A function's `Refusal.not_found` or
+  `Access.forbidden` is the resource not found, `-32602`, alike; a resource
+  may need a scope, as a tool may.
+
+- `Spindle_mcp` serves `subscriptions/listen`: `Changes.create ()`, given to
+  `routes ~changes`, is the hub the application tells `Changes.updated
+  changes uri` when a URI changes, and every listen watching it is sent
+  `notifications/resources/updated`. A listen watches a URI only where
+  `resources/read` would answer it for this caller, at most 64, and is
+  acknowledged once subscribed to each. It ends with the graceful result when
+  `Changes.close` ends it -- from `on_stop` -- and with none when it was
+  dropped as slow, so its client listens again.
+
+- `Spindle.Test.events` takes `~meth` and `~body`, for a stream a `POST`
+  opens, and `Spindle_mcp.Test.events` sends a request as `Test.call` does and
+  reads its answer as an event stream.
+
+- `Spindle_mcp_client.resources`, `templates` and `read` list a server's
+  resources and templates, every page, and read a URI's contents, text or
+  bytes decoded from base64.
+
+- `Spindle_mcp_client.listen uris f` opens `subscriptions/listen` and hands
+  `f` its acknowledgment, then each URI that changed, ending `Stopped`,
+  `Completed` when the server ended it, or `Dropped` when the stream ended
+  without that, and never listens again by itself. `spindle-mcp-client` now
+  depends on `mtime`.
+
 ## 0.14.0 (2026-10-27)
 
 - `Spindle.Access`: who may do what. A policy is a function of the caller,

@@ -3,7 +3,7 @@ opam-version: "2.0"
 synopsis:
   "A Model Context Protocol server: the routes an agent calls tools through"
 description:
-  "MCP 2026-07-28 over Streamable HTTP, as routes added to a Spindle application's own: server/discover, tools/list and tools/call, each tool a name, its arguments' and its result's descriptions, and a dependency giving its function."
+  "MCP 2026-07-28 over Streamable HTTP, as routes added to a Spindle application's own: server/discover, tools/list and tools/call, each tool a name, its arguments' and its result's descriptions, and a dependency giving its function; resources and RFC 6570 templates read through resources/read, and watched through subscriptions/listen."
 maintainer: ["Hypha Technologies Ltd <dev@hyphatech.io>"]
 authors: ["Hypha Technologies Ltd"]
 license: "MIT"

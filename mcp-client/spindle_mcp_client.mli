@@ -142,3 +142,94 @@ val call_value :
   (answer, [> error | `Tool_failed of string ]) result
 (** [call_value t name arguments]: as {!call}, for a program that passes a
     model's JSON through without knowing the tool. *)
+
+(** {1 Resources} *)
+
+type resource = {
+  uri : string;
+  name : string;
+  title : string option;  (** for a person *)
+  description : string option;  (** for a model *)
+  mime : string option;
+}
+
+type template = {
+  uri_template : string;  (** RFC 6570 *)
+  name : string;
+  title : string option;
+  description : string option;
+  mime : string option;
+}
+
+type data = Text of string | Blob of string  (** bytes, decoded from base64 *)
+
+type content = { uri : string; mime : string option; data : data }
+(** One of what a read answers: a resource may answer several. *)
+
+val resources : t -> (resource list, [> error ]) result
+(** [resources/list], every page, in the server's order. *)
+
+val templates : t -> (template list, [> error ]) result
+(** [resources/templates/list], every page, in the server's order. *)
+
+val read : t -> string -> (content list, [> error ]) result
+(** [resources/read] of a URI, mirrored in [Mcp-Name]. A resource the server has
+    not is [`Refused] with the code [-32602]. *)
+
+(** {1 Watching} *)
+
+(** What a listen hands its caller. *)
+type notification =
+  | Acknowledged of string list
+      (** the URIs the server watches for this listen, always first: one it left
+          out it will never tell of *)
+  | Updated of string  (** a URI that changed: read it again *)
+
+(** How a listen ended, once acknowledged. *)
+type ended =
+  | Stopped  (** the function answered [`Stop] *)
+  | Completed
+      (** the server ended it, with the graceful result: it has nothing more to
+          tell this listen *)
+  | Dropped of string
+      (** it ended without that result -- the connection lost, the server
+          dropping a listen that fell behind, no word within [read_timeout] --
+          in words: changes may have been missed, and the caller listens again
+          and reads from where it was *)
+
+val listen :
+  ?read_timeout:Mtime.Span.t ->
+  t ->
+  string list ->
+  (notification -> [ `Continue | `Stop ]) ->
+  (ended, [> error ]) result
+(** [listen t uris f]: [subscriptions/listen] for [uris], each notification
+    handed to [f] as it arrives, until the listen ends or [f] answers [`Stop].
+    It runs in the caller's fiber and keeps nothing of the stream; a program
+    reads beside it, in a fiber of its own or from [f].
+
+    A change made after [Acknowledged] is told, so a caller that reads from its
+    own place once acknowledged, and again on each [Updated], misses nothing. An
+    [error] is a listen refused or never acknowledged; once acknowledged, a
+    stream cut off is [Dropped], since the caller's answer to either is to
+    listen again. It never listens again by itself: whether to, and how long to
+    wait first, are the caller's.
+
+    {[
+    let rec watch () =
+      match
+        Spindle_mcp_client.listen mcp [ uri ] (fun _ ->
+            catch_up ();
+            `Continue)
+      with
+      | Ok (Dropped _) ->
+          Eio.Time.Mono.sleep_span clock Mtime.Span.(1 * s);
+          watch ()
+      | Ok (Completed | Stopped) -> Ok ()
+      | Error _ as e -> e
+    ]}
+
+    [read_timeout] (60 s) bounds each wait for more of the stream, never the
+    whole: four of a Spindle server's keep-alives. A notification of another
+    listen, or of a kind not asked for, is dropped with a [warn] line, as a
+    server never sends one. *)

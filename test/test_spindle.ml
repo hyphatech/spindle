@@ -10018,6 +10018,26 @@ let test_a_slow_subscriber_is_dropped () =
     "who is told, like one dropped" None
     (Spindle.Broadcast.next quick)
 
+(* A reader that ended must tell a drop from an end: one dropped as slow has
+   missed events and should come back, one unsubscribed or closed should
+   not. *)
+let test_a_subscriber_knows_it_was_dropped () =
+  Eio_main.run @@ fun _ ->
+  let b = Spindle.Broadcast.create ~depth:1 () in
+  let dropped = Spindle.Broadcast.dropped in
+  Spindle.Broadcast.subscribe b ~topic:"t" () @@ fun slow ->
+  Spindle.Broadcast.subscribe b ~topic:"t" () @@ fun gone ->
+  Spindle.Broadcast.subscribe b ~topic:"u" () @@ fun closed ->
+  Alcotest.(check bool) "not while subscribed" false (dropped slow);
+  Spindle.Broadcast.unsubscribe b gone;
+  List.iter (Spindle.Broadcast.publish b ~topic:"t") [ "1"; "2" ];
+  Alcotest.(check bool) "dropped as slow" true (dropped slow);
+  Alcotest.(check bool) "not when unsubscribed" false (dropped gone);
+  Spindle.Broadcast.close b;
+  Alcotest.(check bool) "not when its hub closed" false (dropped closed);
+  Alcotest.(check bool)
+    "and a drop is kept through the close" true (dropped slow)
+
 (* A line of an event stream ends at CRLF, LF or a lone CR, so a comment is
    split at every one of them, and no CR begins a line of its own. *)
 let test_a_comment_is_split_at_every_line_end () =
@@ -11287,6 +11307,8 @@ let () =
             test_a_name_is_one_line_and_a_retry_is_digits;
           Alcotest.test_case "a slow subscriber is dropped" `Quick
             test_a_slow_subscriber_is_dropped;
+          Alcotest.test_case "a subscriber knows it was dropped" `Quick
+            test_a_subscriber_knows_it_was_dropped;
           Alcotest.test_case "a depth below one is refused" `Quick
             test_a_depth_below_one_is_refused;
           Alcotest.test_case "a wait until an instant is never negative" `Quick

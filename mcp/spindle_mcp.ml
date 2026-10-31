@@ -142,6 +142,275 @@ let tool ?title ?doc ?scope ?(asks = []) name arguments result f =
         (Dep.attempt f);
   }
 
+type content = Text of string | Blob of string
+
+module Template = struct
+  type 'a t = {
+    names : string list;
+    read : (string * string) list -> ('a, string list) result;
+  }
+
+  let of_text name description text =
+    Result.map_error
+      (List.map (fun p -> name ^ ": " ^ Wiretype.Problem.to_string p))
+      (Wiretype.of_text description text)
+
+  let required name description =
+    {
+      names = [ name ];
+      read =
+        (fun variables ->
+          match List.assoc_opt name variables with
+          | Some text -> of_text name description text
+          | None -> Error [ name ^ ": missing" ]);
+    }
+
+  let optional name description =
+    {
+      names = [ name ];
+      read =
+        (fun variables ->
+          match List.assoc_opt name variables with
+          | Some text -> Result.map Option.some (of_text name description text)
+          | None -> Ok None);
+    }
+
+  let ( let+ ) t f = { t with read = (fun v -> Result.map f (t.read v)) }
+
+  let ( and+ ) a b =
+    {
+      names = a.names @ b.names;
+      read =
+        (fun v ->
+          match (a.read v, b.read v) with
+          | Ok x, Ok y -> Ok (x, y)
+          | Error e, Ok _ | Ok _, Error e -> Error e
+          | Error e, Error f -> Error (e @ f));
+    }
+end
+
+(* A template, as far as RFC 6570 reads back: literals, level 1's [{name}],
+   and level 3's form-style query, last. *)
+type part = Literal of string | Variable of string | Query of string list
+
+let is_varname s =
+  String.length s > 0
+  && String.for_all
+       (function
+         | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' | '.' -> true | _ -> false)
+       s
+
+let parse_template text =
+  let n = String.length text in
+  let literal acc start stop =
+    if stop > start then Literal (String.sub text start (stop - start)) :: acc
+    else acc
+  in
+  let rec walk start i acc =
+    if i >= n then Ok (List.rev (literal acc start i))
+    else
+      match text.[i] with
+      | '}' -> Error "a '}' that closes nothing"
+      | '{' -> (
+          match String.index_from_opt text i '}' with
+          | None -> Error "a '{' never closed"
+          | Some j -> (
+              let inner = String.sub text (i + 1) (j - i - 1) in
+              let next part =
+                walk (j + 1) (j + 1) (part :: literal acc start i)
+              in
+              match inner with
+              | "" -> Error "an empty expression"
+              | _ when Char.equal inner.[0] '?' ->
+                  let names =
+                    String.split_on_char ','
+                      (String.sub inner 1 (String.length inner - 1))
+                  in
+                  if List.for_all is_varname names then next (Query names)
+                  else Error ("{" ^ inner ^ "}, which is no form-style query")
+              | _ when is_varname inner -> next (Variable inner)
+              | _ ->
+                  Error
+                    ("{" ^ inner
+                   ^ "}, an expression beyond level 1 and a form-style query")))
+      | _ -> walk start (i + 1) acc
+  in
+  match walk 0 0 [] with
+  | Error _ as e -> e
+  | Ok parts ->
+      let rec check = function
+        | Variable _ :: Variable _ :: _ -> Error "two variables side by side"
+        | Query _ :: _ :: _ -> Error "a query that is not last"
+        | _ :: rest -> check rest
+        | [] -> Ok parts
+      in
+      check parts
+
+(* RFC 3986 §2.1: each %XX its byte; a % not followed by two hex digits is
+   itself. *)
+let percent_decoded s =
+  let n = String.length s in
+  let b = Buffer.create n in
+  let hex c =
+    match c with
+    | '0' .. '9' -> Some (Char.code c - 48)
+    | 'a' .. 'f' -> Some (Char.code c - 87)
+    | 'A' .. 'F' -> Some (Char.code c - 55)
+    | _ -> None
+  in
+  let rec go i =
+    if i < n then
+      match (s.[i], i + 2 < n) with
+      | '%', true -> (
+          match (hex s.[i + 1], hex s.[i + 2]) with
+          | Some h, Some l ->
+              Buffer.add_char b (Char.chr ((h * 16) + l));
+              go (i + 3)
+          | _ ->
+              Buffer.add_char b '%';
+              go (i + 1))
+      | c, _ ->
+          Buffer.add_char b c;
+          go (i + 1)
+  in
+  go 0;
+  Buffer.contents b
+
+(* The variables a URI holds, where the template matches it. A variable runs
+   up to the next literal, never across [/], [?] or [#]. *)
+let matched parts uri =
+  let path, query =
+    match List.rev parts with
+    | Query names :: _ -> (
+        match String.index_opt uri '?' with
+        | Some i ->
+            ( String.sub uri 0 i,
+              List.filter
+                (fun (k, _) -> List.mem k names)
+                (Spindle_http.Urlencoded.parse
+                   (String.sub uri (i + 1) (String.length uri - i - 1))) )
+        | None -> (uri, []))
+    | _ -> (uri, [])
+  in
+  let n = String.length path in
+  let at i l =
+    i + String.length l <= n
+    && String.equal (String.sub path i (String.length l)) l
+  in
+  let free c = not (Char.equal c '/' || Char.equal c '?' || Char.equal c '#') in
+  let rec go i acc = function
+    | [] | [ Query _ ] -> if i = n then Some (List.rev acc) else None
+    | Query _ :: _ -> None
+    | Literal l :: rest ->
+        if at i l then go (i + String.length l) acc rest else None
+    | Variable v :: rest ->
+        let ends j = match rest with Literal l :: _ -> at j l | _ -> j = n in
+        let rec stop j =
+          if j > i && ends j then Some j
+          else if j < n && free path.[j] then stop (j + 1)
+          else None
+        in
+        Option.bind (stop i) (fun j ->
+            go j ((v, percent_decoded (String.sub path i (j - i))) :: acc) rest)
+  in
+  if String.contains uri '#' then None
+  else Option.map (fun variables -> variables @ query) (go 0 [] parts)
+
+type located =
+  | Fixed of string
+  | Templated of {
+      text : string;
+      parts : (part list, string) result;
+      names : string list;
+    }
+
+(* What a read of one resource came to. *)
+type reading =
+  | Read of content list
+  | Not_found
+  | Unreadable of string list  (** its variables *)
+  | Refused of Spindle.Refusal.t  (** by its dependency, not of an object *)
+  | Failed of string  (** its function's other refusal: the sentence *)
+
+type resource = {
+  uri : located;
+  name : string;
+  title : string option;
+  doc : string option;
+  mime : string option;
+  scope : string option;
+  ttl_ms : int option;
+  codes : Spindle.Refusal.Code.t list;
+  read : ((string * string) list -> reading) Dep.t;
+}
+
+(* Someone else's object is read as a missing one, so a read reveals no more
+   than a listen does. *)
+let hidden (refusal : Spindle.Refusal.t) =
+  Spindle.Refusal.Code.equal refusal.code Spindle.Refusal.Code.not_found
+  || Spindle.Refusal.Code.equal refusal.code Spindle.Access.forbidden
+
+let reading f variables_of =
+  Dep.map
+    (function
+      | Error refusal ->
+          fun _ -> if hidden refusal then Not_found else Refused refusal
+      | Ok f -> (
+          fun variables ->
+            match variables_of variables with
+            | Error problems -> Unreadable problems
+            | Ok v -> (
+                match f v with
+                | Ok contents -> Read contents
+                | Error refusal when hidden refusal -> Not_found
+                | Error (refusal : Spindle.Refusal.t) -> Failed refusal.message)
+          ))
+    (Dep.attempt f)
+
+let resource ?title ?doc ?mime ?scope ?ttl_ms uri ~name f =
+  {
+    uri = Fixed uri;
+    name;
+    title;
+    doc;
+    mime;
+    scope;
+    ttl_ms;
+    codes = Dep.codes f;
+    read = reading f (fun _ -> Ok ());
+  }
+
+let template ?title ?doc ?mime ?scope ?ttl_ms text ~name
+    (variables : 'v Template.t) f =
+  {
+    uri =
+      Templated { text; parts = parse_template text; names = variables.names };
+    name;
+    title;
+    doc;
+    mime;
+    scope;
+    ttl_ms;
+    codes = Dep.codes f;
+    read = reading f variables.read;
+  }
+
+(* The variables of [uri], where [r] is the resource it names. *)
+let names_it (r : resource) uri =
+  match r.uri with
+  | Fixed u -> if String.equal u uri then Some [] else None
+  | Templated { parts = Ok parts; _ } -> matched parts uri
+  | Templated { parts = Error _; _ } -> None
+
+module Changes = struct
+  type t = (unit, string) Spindle.Broadcast.t
+
+  let create ?depth () = Spindle.Broadcast.create ?depth ()
+  let updated t uri = Spindle.Broadcast.publish t ~topic:uri uri
+  let watched t = Spindle.Broadcast.topics t
+  let close = Spindle.Broadcast.close
+end
+
 let src = Logs.Src.create "spindle-mcp" ~doc:"An MCP server's calls"
 
 module L = (val Logs.src_log src : Logs.LOG)
@@ -216,6 +485,10 @@ let progress (c : call) ?total ?message done_ =
    written in source. *)
 let max_name = 128
 
+(* Each URI a listen watches is a read as it opens, and a subscription and a
+   fiber for as long as it lasts; this many bound what one request holds. *)
+let max_subscriptions = 64
+
 let is_name s =
   let n = String.length s in
   n > 0 && n <= max_name
@@ -261,7 +534,77 @@ let check ~auth tools =
         t.asks)
     tools
 
+let check_resources ~auth resources =
+  let twice l =
+    List.exists (fun x -> List.length (List.filter (String.equal x) l) > 1) l
+  in
+  List.iteri
+    (fun i (r : resource) ->
+      let earlier = List.filteri (fun j _ -> j < i) resources in
+      (match r.uri with
+      | Fixed uri ->
+          if
+            List.exists
+              (fun (e : resource) ->
+                match e.uri with
+                | Fixed u -> String.equal u uri
+                | Templated _ -> false)
+              earlier
+          then refuse (Printf.sprintf "two resources are at %S" uri)
+      | Templated { text; parts; names } -> (
+          if
+            List.exists
+              (fun (e : resource) ->
+                match e.uri with
+                | Templated t -> String.equal t.text text
+                | Fixed _ -> false)
+              earlier
+          then refuse (Printf.sprintf "two templates are %S" text);
+          match parts with
+          | Error why -> refuse (Printf.sprintf "%S holds %s" text why)
+          | Ok parts ->
+              let named =
+                List.concat_map
+                  (function
+                    | Variable v -> [ v ] | Query vs -> vs | Literal _ -> [])
+                  parts
+              in
+              if twice named then
+                refuse (Printf.sprintf "%S names a variable twice" text);
+              if twice names then
+                refuse (Printf.sprintf "%S reads a variable twice" text);
+              List.iter
+                (fun v ->
+                  if not (List.mem v names) then
+                    refuse
+                      (Printf.sprintf "%S names %S, which it does not read" text
+                         v))
+                named;
+              List.iter
+                (fun v ->
+                  if not (List.mem v named) then
+                    refuse
+                      (Printf.sprintf "%S reads %S, which it does not name" text
+                         v))
+                names));
+      match (r.scope, auth) with
+      | Some _, None ->
+          refuse
+            (Printf.sprintf "%S needs a scope, and no auth is given" r.name)
+      | _ -> ())
+    resources
+
 let opt name = function Some v -> [ (name, Value.String v) ] | None -> []
+
+(* resources §Reading Resources: each content with the URI read. *)
+let content_value uri mime content =
+  Value.Object
+    ([ ("uri", Value.String uri) ]
+    @ opt "mimeType" mime
+    @
+    match content with
+    | Text t -> [ ("text", Value.String t) ]
+    | Blob b -> [ ("blob", Value.String (Base64.encode_string b)) ])
 
 let json ?(status = `OK) text =
   Ok (Spindle.Response.make ~status ~content_type:"application/json" text)
@@ -296,8 +639,9 @@ let named_by meth params =
   | _ -> None
 
 let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
-    ?(ttl_ms = 300_000) ~name ~version tools =
+    ?(ttl_ms = 300_000) ?(resources = []) ?changes ~name ~version tools =
   check ~auth tools;
+  check_resources ~auth resources;
   let served =
     Value.Object
       [ ("name", Value.String name); ("version", Value.String version) ]
@@ -306,20 +650,23 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
     ("_meta", Value.Object [ ("io.modelcontextprotocol/serverInfo", served) ])
   in
   (* caching §Cache Scope: a list filtered by the token is the token's. *)
-  let cacheable =
+  let cached ttl_ms =
     [
       ("ttlMs", Value.Number (float_of_int ttl_ms));
       ( "cacheScope",
         Value.String (match auth with Some _ -> "private" | None -> "public") );
     ]
   in
+  let cacheable = cached ttl_ms in
   let scopes =
     List.fold_left
-      (fun acc (t : tool) ->
-        match t.scope with
+      (fun acc scope ->
+        match scope with
         | Some s when not (List.exists (String.equal s) acc) -> acc @ [ s ]
         | Some _ | None -> acc)
-      [] tools
+      []
+      (List.map (fun (t : tool) -> t.scope) tools
+      @ List.map (fun (r : resource) -> r.scope) resources)
   in
   let claims =
     match auth with
@@ -334,13 +681,29 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
         Dep.map (fun (f, rest) -> (t, f) :: rest) (Dep.both t.run acc))
       tools (Dep.return [])
   in
+  (* A URI is read by a resource at it before any template. *)
+  let reads =
+    List.fold_right
+      (fun (r : resource) acc ->
+        Dep.map (fun (f, rest) -> (r, f) :: rest) (Dep.both r.read acc))
+      (List.filter
+         (fun (r : resource) ->
+           match r.uri with Fixed _ -> true | Templated _ -> false)
+         resources
+      @ List.filter
+          (fun (r : resource) ->
+            match r.uri with Fixed _ -> false | Templated _ -> true)
+          resources)
+      (Dep.return [])
+  in
   let header h = Spindle.Header.optional h Wiretype.string in
-  let grants (t : tool) (claims : Bearer.claims option) =
-    match (t.scope, claims) with
+  let granted scope (claims : Bearer.claims option) =
+    match (scope, claims) with
     | Some s, Some c -> List.exists (String.equal s) c.scopes
     | Some _, None | None, _ -> true
   in
-  let answer ~id ~meth ~params ~claims ~runs ~(call : call) =
+  let grants (t : tool) claims = granted t.scope claims in
+  let answer ~id ~meth ~params ~claims ~runs ~reads ~gone ~(call : call) =
     let ok members = json (P.result id (members @ [ result_meta ])) in
     let fail ?(status = `OK) ?data code message =
       json ~status (P.error ~id ?data code message)
@@ -352,7 +715,18 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
           ([
              complete;
              ("supportedVersions", Value.Array [ Value.String P.version ]);
-             ("capabilities", Value.Object [ ("tools", Value.Object []) ]);
+             ( "capabilities",
+               Value.Object
+                 (("tools", Value.Object [])
+                 ::
+                 (match (resources, changes) with
+                 | [], None -> []
+                 | _, Some _ ->
+                     [
+                       ( "resources",
+                         Value.Object [ ("subscribe", Value.Bool true) ] );
+                     ]
+                 | _ :: _, None -> [ ("resources", Value.Object []) ])) );
            ]
           @ opt "instructions" instructions
           @ cacheable)
@@ -545,6 +919,224 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
                            in
                            drain true);
                        Ok ()))))
+    (* resources §Capabilities: a server that names no resources serves none
+       of their methods. *)
+    | ("resources/list" | "resources/templates/list" | "resources/read")
+      when List.is_empty resources && Option.is_none changes ->
+        fail ~status:`Not_found P.Code.method_not_found "Method not found"
+    | "subscriptions/listen" -> (
+        match (changes, P.member "notifications" params) with
+        | None, _ ->
+            fail ~status:`Not_found P.Code.method_not_found "Method not found"
+        | Some hub, (Some (Value.Object _) as filter) ->
+            (* What a read would answer for this caller, so a listen reveals
+               nothing a read would not: the read is run once, its contents
+               dropped. *)
+            let readable uri =
+              match
+                List.find_map
+                  (fun ((r : resource), read) ->
+                    Option.map (fun v -> (r, read, v)) (names_it r uri))
+                  reads
+              with
+              | Some (r, read, variables) when granted r.scope claims -> (
+                  match read variables with
+                  | Read _ -> true
+                  | Not_found | Unreadable _ | Refused _ | Failed _ -> false)
+              | Some _ | None -> false
+            in
+            let asked =
+              match P.member "resourceSubscriptions" filter with
+              | Some (Value.Array uris) ->
+                  List.filter_map
+                    (function Value.String u -> Some u | _ -> None)
+                    uris
+              | _ -> []
+            in
+            let honoured =
+              List.fold_left
+                (fun acc uri ->
+                  if
+                    List.length acc >= max_subscriptions
+                    || List.mem uri acc
+                    || not (readable uri)
+                  then acc
+                  else acc @ [ uri ])
+                [] asked
+            in
+            let tagged =
+              ( "_meta",
+                Value.Object
+                  [
+                    ("io.modelcontextprotocol/subscriptionId", P.id_to_value id);
+                  ] )
+            in
+            let event data =
+              match Spindle_http.Event_stream.event data with
+              | Ok e -> e
+              | Error _ -> ""
+            in
+            (* subscriptions §Opening a Stream: the subset honoured, the types
+               not served omitted. *)
+            let acknowledged =
+              P.notification "notifications/subscriptions/acknowledged"
+                [
+                  tagged;
+                  ( "notifications",
+                    Value.Object
+                      (match honoured with
+                      | [] -> []
+                      | _ :: _ ->
+                          [
+                            ( "resourceSubscriptions",
+                              Value.Array
+                                (List.map (fun u -> Value.String u) honoured) );
+                          ]) );
+                ]
+            in
+            let updated uri =
+              P.notification "notifications/resources/updated"
+                [ ("uri", Value.String uri); tagged ]
+            in
+            (* subscriptions §Cancellation: a server ending a listen sends a
+               successful response, never notifications/cancelled, which HTTP
+               has no use for (issue #3348). *)
+            let completed =
+              P.result id
+                [
+                  complete;
+                  ( "_meta",
+                    Value.Object
+                      [
+                        ( "io.modelcontextprotocol/subscriptionId",
+                          P.id_to_value id );
+                        ("io.modelcontextprotocol/serverInfo", served);
+                      ] );
+                ]
+            in
+            let watch send subscriptions =
+              let ends =
+                Eio.Fiber.List.map
+                  (fun sub ->
+                    let ended =
+                      Spindle.Broadcast.forward ~until:gone sub (fun uri ->
+                          send (event (updated uri)))
+                    in
+                    List.iter (Spindle.Broadcast.unsubscribe hub) subscriptions;
+                    ended)
+                  subscriptions
+              in
+              match List.find_opt Result.is_error ends with
+              | Some ended -> ended
+              | None ->
+                  (* Only the server ending it is graceful: a client dropped
+                     as slow has missed changes, and listens again. *)
+                  if
+                    Eio.Promise.is_resolved gone
+                    || List.exists Spindle.Broadcast.dropped subscriptions
+                  then Ok ()
+                  else send (event completed)
+            in
+            (* Subscribed to every URI before the acknowledgment is written,
+               so a change made the instant after reaches it. *)
+            let rec subscribed send subscriptions = function
+              | uri :: rest ->
+                  Spindle.Broadcast.subscribe hub ~topic:uri () (fun sub ->
+                      subscribed send (sub :: subscriptions) rest)
+              | [] -> (
+                  let* () = send (event acknowledged) in
+                  match subscriptions with
+                  | [] -> send (event completed)
+                  | _ :: _ -> watch send subscriptions)
+            in
+            Ok
+              (Spindle.Response.events (fun send -> subscribed send [] honoured))
+        | Some _, _ ->
+            fail P.Code.invalid_params "Invalid params: no notifications")
+    | "resources/list" | "resources/templates/list" -> (
+        match P.member "cursor" params with
+        | Some _ -> fail P.Code.invalid_params "Invalid params: no such cursor"
+        | None ->
+            let described (r : resource) =
+              [ ("name", Value.String r.name) ]
+              @ opt "title" r.title @ opt "description" r.doc
+              @ opt "mimeType" r.mime
+            in
+            let key, listed =
+              match meth with
+              | "resources/list" ->
+                  ( "resources",
+                    fun (r : resource) ->
+                      match r.uri with
+                      | Fixed uri ->
+                          Some
+                            (Value.Object
+                               (("uri", Value.String uri) :: described r))
+                      | Templated _ -> None )
+              | _ ->
+                  ( "resourceTemplates",
+                    fun (r : resource) ->
+                      match r.uri with
+                      | Templated t ->
+                          Some
+                            (Value.Object
+                               (("uriTemplate", Value.String t.text)
+                               :: described r))
+                      | Fixed _ -> None )
+            in
+            ok
+              ([
+                 complete;
+                 ( key,
+                   Value.Array
+                     (List.filter_map
+                        (fun (r : resource) ->
+                          if granted r.scope claims then listed r else None)
+                        resources) );
+               ]
+              @ cacheable))
+    | "resources/read" -> (
+        match P.member "uri" params with
+        | Some (Value.String uri) -> (
+            (* resources §Error Handling: a resource not found is -32602,
+               naming the URI. *)
+            let not_found () =
+              fail
+                ~data:(Value.Object [ ("uri", Value.String uri) ])
+                P.Code.invalid_params "Resource not found"
+            in
+            match
+              List.find_map
+                (fun ((r : resource), read) ->
+                  Option.map
+                    (fun variables -> (r, read, variables))
+                    (names_it r uri))
+                reads
+            with
+            | None -> not_found ()
+            | Some (r, _, _) when not (granted r.scope claims) -> (
+                match (auth, r.scope) with
+                | Some a, Some s -> Error (Bearer.lacking a s)
+                | _ -> not_found ())
+            | Some (r, read, variables) -> (
+                match read variables with
+                | Read contents ->
+                    ok
+                      ([
+                         complete;
+                         ( "contents",
+                           Value.Array
+                             (List.map (content_value uri r.mime) contents) );
+                       ]
+                      @ cached (Option.value r.ttl_ms ~default:ttl_ms))
+                | Not_found -> not_found ()
+                | Unreadable problems ->
+                    fail P.Code.invalid_params
+                      ("Invalid params: " ^ String.concat "; " problems)
+                | Refused refusal -> Error refusal
+                | Failed why ->
+                    fail P.Code.internal_error ("Internal error: " ^ why)))
+        | _ -> fail P.Code.invalid_params "Invalid params: no uri")
     | _ -> fail ~status:`Not_found P.Code.method_not_found "Method not found"
   in
   (* streamable-http §Server Validation, then basic §_meta, then versioning:
@@ -609,7 +1201,14 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
   [
     Spindle.post
       ~refuses:
-        (match auth with Some _ -> [ Bearer.insufficient_scope ] | None -> [])
+        (List.fold_left
+           (fun acc code ->
+             if List.exists (Spindle.Refusal.Code.equal code) acc then acc
+             else acc @ [ code ])
+           (match auth with
+           | Some _ -> [ Bearer.insufficient_scope ]
+           | None -> [])
+           (List.concat_map (fun (r : resource) -> r.codes) resources))
       path Spindle.Returns.response
       (let+ () = guard
        and+ claims = claims
@@ -617,6 +1216,8 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
        and+ method_header = header "mcp-method"
        and+ name_header = header "mcp-name"
        and+ runs = runs
+       and+ reads = reads
+       and+ gone = Spindle.client_gone
        and+ call = call
        and+ body = Spindle.body in
        match P.read body with
@@ -630,23 +1231,22 @@ let routes ?(path = Spindle.Path.(s "mcp")) ?guard ?auth ?instructions
        | Ok (Notification _) -> Ok (Spindle.Response.make ~status:`Accepted "")
        | Ok (Request { id; meth; params }) ->
            checked ~id ~meth ~params ~version_header ~method_header ~name_header
-             (fun () -> answer ~id ~meth ~params ~claims ~runs ~call));
+             (fun () ->
+               answer ~id ~meth ~params ~claims ~runs ~reads ~gone ~call));
   ]
 
 module Test = struct
-  let call ?now ?progress_token ?(path = "/mcp") ?(headers = [])
-      ?(capabilities = Value.Object []) app meth params =
+  (* The headers and the body a client sends for [meth]. *)
+  let request ?progress_token ~headers ~capabilities meth params =
     let meta =
       Value.Object
-        [
-          ("io.modelcontextprotocol/protocolVersion", Value.String P.version);
-          ("io.modelcontextprotocol/clientCapabilities", capabilities);
-        ]
-      |> fun m ->
-      match (m, progress_token) with
-      | Value.Object members, Some token ->
-          Value.Object (("progressToken", Value.String token) :: members)
-      | m, _ -> m
+        ((match progress_token with
+           | Some token -> [ ("progressToken", Value.String token) ]
+           | None -> [])
+        @ [
+            ("io.modelcontextprotocol/protocolVersion", Value.String P.version);
+            ("io.modelcontextprotocol/clientCapabilities", capabilities);
+          ])
     in
     let body =
       Value.Object
@@ -670,14 +1270,24 @@ module Test = struct
       | Ok s -> s
       | Error e -> invalid_arg (Wiretype.Unwritable.to_string e)
     in
-    Spindle.Test.call ?now
-      ~headers:
-        ([
-           ("content-type", "application/json");
-           ("accept", "application/json, text/event-stream");
-           ("mcp-protocol-version", P.version);
-           ("mcp-method", meth);
-         ]
-        @ named @ headers)
-      ~body:text app `POST path
+    ( [
+        ("content-type", "application/json");
+        ("accept", "application/json, text/event-stream");
+        ("mcp-protocol-version", P.version);
+        ("mcp-method", meth);
+      ]
+      @ named @ headers,
+      text )
+
+  let call ?now ?progress_token ?(path = "/mcp") ?(headers = [])
+      ?(capabilities = Value.Object []) app meth params =
+    let headers, body =
+      request ?progress_token ~headers ~capabilities meth params
+    in
+    Spindle.Test.call ?now ~headers ~body app `POST path
+
+  let events ?now ?(path = "/mcp") ?(headers = [])
+      ?(capabilities = Value.Object []) app meth params f =
+    let headers, body = request ~headers ~capabilities meth params in
+    Spindle.Test.events ?now ~headers ~meth:`POST ~body app path f
 end

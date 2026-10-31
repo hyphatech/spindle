@@ -77,6 +77,12 @@ val forward :
         if Order.visible_to user order then send order else Ok ())
     ]} *)
 
+val dropped : ('tag, 'event) subscription -> bool
+(** Whether the hub dropped this subscriber as slow: [false] while it is
+    subscribed, and after it was unsubscribed or its hub closed. A reader that
+    {!forward} or {!next} has ended asks it to tell a drop, which missed events
+    and should come back, from an end, which should not. *)
+
 val close : ('tag, 'event) t -> unit
 (** Unsubscribes everybody on every topic: each {!forward} answers [Ok ()] and
     each {!next} [None], which is how a server that is stopping ends its

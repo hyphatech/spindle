@@ -6,8 +6,11 @@ import { Code } from "@astrojs/starlight/components";
 import forecast_tool from "@examples/forecast_tool.ml?raw";
 import mcp from "@examples/mcp.ml?raw";
 import mcp_client from "@examples/mcp_client.ml?raw";
+import journal from "@examples/journal.ml?raw";
+import mcp_journal from "@examples/mcp_journal.ml?raw";
+import mcp_watch from "@examples/mcp_watch.ml?raw";
 
-Give an agent tools to call. `spindle-mcp` serves the
+Give an agent tools to call, and resources to read. `spindle-mcp` serves the
 [Model Context Protocol](https://modelcontextprotocol.io/specification/2026-07-28),
 revision 2026-07-28, over HTTP: one `POST` endpoint, added to your routes as
 [health checks](/spindle/guide/health/) are.
@@ -177,6 +180,76 @@ let delete_note =
   nobody signed in, for a tool that reads the caller -- is that tool's error
   when it is called, and no other tool's.
 
+## Resources
+
+A tool is something a client asks the server to do; a resource is something
+it reads -- a file, a record, a log. A resource is a URI, a name and a
+dependency giving the function that reads it; a template is every resource
+whose URI it matches, its variables handed to the function:
+
+<Code code={journal} lang="ocaml" title="journal.ml" />
+
+<Code code={mcp_journal} lang="ocaml" title="mcp_journal.ml" />
+
+- `Spindle_mcp.resource uri ~name f` is one resource, listed by
+  `resources/list`. `Spindle_mcp.template text ~name variables f` is a
+  template, listed by `resources/templates/list`. Both are read by
+  `resources/read`, and given to `routes` as `~resources`.
+- A template is the part of RFC 6570 that reads back from a URI one way:
+  `{name}`, one segment, never across a `/`, and a form-style query last,
+  `{?from,to}`, each of whose variables may be left out. `routes` raises
+  `Invalid_argument` for any other expression.
+- Each variable is read by its own description, as a query parameter is:
+  `Template.required` for one every URI holds, `Template.optional` for a
+  query's that may be absent. A URI whose variables do not read is
+  `-32602`, naming each problem.
+- The function answers its contents: `Text` as it is, or `Blob` bytes, sent
+  as base64, each with the URI read and the resource's `~mime`.
+- `~ttl_ms` is how long a client may keep what it read, in place of
+  `routes`' `~ttl_ms`; something that changes as it is watched is `0`.
+- `~scope` is as a tool's: a resource the token does not grant is left out
+  of the lists, and its read is a `403` naming the scope.
+
+**A read tells a caller nothing of an object they may not see.** A function
+that answers `Refusal.not_found`, or `Access.forbidden` for someone else's
+object -- what [`Access.can`](/spindle/guide/access/) answers, unless told
+otherwise -- is the resource not found, `-32602`, word for word what a URI
+no resource has is told. Any other `Error` of the function is `-32603`, its
+sentence; a refusal of the resource's dependency -- a rate limit, a caller
+not signed in -- is that refusal, its status and headers.
+
+## Watching a resource
+
+A client that shows a journal as it grows does not poll it. It opens
+`subscriptions/listen`, naming the URIs it watches, and the server tells it
+each time one changes -- "read it again", never what changed. The server in
+`mcp_journal.ml` above does this: `Spindle_mcp.Changes.create ()` is the hub,
+given to `routes` as `~changes`, and `Changes.updated changes uri` says a
+URI changed, from wherever the change is made.
+
+- A listen is one request, answered as an event stream that stays open: the
+  acknowledgment first, naming the URIs it watches, then one
+  `notifications/resources/updated` a change. While it is open the hub lists
+  it, and once it ends nothing of it is kept, so the server keeps no session.
+- **A listen reveals nothing a read would not.** It watches a URI only where
+  `resources/read` would answer it for this caller -- its scope granted and
+  its function answering it, run once as the listen opens -- and leaves any
+  other out of its acknowledgment, without an error. So the check costs one
+  read a URI, each time a listen opens: a resource that is large should
+  answer a read with nothing to read cheaply, as `journal.ml`'s does with no
+  `from`. A listen watches at most 64 URIs.
+- **It is subscribed before it is acknowledged**, so a change made the
+  instant after reaches it. A client that reads after the acknowledgment,
+  from its own place, and again on each change, misses nothing.
+- **It ends three ways.** A client that closes it is gone, and nothing more
+  is sent. `Changes.close`, from `Spindle.serve`'s `~on_stop`, ends every
+  listen with the graceful result, which tells its client the server ended
+  it. A listen more than `~depth` (16) changes behind is dropped with no
+  result: its client listens again and reads from where it was, and loses
+  nothing, since a change says only "read it again".
+- No list's changes are watched: the tools and resources a server serves
+  are fixed when it starts.
+
 ## What a client is told
 
 The server speaks 2026-07-28 alone, and answers as that revision says:
@@ -190,6 +263,10 @@ The server speaks 2026-07-28 alone, and answers as that revision says:
 | `_meta` without the version or the client's capabilities | `400`, `-32602` |
 | A method it does not serve | `404`, `-32601` |
 | An unknown tool | `-32602` |
+| A URI no resource has, or one its function will not show this caller | `-32602`, naming the URI |
+| A resource method, on a server given no resources | `404`, `-32601` |
+| `subscriptions/listen`, on a server given no `~changes` | `404`, `-32601` |
+| `subscriptions/listen` with no `notifications` | `-32602` |
 | A notification | `202`, no body |
 | A request from another site's page | `403`, the application's [forgery check](/spindle/guide/cookies/#csrf-and-cors) |
 | `GET` | `405` |
@@ -231,6 +308,45 @@ opam install spindle-mcp-client
 - Every request carries the headers 2026-07-28 asks for, an argument a
   listed tool annotates with `x-mcp-header` among them, and an answer is read
   as one JSON object or an event stream, whichever the server sends.
+
+### Reading its resources
+
+```ocaml
+let* resources = Spindle_mcp_client.resources haf in
+let* templates = Spindle_mcp_client.templates haf in
+let* contents = Spindle_mcp_client.read haf "haf://intents/0197/journal?from=1" in
+...
+```
+
+- `resources` and `templates` list every page of the server's resources and
+  templates, each with its name, title, description and MIME type.
+- `read uri` answers the contents: `Text`, or `Blob` bytes, decoded from
+  base64, each with its URI and type. A URI the server has no resource at is
+  `` `Refused `` with the code `-32602`. Expanding a template into a URI is
+  the caller's: the server says what its variables mean.
+
+### Watching a resource
+
+<Code code={mcp_watch} lang="ocaml" title="mcp_watch.ml" />
+
+- `listen uris f` opens `subscriptions/listen` and hands `f` each
+  notification as it arrives: `Acknowledged` first, naming the URIs the
+  server watches -- one it left out it will never tell of -- then `Updated`
+  for each change. It runs in the caller's fiber until the listen ends or `f`
+  answers `` `Stop ``.
+- **The client's place is the cursor.** A change is "read it again", so the
+  watcher reads from the next line it has not seen, once acknowledged and on
+  each change. A change made after the acknowledgment is always told, so
+  nothing written in between is missed, and several changes read once are
+  as good as each read alone.
+- It ends `Stopped` when `f` stopped it, `Completed` when the server ended
+  it -- it has nothing more to say, and the watcher stops too -- or
+  `Dropped` when the stream ended without that: the connection lost, the
+  listen dropped for falling behind, or no word for `~read_timeout` (60 s).
+  The watcher listens again and reads from where it was, and loses nothing.
+  It never listens again by itself: whether to, and how long to wait first,
+  are the caller's.
+- An error is a listen refused or never acknowledged, as any request's is.
 
 ## Testing
 
