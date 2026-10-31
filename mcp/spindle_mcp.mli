@@ -1,5 +1,6 @@
-(** A Model Context Protocol server: the routes an agent calls tools through,
-    added to the application's own, as {!Spindle.Health.routes} are.
+(** A Model Context Protocol server: the routes an agent calls tools and reads
+    and watches resources through, added to the application's own, as
+    {!Spindle.Health.routes} are.
 
     {[
     let forecast =
@@ -22,7 +23,8 @@
     the same on every request: what it reads is listed, the resources its tools
     read are checked as the server starts, and its refusals are declared. A
     tool's dependency hands over what the server holds -- a pool, a client --
-    and its function does the work. *)
+    and its function does the work. A resource is read the same way
+    ({!section-resources}), and watched through {!Changes}. *)
 
 type tool
 (** One tool an agent may call. *)
@@ -95,7 +97,7 @@ val progress : call -> ?total:float -> ?message:string -> float -> unit
     is dropped too, as the specification has each one larger. A tool that should
     stop when its caller has gone reads {!Spindle.client_gone} beside it. *)
 
-(** {1 Resources} *)
+(** {1:resources Resources} *)
 
 type resource
 (** One resource a client may read, or one template of them. *)

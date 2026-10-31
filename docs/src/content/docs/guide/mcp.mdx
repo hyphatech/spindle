@@ -42,7 +42,9 @@ the function a probe runs.
 <Code code={mcp} lang="ocaml" title="mcp.ml" />
 
 `Spindle_mcp.routes` is `POST /mcp` (or `~path`), serving
-`server/discover`, `tools/list` and `tools/call`:
+`server/discover`, `tools/list` and `tools/call` -- and, given
+[resources](#resources) and [`~changes`](#watching-a-resource), the methods
+that read and watch them:
 
 ```console
 $ curl -X POST localhost:8080/mcp -H 'content-type: application/json' \
@@ -60,14 +62,16 @@ $ curl -X POST localhost:8080/mcp -H 'content-type: application/json' \
 Every tool's dependency is read on every call, as every health check's is on
 every probe, so the endpoint reads the same on every request: what it reads
 is listed, the resources its tools read are checked as the server starts,
-and a server missing one does not start. That sets two rules:
+and a server missing one does not start. So:
 
 - **A tool's dependency hands over what the server holds** -- a pool, a
   client -- and its function does the work.
-- **A tool's dependency refuses nothing.** One that could -- a rate limit, a
-  required header -- would refuse every call, so `Spindle_mcp.routes` raises
-  `Invalid_argument` for it. What refuses for the whole endpoint is
-  `~guard`, read first:
+- **A tool's dependency's refusal is that tool's alone.** One that refuses --
+  nobody signed in, for a tool that reads the caller -- is that tool's error,
+  `isError` with the refusal's sentence, when it is called, and every other
+  tool is called as before.
+- **What refuses for the whole endpoint is `~guard`**, read first, its
+  refusal the answer to every request:
 
   ```ocaml
   Spindle_mcp.routes ~name ~version
@@ -100,7 +104,8 @@ let export =
   before, and the reports are dropped, so the tool is written once.
 - A report not above the last is dropped, as MCP has each one larger.
 - A client that cancels closes the stream. `Spindle.client_gone` resolves
-  then, and the tool stops where it can -- nothing cuts it off mid-write.
+  once the server learns it -- at the first report it cannot write -- and
+  the tool stops where it can: nothing cuts it off mid-write.
 
 ## Asking before acting
 
@@ -152,7 +157,8 @@ let routes =
 - `tools/list` names only the tools the token grants, so a model is never
   shown one it cannot call; a call of one it lacks is a `403`
   `insufficient_scope` naming the scope, so the client can ask for it.
-- The metadata document names every tool's scope in `scopes_supported`.
+- The metadata document names every tool's and resource's scope in
+  `scopes_supported`.
 
 ## Who may do what
 
@@ -273,12 +279,17 @@ The server speaks 2026-07-28 alone, and answers as that revision says:
 
 The server keeps nothing between requests: 2026-07-28 has no session, and
 each call is answered on its own, on whichever domain or instance takes it.
+The one thing that outlives a request is the application's
+`Spindle_mcp.Changes`, which lists a listen only while it is open; it is one
+process's, so behind a balancer of several instances, a change one makes
+reaches only the listens it holds.
 
 ## Calling another server's tools
 
-`spindle-mcp-client` calls an MCP server's tools from any Eio program, on
-the [HTTP client](/spindle/guide/client/) alone: a program that only calls
-tools installs and links no framework.
+`spindle-mcp-client` calls an MCP server's tools, and reads and watches its
+resources, from any Eio program, on the
+[HTTP client](/spindle/guide/client/) alone: a program that only calls
+another server installs and links no framework.
 
 ```sh
 opam install spindle-mcp-client
@@ -359,3 +370,7 @@ let r =
   Spindle_mcp.Test.call app "tools/call"
     [ ("name", String "get_forecast"); ("arguments", Object [ ("city", String "Paris") ]) ]
 ```
+
+`Spindle_mcp.Test.events` sends the same, and reads the answer a message at
+a time, for a `subscriptions/listen`: its function is handed each event as
+it arrives and answers `` `Stop `` to leave.

@@ -1,6 +1,6 @@
-(** Calling another server's tools over the Model Context Protocol, 2026-07-28,
-    on {!Spindle_client} alone: a program that only calls tools installs and
-    links no framework.
+(** Calling another server's tools, and reading and watching its resources, over
+    the Model Context Protocol, 2026-07-28, on {!Spindle_client} alone: a
+    program that only calls another server installs and links no framework.
 
     {[
     let weather =
