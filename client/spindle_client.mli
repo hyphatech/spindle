@@ -24,6 +24,13 @@
     each address the host's name resolves to there, in the order the resolver
     gives them, until one connects.
 
+    A server on a Unix socket is named in the URL --
+    [http+unix://%2Frun%2Fapp.sock/health], the path percent-encoded as its
+    host, and [ws+unix://] for a WebSocket -- and reached through [net] at that
+    path, with no lookup and no TLS; the request names [localhost] as its host,
+    and a connection is kept for the socket. One that cannot be reached is
+    [`Unsent], naming the path.
+
     A call has a deadline, which covers all of it -- the name's lookup included,
     which one fiber of the client's, on [sw], runs for every domain, so a lookup
     the system will not cancel is left to end in the background -- and one whose

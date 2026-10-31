@@ -1,5 +1,15 @@
 # Changes
 
+## Unreleased
+
+- A client reaches a server on a Unix socket named in its URL,
+  `http+unix://` and the path percent-encoded (`ws+unix://` for a
+  WebSocket), so `Spindle_mcp_client` calls one too; and
+  `Server.Unix_socket.listen` opens a socket for `serve_on` that only its
+  owner can connect to, refusing a directory open to others and a path a
+  running server holds, replacing what a killed one left, and removing its
+  file when its switch ends.
+
 ## 0.14.1 (2026-10-31)
 
 - `Broadcast.dropped sub` says whether the hub dropped a subscriber as slow,

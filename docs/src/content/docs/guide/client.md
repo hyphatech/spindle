@@ -58,6 +58,20 @@ with
 | Error e -> Error (Spindle_client.error_to_string e)
 ```
 
+### A server on a Unix socket
+
+A server on this machine listening on a Unix socket is named in the URL,
+its path percent-encoded as the host, as Docker's SDK names one:
+
+```ocaml
+Spindle_client.call client `GET "http+unix://%2Frun%2Fuser%2F501%2Fapp.sock/health"
+```
+
+Everything else is as over TCP -- deadlines, kept connections (kept for the
+socket), streams, and `ws+unix://` for a WebSocket -- and the request names
+`localhost` as its host. A socket that cannot be reached is `` `Unsent ``,
+naming its path. `Spindle_mcp_client.create` takes such a URL too.
+
 ## Using a client inside a server
 
 Make it once, with `Spindle_client.create`, on the application's switch --

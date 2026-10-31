@@ -257,6 +257,51 @@ val serve_on :
     port the system chose -- with everything else exactly as {!run} does it, but
     [limits]'s [backlog], which the caller gave its sockets. *)
 
+(** A Unix socket to serve on, which only its owner can connect to: who may
+    connect is held by the system, so a server on one checks no credential.
+
+    {[
+    match Spindle.Server.Unix_socket.listen ~sw "/run/user/501/app.sock" with
+    | Ok socket -> Spindle.Server.serve_on ... [ socket ] app
+    | Error e -> prerr_endline (Spindle.Server.Unix_socket.error_to_string e)
+    ]}
+
+    A client reaches it by a URL that names it, [http+unix://] and the path
+    percent-encoded ({!Spindle_client.call}). *)
+module Unix_socket : sig
+  type failure =
+    | In_use  (** a server answers on the path already *)
+    | Not_private of { directory : string; mode : int }
+        (** the directory that holds it is not this user's alone: owned by
+            another, or open to others by its [mode] *)
+    | Too_long  (** a path longer than the system takes for a socket *)
+    | Failed of string
+        (** the system's reason, or a file at the path that is no socket, which
+            is never removed *)
+
+  type error = { path : string; failure : failure }
+
+  val error_to_string : error -> string
+  (** One line saying where and why:
+      [cannot listen on /run/app.sock: a server answers there already]. *)
+
+  val listen :
+    sw:Eio.Switch.t ->
+    ?backlog:int ->
+    string ->
+    ([ `Generic ] Eio.Net.listening_socket_ty Eio.Resource.t, error) result
+  (** [listen ~sw path]: a socket listening at [path], for {!serve_on},
+      [backlog] (128) connections waiting.
+
+      The directory that holds [path] must be this user's, and closed to every
+      other -- mode [0700] or tighter -- or it is [Not_private], since a socket
+      file's own mode is not honoured on every system; the file is made [0600]
+      as well. A socket already at [path] is connected to first: one a server
+      answers on is [In_use], and one nobody answers -- what a server killed
+      with its socket leaves -- is removed and replaced. The file is removed
+      when [sw] ends. *)
+end
+
 val stop_on_signals : sw:Eio.Switch.t -> unit -> unit Eio.Promise.t
 (** A promise resolved by the first SIGTERM or SIGINT, for {!run}'s [stop].
     Nothing installs a signal handler unless this is called; after the first

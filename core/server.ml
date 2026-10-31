@@ -1512,3 +1512,92 @@ let stop_on_signals ~sw () =
       Eio.Promise.resolve stop ();
       `Stop_daemon);
   stopped
+
+module Unix_socket = struct
+  type failure =
+    | In_use
+    | Not_private of { directory : string; mode : int }
+    | Too_long
+    | Failed of string
+
+  type error = { path : string; failure : failure }
+
+  let error_to_string { path; failure } =
+    Printf.sprintf "cannot listen on %s: %s" path
+      (match failure with
+      | In_use -> "a server answers there already"
+      | Not_private { directory; mode } ->
+          Printf.sprintf
+            "%s is open to others (mode %o), and a socket in it would be too"
+            directory mode
+      | Too_long -> "the path is longer than the system takes for a socket"
+      | Failed reason -> reason)
+
+  (* Whether a server answers on the socket at [path]: one killed with its
+     socket left the file, which nobody answers. *)
+  let answered path =
+    let fd = Unix.socket ~cloexec:true Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+    Fun.protect
+      ~finally:(fun () -> Unix.close fd)
+      (fun () ->
+        match Unix.connect fd (Unix.ADDR_UNIX path) with
+        | () -> Ok true
+        | exception Unix.Unix_error ((Unix.ECONNREFUSED | Unix.ENOENT), _, _) ->
+            Ok false
+        | exception Unix.Unix_error (code, _, _) -> Error code)
+
+  (* The directory is checked rather than the file's mode trusted, since not
+     every system honours a socket file's mode on connect; and it is what
+     guards the instant between [bind] and [chmod]. *)
+  let listen ~sw ?(backlog = 128) path =
+    let refused failure = Error { path; failure } in
+    let reason code = refused (Failed (Unix.error_message code)) in
+    let directory = Filename.dirname path in
+    match Unix.stat directory with
+    | exception Unix.Unix_error (code, _, _) -> reason code
+    | d when d.st_uid <> Unix.getuid () || d.st_perm land 0o077 <> 0 ->
+        refused (Not_private { directory; mode = d.st_perm })
+    | _ -> (
+        let free =
+          match Unix.lstat path with
+          | exception Unix.Unix_error (Unix.ENOENT, _, _) -> Ok ()
+          | exception Unix.Unix_error (Unix.ENAMETOOLONG, _, _) ->
+              refused Too_long
+          | exception Unix.Unix_error (code, _, _) -> reason code
+          | f when f.st_kind <> Unix.S_SOCK ->
+              refused (Failed "a file is there that is no socket")
+          | _ -> (
+              match answered path with
+              | Ok true -> refused In_use
+              | Ok false -> (
+                  match Unix.unlink path with
+                  | () -> Ok ()
+                  | exception Unix.Unix_error (Unix.ENOENT, _, _) -> Ok ()
+                  | exception Unix.Unix_error (code, _, _) -> reason code)
+              | Error Unix.ENAMETOOLONG -> refused Too_long
+              | Error code -> reason code)
+        in
+        match free with
+        | Error _ as e -> e
+        | Ok () -> (
+            let fd =
+              Unix.socket ~cloexec:true Unix.PF_UNIX Unix.SOCK_STREAM 0
+            in
+            match
+              Unix.bind fd (Unix.ADDR_UNIX path);
+              Unix.chmod path 0o600;
+              Unix.listen fd backlog
+            with
+            | () ->
+                Eio.Switch.on_release sw (fun () ->
+                    try Unix.unlink path with Unix.Unix_error _ -> ());
+                Ok
+                  (Eio_unix.Net.import_socket_listening ~sw ~close_unix:true fd
+                    :> [ `Generic ] Eio.Net.listening_socket_ty Eio.Resource.t)
+            | exception Unix.Unix_error (code, _, _) -> (
+                Unix.close fd;
+                match code with
+                | Unix.ENAMETOOLONG -> refused Too_long
+                | Unix.EADDRINUSE -> refused In_use
+                | code -> reason code)))
+end

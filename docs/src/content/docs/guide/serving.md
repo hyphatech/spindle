@@ -198,3 +198,26 @@ limits are timed on, and the `~fs` any `Static.directory` or
 `Files.directory` is read from -- and each call is an instance of its own,
 so two never share what they hold. `Server.serve_on` serves on sockets you
 already listen on -- a test's, on a port the system chose.
+
+## On a Unix socket
+
+A server only programs on this machine call -- a background service and
+the commands that drive it -- can listen on a Unix socket instead of a
+port, so who may connect is the system's to decide, by the file's owner,
+and no credential is checked:
+
+```ocaml
+match Spindle.Server.Unix_socket.listen ~sw "/run/user/501/app.sock" with
+| Ok socket ->
+    Spindle.Server.serve_on ~mono_clock ~read_clock ~domain_mgr [ socket ]
+      instance
+| Error e -> prerr_endline (Spindle.Server.Unix_socket.error_to_string e)
+```
+
+The directory that holds it must be yours and closed to everyone else
+(mode `0700`), since not every system honours a socket file's own mode;
+the file is made `0600` as well. A path a running server answers on is
+refused, a file a killed server left is replaced, and the file is removed
+when the switch ends. A client reaches it as `http+unix://` and the path,
+percent-encoded -- see [the client](/spindle/guide/client/#a-server-on-a-unix-socket).
+

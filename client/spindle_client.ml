@@ -208,6 +208,9 @@ type target = {
   https : bool;
   host : string;
   port : int;
+  unix : string option;
+      (** the path of the Unix socket it is reached through, in place of [host]
+          and [port] *)
   authority : string;
   path : string;
 }
@@ -239,7 +242,7 @@ let request_target url =
   | target when Char.equal target.[0] '?' -> "/" ^ target
   | target -> target
 
-let target_of ~url uri =
+let target_of_host ~url uri =
   let https =
     match Uri.scheme uri with
     | Some "https" -> true
@@ -257,6 +260,7 @@ let target_of ~url uri =
     https;
     host;
     port = Option.value (Uri.port uri) ~default;
+    unix = None;
     authority =
       (match Uri.port uri with
       | Some p -> bracketed ^ ":" ^ string_of_int p
@@ -264,10 +268,33 @@ let target_of ~url uri =
     path = request_target url;
   }
 
+(* [http+unix://<path, percent-encoded>/<target>], as Docker's SDK names a
+   socket; [Uri] decodes the host back to the path. The request is for
+   [localhost], since RFC 9112 §3.2 asks every one for a [Host] and the
+   socket has no name. *)
+let target_of ~url uri =
+  match Uri.scheme uri with
+  | Some "http+unix" -> (
+      match Uri.host uri with
+      | Some path when not (String.equal path "") ->
+          {
+            https = false;
+            host = "localhost";
+            port = 80;
+            unix = Some path;
+            authority = "localhost";
+            path = request_target url;
+          }
+      | Some _ | None -> cannot_send "a URL with no socket")
+  | _ -> target_of_host ~url uri
+
 let pool_key target =
-  Printf.sprintf "%s://%s:%d"
-    (if target.https then "https" else "http")
-    target.host target.port
+  match target.unix with
+  | Some path -> "unix:" ^ path
+  | None ->
+      Printf.sprintf "%s://%s:%d"
+        (if target.https then "https" else "http")
+        target.host target.port
 
 (* ------------------------------------------------------------------ *)
 (* Connections, and the ones kept *)
@@ -354,13 +381,21 @@ let connect ~sw t target =
             connect_first rest)
   in
   let socket, switch, release =
-    match Resolver.lookup t.resolver target.host ~port:target.port with
-    | Error ex -> cannot_send "%s" (Printexc.to_string ex)
-    | Ok addresses -> (
-        match connect_first addresses with
+    match target.unix with
+    | Some path -> (
+        match connect_to ~sw t.net (`Unix path) with
         | opened -> opened
-        | exception (Eio.Io _ as ex) -> cannot_send "%s" (Printexc.to_string ex)
-        )
+        | exception (Eio.Io _ as ex) ->
+            cannot_send "cannot reach the socket %s: %s" path
+              (Printexc.to_string ex))
+    | None -> (
+        match Resolver.lookup t.resolver target.host ~port:target.port with
+        | Error ex -> cannot_send "%s" (Printexc.to_string ex)
+        | Ok addresses -> (
+            match connect_first addresses with
+            | opened -> opened
+            | exception (Eio.Io _ as ex) ->
+                cannot_send "%s" (Printexc.to_string ex)))
   in
   let flow, secure =
     match identity with
@@ -1002,6 +1037,7 @@ let http_uri_of_ws uri =
   match Uri.scheme uri with
   | Some "ws" -> Uri.with_scheme uri (Some "http")
   | Some "wss" -> Uri.with_scheme uri (Some "https")
+  | Some "ws+unix" -> Uri.with_scheme uri (Some "http+unix")
   | Some s -> cannot_send "a scheme a WebSocket is not opened over: %s" s
   | None -> cannot_send "a URL with no scheme"
 

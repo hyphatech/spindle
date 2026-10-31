@@ -19,6 +19,7 @@
   test_spindle_postgres
   test_oauth_rfc
   test_mcp_spec
+  test_unix_socket
   test_cli)
  (package spindle-postgres)
  (modules :standard \ cli_app serve_app test_docs test_spindle_sqlite)
