@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.14.2 (2026-10-31)
 
 - A client reaches a server on a Unix socket named in its URL,
   `http+unix://` and the path percent-encoded (`ws+unix://` for a
