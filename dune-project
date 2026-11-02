@@ -269,9 +269,9 @@
   (spindle
    (= :version))
   (rowtype
-   (and (>= 0.9.0) (< 0.10.0)))
+   (and (>= 0.10.0) (< 0.11.0)))
   (rowtype-postgres
-   (and (>= 0.9.0) (< 0.10.0)))
+   (and (>= 0.10.0) (< 0.11.0)))
   (ptime
    (>= 1.2.0))
   (mtime
@@ -384,9 +384,9 @@
   (spindle
    (= :version))
   (rowtype
-   (and (>= 0.9.0) (< 0.10.0)))
+   (and (>= 0.10.0) (< 0.11.0)))
   (rowtype-sqlite
-   (and (>= 0.9.0) (< 0.10.0)))
+   (and (>= 0.10.0) (< 0.11.0)))
   (ptime
    (>= 1.2.0))
   (mtime

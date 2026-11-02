@@ -1,5 +1,11 @@
 # Changes
 
+## Unreleased
+
+- `spindle-postgres` and `spindle-sqlite` take rowtype 0.10, whose SQLite
+  transaction rolls back the work of a fiber cancelled while its last
+  statement ran, where it committed it.
+
 ## 0.14.2 (2026-10-31)
 
 - A client reaches a server on a Unix socket named in its URL,
