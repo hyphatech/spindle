@@ -1345,6 +1345,12 @@ and get_chat_room_room = string
 
 and get_elsewhere_items_id_id = float
 
+(* The stdlib's constructors again, after the types: a word above may be
+   None, Some, Ok or Error, and the code below means the stdlib's. A
+   word's own is reached through its type, as every reader names it. *)
+type 'a stdlib_option = 'a Stdlib.Option.t = None | Some of 'a
+type ('a, 'e) stdlib_result = ('a, 'e) Stdlib.Result.t = Ok of 'a | Error of 'e
+
 (* ---- Reading ---- *)
 
 let rec read_problem : problem Wire.reader = fun ctx path j -> (fun ctx path j -> match Wire.members ctx path j with | None -> None | Some o -> let m_at = Wire.required (Wire.string ()) ctx path o {js|at|js} in let m_code = Wire.required (Wire.string ()) ctx path o {js|code|js} in let m_message = Wire.required (Wire.string ()) ctx path o {js|message|js} in match (m_at, m_code, m_message) with | (Some m_at, Some m_code, Some m_message) -> Some (({ at = m_at; code = m_code; message = m_message; } : problem)) | _ -> None) ctx path j

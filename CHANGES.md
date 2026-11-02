@@ -5,6 +5,9 @@
 - `spindle-postgres` and `spindle-sqlite` take rowtype 0.10, whose SQLite
   transaction rolls back the work of a fiber cancelled while its last
   statement ran, where it committed it.
+- Spindle takes wiretype 0.6.3, whose Melange printer declares the stdlib's
+  constructors again after a module's types, so a printed client means the
+  option's and the result's where a word of its own is `None` or `Ok`.
 
 ## 0.14.2 (2026-10-31)
 
