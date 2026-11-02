@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.14.3 (2026-11-02)
 
 - `spindle-postgres` and `spindle-sqlite` take rowtype 0.10, whose SQLite
   transaction rolls back the work of a fiber cancelled while its last
