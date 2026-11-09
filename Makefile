@@ -1,4 +1,4 @@
-SWITCH ?= hypha-spindle
+SWITCH ?= spindle
 OPAM = opam exec --switch=$(SWITCH) --
 
 PG_TEST_PORT ?= 5438
@@ -16,10 +16,20 @@ help: ## list targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
 
+# A switch is this repository's when its variable repository names this
+# repository's git directory, which setup sets as it makes it: a switch of the
+# same name made for anything else is refused, never used.
 setup: ## create the switch and install dependencies
 	@podman compose version >/dev/null 2>&1 || echo "The Postgres suites need podman compose."
 	@command -v bun >/dev/null 2>&1 || echo "The documentation site and the OAuth suite need Bun 1.3 or later."
-	@opam switch list --short | grep -qx $(SWITCH) || opam switch create $(SWITCH) --empty -y
+	@repository=$$(git rev-parse --path-format=absolute --git-common-dir); \
+	if opam switch list --short | grep -qx '$(SWITCH)'; then \
+	  made_for=$$(opam var --switch='$(SWITCH)' repository 2>/dev/null); \
+	  [ -n "$$repository" ] && [ "$$made_for" = "$$repository" ] || { echo "The switch $(SWITCH) is not this repository's. Remove it, or name another with SWITCH=<name>." >&2; exit 2; }; \
+	else \
+	  opam switch create '$(SWITCH)' --empty --no-switch -y >/dev/null && \
+	  opam var --switch='$(SWITCH)' "repository=$$repository" >/dev/null; \
+	fi
 	opam repo add hypha https://github.com/hyphatech/opam-repository.git --switch=$(SWITCH) --rank=1
 	opam install . --switch=$(SWITCH) --deps-only --with-test --with-dev-setup -y
 
