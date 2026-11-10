@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.15.0 (2026-11-10)
 
 - Breaking: wiretype 0.7 is required. Its Melange printer names a list's
   element by its place, so a printed client calls the element of a list of
