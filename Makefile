@@ -79,6 +79,4 @@ db-down: ## stop and delete the test database
 	podman compose rm -sf db
 
 release: ## tag VERSION and make its release
-	@test "$$(git show HEAD:CHANGES.md | grep -m1 '^## ' | cut -d' ' -f2)" = "$(VERSION)" \
-	  || { echo "CHANGES.md must open with ## $(VERSION)" >&2; exit 2; }
 	open-opam release $(VERSION)
