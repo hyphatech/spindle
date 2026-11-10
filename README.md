@@ -28,7 +28,7 @@ Fast, ergonomic and RFC-strict. Eio-native and multicore by design.
 ## Install
 
 ```sh
-opam repo add hypha https://github.com/hyphatech/opam-repository.git
+opam repo add open-opam https://github.com/open-opam/opam-repository.git
 opam install spindle
 ```
 

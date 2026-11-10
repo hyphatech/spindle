@@ -39,7 +39,7 @@
   (ocaml
    (>= 5.5))
   (wiretype
-   (and (>= 0.6.3) (< 0.7.0)))
+   (and (>= 0.7.0) (< 0.8.0)))
   (eio
    (>= 1.6))
   (angstrom
@@ -73,7 +73,7 @@
   (spindle-http
    (= :version))
   (wiretype
-   (and (>= 0.6.3) (< 0.7.0)))
+   (and (>= 0.7.0) (< 0.8.0)))
   (eio
    (>= 1.6))
   (cstruct
@@ -123,7 +123,7 @@
   (spindle-client
    (= :version))
   (wiretype
-   (and (>= 0.6.3) (< 0.7.0)))
+   (and (>= 0.7.0) (< 0.8.0)))
   ; A UUID is Uuidm's, in a path or a query as in a body and a row.
   (uuidm
    (>= 0.9.10))
@@ -131,7 +131,7 @@
   ; the framework so one package is the whole of starting; no library here
   ; links it.
   (ppx_wiretype
-   (and (>= 0.6.0) (< 0.7.0)))
+   (and (>= 0.7.0) (< 0.8.0)))
   (eio
    (>= 1.6))
   (eio_main
@@ -227,7 +227,7 @@
   (spindle-http
    (= :version))
   (wiretype
-   (and (>= 0.6.3) (< 0.7.0)))
+   (and (>= 0.7.0) (< 0.8.0)))
   (base64
    (>= 3.5.2))
   (logs
@@ -250,7 +250,7 @@
   (spindle-mcp-client
    (= :version))
   (wiretype
-   (and (>= 0.6.3) (< 0.7.0)))
+   (and (>= 0.7.0) (< 0.8.0)))
   (ptime
    (>= 1.2.0))
   (base64
@@ -308,8 +308,8 @@
   (wiretype
    (and
     :with-test
-    (>= 0.6.3)
-    (< 0.7.0)))
+    (>= 0.7.0)
+    (< 0.8.0)))
   (uri
    (and
     :with-test
@@ -406,8 +406,8 @@
   (wiretype
    (and
     :with-test
-    (>= 0.6.3)
-    (< 0.7.0)))))
+    (>= 0.7.0)
+    (< 0.8.0)))))
 
 (package
  (name spindle-cli)

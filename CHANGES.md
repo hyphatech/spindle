@@ -1,5 +1,16 @@
 # Changes
 
+## Unreleased
+
+- Breaking: wiretype 0.7 is required. Its Melange printer names a list's
+  element by its place, so a printed client calls the element of a list of
+  objects of no kind inside another `<list>_item` where it took the list's
+  own name, and a route answering such a list prints a client that
+  compiles.
+- Spindle is published to open-opam, `opam repo add open-opam
+  https://github.com/open-opam/opam-repository.git`, and no longer to Hypha's
+  opam repository.
+
 ## 0.14.3 (2026-11-02)
 
 - `spindle-postgres` and `spindle-sqlite` take rowtype 0.10, whose SQLite

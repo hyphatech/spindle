@@ -10,7 +10,7 @@ DOCS_PORT ?= 4321
 REFERENCE = spindle spindle-http spindle-client spindle-mcp spindle-mcp-client spindle-cli spindle-postgres spindle-sqlite odoc.support
 
 .DEFAULT_GOAL := help
-.PHONY: help setup build test lint fmt docs docs-serve db db-down
+.PHONY: help setup build test lint fmt docs docs-serve db db-down release
 
 help: ## list targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -20,7 +20,7 @@ setup: ## create the switch and install dependencies
 	@podman compose version >/dev/null 2>&1 || echo "The Postgres suites need podman compose."
 	@command -v bun >/dev/null 2>&1 || echo "The documentation site and the OAuth suite need Bun 1.3 or later."
 	@opam switch list --short | grep -qx $(SWITCH) || opam switch create $(SWITCH) --empty -y
-	opam repo add hypha https://github.com/hyphatech/opam-repository.git --switch=$(SWITCH) --rank=1
+	opam repo add open-opam https://github.com/open-opam/opam-repository.git --switch=$(SWITCH) --rank=1
 	opam install . --switch=$(SWITCH) --deps-only --with-test --with-dev-setup -y
 
 build: ## build everything
@@ -77,3 +77,9 @@ db: ## start the test database
 
 db-down: ## stop and delete the test database
 	podman compose rm -sf db
+
+release: ## release VERSION, once CHANGES.md names it: open-opam tags it and makes its release
+	@test -n "$(VERSION)" || { echo "Give the version: make release VERSION=1.2.3" >&2; exit 2; }
+	@test "$$(git show HEAD:CHANGES.md | grep -m1 '^## ')" = "## $(VERSION) ($$(date +%F))" \
+	  || { echo "The commit to release must open CHANGES.md with ## $(VERSION) ($$(date +%F))" >&2; exit 2; }
+	open-opam release $(VERSION)
