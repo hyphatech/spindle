@@ -87,6 +87,19 @@ with the bounds from your types, and every error it may answer.
 
 ![POST /split in the interactive docs at /docs](docs/src/assets/scalar.png)
 
+## With an agent
+
+spindle installs its documentation at `$(opam var spindle:doc)`: each page
+of the site as Markdown, the tutorial and guides among them, and
+`llms.txt`, which lists them. Your agent reads it when told to, in a line in
+your project's `AGENTS.md`:
+
+```md
+Before writing code with spindle, read `$(opam var spindle:doc)/llms.txt` and
+the pages it lists for the parts you need, and use those parts rather than
+writing your own.
+```
+
 ## Contributing
 
 See [AGENTS.md](AGENTS.md).

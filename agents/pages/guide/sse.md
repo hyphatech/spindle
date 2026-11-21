@@ -1,0 +1,170 @@
+# Server-Sent Events (SSE)
+
+A Server-Sent Events stream sends events until it is done. `Broadcast`
+sends one event to everyone listening.
+
+## A resumable event stream
+
+`GET /count` sends a number a second, and a client that reconnects carries
+on where it left off:
+
+```ocaml
+(* Server-Sent Events: GET /count sends a number a second, each with its id,
+   and a client that reconnects carries on after the last number it was sent
+   instead of starting again. A browser's EventSource reconnects by itself
+   and says where it was in the Last-Event-ID header, so resuming is the one
+   thing the route has to do.
+
+   What the stream sends is declared on the route, as an answer is, so the
+   API's document describes each event and the compiler refuses one the
+   route did not declare. *)
+
+open Spindle.Syntax
+
+(* The events one stream may send are a type of their own, and each kind is
+   declared as one of them. *)
+type counting
+
+let count : (int, counting) Spindle.Event.kind =
+  Spindle.Event.json "count" Wiretype.int
+
+let count_from ~mono_clock n send =
+  let rec go n =
+    let* () = send (Spindle.Event.make ~id:(string_of_int n) count n) in
+    Eio.Time.Mono.sleep_span mono_clock Mtime.Span.s;
+    go (n + 1)
+  in
+  go n
+
+(* The clock the count waits on is the program's, handed to the server where
+   it starts, so the routes are a value and a test gives a clock of its own. *)
+let clock : Eio.Time.Mono.ty Eio.Resource.t Spindle.Dep.t =
+  Spindle.Dep.of_resource "clock"
+
+let routes =
+  [
+    Spindle.get
+      Spindle.Path.(s "count")
+      (Spindle.Returns.events Spindle.Event.[ declare count ])
+      (let+ mono_clock = clock
+       and+ last = Spindle.Header.optional "last-event-id" Wiretype.int in
+       Ok (count_from ~mono_clock (Option.fold ~none:1 ~some:succ last)));
+  ]
+
+let () =
+  Spindle.Log.setup ();
+  Eio_main.run @@ fun env ->
+  Spindle.serve env
+    ~resources:[ Spindle.Dep.resource clock (Eio.Stdenv.mono_clock env) ]
+    routes
+```
+
+```console
+$ curl -N localhost:8080/count
+event: count
+id: 1
+data: 1
+
+event: count
+id: 2
+data: 2
+...
+
+$ curl -N -H 'Last-Event-ID: 41' localhost:8080/count
+event: count
+id: 42
+data: 42
+...
+```
+
+- **The producer** is the function the route answers with, `fun send -> ...`
+  (here `count_from ~mono_clock n`, waiting on the clock the route reads as
+  a [resource](../tutorial/dependencies.md#resources)). It runs after
+  the response's head is sent, and the stream ends when it returns.
+- **Declare each kind of event**: `Event.json "count" Wiretype.int`, or
+  `Event.text "token"` for plain text. `type counting` is declared and never
+  defined: it is a label every kind of this stream carries, so the compiler
+  refuses an event declared for another stream.
+- **`send` answers `Error Gone` once the client has gone**, so a loop
+  written with `let*` ends there. It also answers `Error Gone` after the
+  producer has returned, so a fiber left holding `send` writes nothing.
+- **Resuming:** give each event an id (`Event.make ~id`). A browser sends
+  the last one back as `Last-Event-ID` when it reconnects.
+  `Event.retry ~ms` tells the browser how long to wait before it reconnects.
+- A quiet stream gets a `: keep-alive` comment every 15 seconds
+  (`Returns.events ~keep_alive`). `Event.comment` sends one of your own.
+- The OpenAPI document describes each kind of event the route declares.
+
+## Broadcasting to many clients
+
+`Broadcast` sends one event to every subscriber of a topic, within one
+process:
+
+```ocaml
+open Spindle.Syntax
+
+type room
+
+let count : (int, room) Spindle.Event.kind =
+  Spindle.Event.json "count" Wiretype.int
+
+let hub : (unit, room Spindle.Event.t) Spindle.Broadcast.t =
+  Spindle.Broadcast.create ~depth:16 ()
+
+let room = Spindle.Path.string "room"
+
+let events =
+  Spindle.get
+    Spindle.Path.(s "rooms" / room / s "events")
+    (Spindle.Returns.events Spindle.Event.[ declare count ])
+    (let+ room = Spindle.param room and+ gone = Spindle.client_gone in
+     Ok
+       (fun send ->
+         Spindle.Broadcast.subscribe hub ~topic:room () (fun sub ->
+             Spindle.Broadcast.forward ~until:gone sub send)))
+
+(* Anywhere else: make the event once, and everybody gets it. *)
+let () =
+  Spindle.Broadcast.publish hub ~topic:"lobby" (Spindle.Event.make count 1)
+```
+
+- **An event is encoded once**, however many subscribers get it.
+- **A subscription lasts as long as its work.** `Broadcast.subscribe` runs
+  the function it is given and unsubscribes however it ends -- returned,
+  raised or cancelled -- so a subscription cannot be left behind.
+- **`Broadcast.forward` sends every event until the subscription ends**,
+  and answers the first `Error` `send` answers.
+- **A client that leaves a quiet topic ends its producer.** The keep-alive
+  it can no longer be sent resolves `Spindle.client_gone`, and
+  `forward ~until:gone` unsubscribes, so the subscription and the
+  connection are let go without waiting for the next event. Nothing is
+  cancelled: a `send` already running finishes, and a producer that does
+  not pass `~until` learns at its next `send`.
+- **A slow subscriber is dropped, never waited for.** One more than
+  `~depth` events (16) behind, its `forward` answers `Ok ()`. So send whole
+  states, not changes, and a client that reconnects is up to date.
+- Each subscriber carries a tag (`()` here), which `Broadcast.subscribers`
+  lists: who is present, say. `Broadcast.unsubscribe` ends one subscription
+  from anywhere, and `Broadcast.close` every one.
+
+To send the state as it is, then every change, subscribe first: a change
+made while the state is read then still arrives.
+
+```ocaml
+(fun send ->
+  Spindle.Broadcast.subscribe hub ~topic:room () (fun sub ->
+      let* () = send (Spindle.Event.make count (Counts.read room)) in
+      Spindle.Broadcast.forward ~until:gone sub send))
+```
+
+`forward`'s `send` is any function, so a subscriber that sees only some
+events, or each in its own form, filters or turns them there:
+
+```ocaml
+Spindle.Broadcast.forward ~until:gone sub (fun order ->
+    if Order.visible_to user order then send order else Ok ())
+```
+
+To read a stream from OCaml, see [the HTTP
+client](client.md#server-sent-events); to test one, see
+[Testing event streams](testing.md#testing-event-streams).

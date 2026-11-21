@@ -1,0 +1,426 @@
+# Dependencies
+
+A handler needs things from the request: a path parameter, a query string,
+a header, a cookie, the body -- and things built from them, like who is
+signed in or which page of a list was asked for. Each of these is a
+*dependency*, and a handler lists the ones it reads.
+
+## How it works
+
+Each input is a value of type `'a Spindle.Dep.t`. A handler lists them with
+`let+ … and+ …` -- read it as a parameter list:
+
+```ocaml
+open Spindle.Syntax
+
+(let+ id = Spindle.param user_id
+ and+ page = Spindle.Query.optional "page" Wiretype.int
+ and+ now = Spindle.now in
+ answer id ~page ~now)
+```
+
+`open Spindle.Syntax` brings in `let+` and `and+`, and `let*` for the
+`result` a handler answers (`Result.bind`), and nothing else. Every
+input is worked out before the code after `in` runs, and that code sees
+plain values: an `int64` (if `user_id` is a `Path.int64`), an `int option`,
+a `Ptime.t`.
+
+- **A bad request is answered all at once.** Every wrong path parameter,
+  query parameter and header is reported in one `400`, each problem
+  at its place (`path.user_id`, `query.page`). Only when those are all fine
+  is the body read, and its problems (`body.items[2].count`) are then
+  reported together the same way. The handler never runs.
+- **A route's inputs are known without running it.** That is what the API's
+  [document](openapi.md) is made from.
+- **A dependency can be made of other dependencies**, and a route lists it
+  just like a built-in.
+
+## A query parameter
+
+A query parameter is read by the wiretype description of its type -- the
+one a JSON body's member would be -- so the handler is handed a `float` and is arithmetic and nothing else:
+
+```ocaml
+(* A typed query parameter: /fahrenheit?celsius=21 answers
+   {"fahrenheit":69.8}. The parameter arrives as a float, so the handler is
+   arithmetic and nothing else; /fahrenheit?celsius=warm and a missing one
+   are refused at [query.celsius] before it runs. *)
+
+open Spindle.Syntax
+
+type reading = { fahrenheit : float } [@@deriving wiretype]
+
+let to_fahrenheit celsius = Ok { fahrenheit = (celsius *. 9. /. 5.) +. 32. }
+let celsius = Spindle.Query.required "celsius" Wiretype.number
+
+let routes =
+  [
+    Spindle.get
+      Spindle.Path.(s "fahrenheit")
+      (Spindle.Returns.json reading_json)
+      (let+ celsius = celsius in
+       to_fahrenheit celsius);
+  ]
+
+let () =
+  Spindle.Log.setup ();
+  Eio_main.run @@ fun env ->
+  Spindle.serve env (routes @ Spindle.Openapi.routes routes)
+```
+
+```console
+$ curl 'localhost:8080/fahrenheit?celsius=21'
+{"fahrenheit":69.8}
+
+$ curl 'localhost:8080/fahrenheit?celsius=warm'
+{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.celsius","code":"unexpected_type","message":"This must be a number."}]}
+
+$ curl localhost:8080/fahrenheit
+{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.celsius","code":"required","message":"This is required."}]}
+```
+
+- `Query.required` refuses a missing parameter; `Query.optional` hands over
+  an `option`, and `Query.list` every value given.
+- `Openapi.routes routes` serves the API's own document beside it: the
+  [OpenAPI](openapi.md) page.
+
+## Custom dependencies
+
+A page of a list is two query parameters, read as one value, each held to
+its bounds by its description:
+
+```ocaml title="paging.ml"
+(* A dependency of the application's own: a page of a list, read from two
+   query parameters, which dependencies serves. *)
+
+open Spindle.Syntax
+
+type page = { page : int; per_page : int }
+
+(* Two query parameters read as one value, each by the description a body's
+   member would be: a number outside its bounds is a problem at its place,
+   as a number that does not parse is, and the document says both bounds. *)
+let paging =
+  let+ page = Spindle.Query.default "page" (Wiretype.int_bounded ~min:1 ()) 1
+  and+ per_page =
+    Spindle.Query.default "per_page"
+      (Wiretype.int_bounded ~min:1 ~max:100 ())
+      10
+  in
+  { page; per_page }
+```
+
+A route lists it like any built-in:
+
+```ocaml title="dependencies.ml"
+(* Inputs, and a dependency of the application's own made of them: a page
+   of a list, read from two query parameters, and refused at the one that
+   is not a page's.
+
+     curl 'localhost:8080/books?page=2&per_page=2'
+     curl -i 'localhost:8080/books?page=0'
+     curl -i 'localhost:8080/books?page=two' *)
+
+open Spindle.Syntax
+
+let books = [ "Emma"; "Middlemarch"; "Persuasion"; "Ulysses"; "Walden" ]
+
+let books_on { Paging.page; per_page } =
+  Ok (List.filteri (fun i _ -> i / per_page = page - 1) books)
+
+let routes =
+  [
+    Spindle.get
+      Spindle.Path.(s "books")
+      (Spindle.Returns.json (Wiretype.list Wiretype.string))
+      (let+ paging = Paging.paging in
+       books_on paging);
+  ]
+
+let () =
+  Spindle.Log.setup ();
+  Eio_main.run @@ fun env -> Spindle.serve env routes
+```
+
+```console
+$ curl 'localhost:8080/books?page=2&per_page=2'
+["Persuasion","Ulysses"]
+
+$ curl 'localhost:8080/books?page=0&per_page=500'
+{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.page","code":"too_small","message":"This must be at least 1."},{"at":"query.per_page","code":"too_large","message":"This must be at most 100."}]}
+
+$ curl 'localhost:8080/books?page=two&per_page=x'
+{"error":"invalid","message":"Some of that request is not what it should be.","problems":[{"at":"query.page","code":"unexpected_type","message":"This must be a whole number."},{"at":"query.per_page","code":"unexpected_type","message":"This must be a whole number."}]}
+```
+
+- A bound is the description's, as it is a body member's:
+  `Wiretype.int_bounded`, `number_bounded`, `string_bounded` and the rest,
+  refused with wiretype's code -- `too_small`, `too_large`,
+  `not_a_multiple`, `too_short`, `too_long` -- and said in the document.
+- `Dep.join` makes a dependency that may refuse: write a `let+` block that
+  answers `Ok` or `Error`, and wrap it. `Ok v` gives `v`; `Error` refuses
+  the request. `~refuses` names the codes it may refuse with, so the
+  document lists them; a `400` about an input needs none.
+
+  ```ocaml
+  let bearer =
+    Spindle.Dep.join ~refuses:[ signed_out ]
+      (let+ token = Spindle.Header.optional "authorization" Wiretype.string in
+       Option.to_result ~none:(Spindle.Refusal.make signed_out "Sign in.") token)
+  ```
+- `Dep.problem ~at ~code message` reports a wrong value at its place,
+  alongside every other problem in the request.
+- `Dep.map f d` derives a value that cannot fail:
+  `Spindle.Dep.map String.lowercase_ascii email`.
+- `Dep.refuse refusal` always refuses, for a route that is switched off.
+- `Dep.of_body ~content_types:[ "text/csv" ] parse` reads
+  the whole body as a string and parses it into a type of your own. A
+  request of any other `Content-Type` is answered `415` before its body is
+  read.
+
+## Custom error codes
+
+For a refusal that isn't "this input is wrong", declare a code and list it
+with `~refuses`, so the route's document names it. A bearer token read from
+the `Authorization` header:
+
+```ocaml title="bearer_token.ml"
+(* A bearer token, read from the Authorization header and refused with a
+   401 when it is missing or is not one: the dependency bearer_auth's routes
+   list. *)
+
+open Spindle.Syntax
+
+(* A 401 names how to authenticate, in WWW-Authenticate, so the code carries
+   the challenge. *)
+let signed_out =
+  Spindle.Refusal.Code.make "signed_out" ~status:`Unauthorized
+    ~challenge:{|Bearer realm="notes"|} ~doc:"No valid bearer token was sent."
+
+let please_sign_in = Spindle.Refusal.make signed_out "Please sign in."
+
+(* Made of the framework's own header input, read as credentials -- a
+   scheme compared without case, so "bearer abc" is a bearer token as
+   "Bearer abc" is -- and [join] turns a check that fails into a refusal of
+   the request. The header is optional rather than required because a
+   missing token is a 401, not a malformed request. [credential] names the
+   scheme for the document, which reads the rest: Authorization is HTTP
+   authentication, and a 401 means the token is needed. *)
+let bearer =
+  Spindle.Dep.credential ~scheme:"bearer"
+    (Spindle.Dep.join ~refuses:[ signed_out ]
+       (let+ credentials =
+          Spindle.Header.optional "authorization" Spindle.Header.credentials
+        in
+        match credentials with
+        | Some { scheme = "bearer"; value = Token68 token } -> Ok token
+        | Some _ | None -> Error please_sign_in))
+```
+
+- The header is `optional`: a missing token should be a `401`, not a `400`.
+- A `401` code needs a `~challenge` (the `WWW-Authenticate` value);
+  the app refuses to start without one.
+- Unlike an input problem, a refusal like this ends the request at once.
+- `Dep.credential ~scheme:"bearer"` tells the
+  [document](openapi.md) that this input proves who is
+  asking, so it lists the scheme and which routes need it.
+- The dependency hands over the token. Whose it is is the *caller*, which
+  `Access.principal` reads from it, and a route that reads the caller, or
+  a check of a policy, is called by whoever that lets through
+  ([Access control](../guide/access.md)).
+
+The rest of the app: two routes that need the token
+
+```ocaml title="bearer_auth.ml"
+(* A dependency of the application's own: a bearer token, read from the
+   Authorization header and refused with a 401 when it is missing or is not
+   one. Whose token it is is the caller, which two routes read, and /docs
+   says both need a bearer token.
+
+     curl -H 'Authorization: Bearer ada-token' localhost:8080/me
+     curl -H 'Authorization: Bearer ada-token' localhost:8080/notes/1
+     curl -i localhost:8080/notes/1 *)
+
+open Spindle.Syntax
+module Access = Spindle.Access
+
+(* What the application holds is closed over, not a dependency. *)
+let people = [ ("ada-token", "Ada"); ("alan-token", "Alan") ]
+let notes = [ (1, ("Ada", "Write to Charles")); (2, ("Alan", "Fix the bombe")) ]
+
+(* The caller: whoever the token belongs to. *)
+let me =
+  Access.principal ~id:Fun.id
+    (Spindle.Dep.join
+       ~refuses:[ Bearer_token.signed_out ]
+       (let+ token = Bearer_token.bearer in
+        Option.to_result ~none:Bearer_token.please_sign_in
+          (List.assoc_opt token people)))
+
+type action = Read
+
+(* A note is its owner's. *)
+let owners =
+  Access.policy "notes" me
+    ~action:(function Read -> "read")
+    (fun name Read (owner, _) ->
+      if String.equal owner name then Access.Allow
+      else Access.Deny "not the owner")
+
+let note_id = Spindle.Path.param "note_id" Wiretype.int
+
+let note =
+  Access.resource owners
+    (Spindle.Dep.join
+       ~refuses:[ Spindle.Refusal.Code.not_found ]
+       (let+ id = Spindle.param note_id in
+        Option.to_result ~none:Spindle.Refusal.not_found
+          (List.assoc_opt id notes)))
+
+let routes =
+  [
+    Spindle.get ~summary:"Who the token belongs to"
+      Spindle.Path.(s "me")
+      (Spindle.Returns.json Wiretype.string)
+      (let+ name = Access.caller me in
+       Ok name);
+    (* Somebody else's note is answered as a missing one, so an id says
+       nothing about whether a note exists. *)
+    Spindle.get ~summary:"One of your notes"
+      Spindle.Path.(s "notes" / note_id)
+      (Spindle.Returns.json Wiretype.string)
+      (let+ _, text = Access.can Read note in
+       Ok text);
+  ]
+
+let () =
+  Spindle.Log.setup ();
+  Eio_main.run @@ fun env ->
+  Spindle.serve env (routes @ Spindle.Openapi.routes ~title:"Notes" routes)
+```
+
+## Query, header and cookie inputs
+
+Query parameters, headers and cookies are read by a wiretype description
+-- the one a JSON body's member is read by, and a path parameter too -- as
+`Wiretype.of_text` reads one: a scalar's text is its JSON, and a string's is
+itself:
+
+```ocaml
+Spindle.Query.optional "page" Wiretype.int                    (* int option *)
+Spindle.Query.default "limit" (Wiretype.int_bounded ~max:100 ()) 20
+Spindle.Query.required "q" Wiretype.string                    (* or a 400 *)
+Spindle.Query.list "tag" Wiretype.string                      (* ?tag=a&tag=b *)
+Spindle.Header.optional "x-count" Wiretype.int     (* matched without case *)
+Spindle.Header.joined "accept" Spindle.Header.accept   (* every line, joined *)
+```
+
+- **A parameter sent twice** (`?role=viewer&role=admin`) is read by its
+  first value, as a browser's `URLSearchParams.get` reads it; `Query.list`
+  reads every one. A repeated parameter is a valid URL, so it never fails a
+  route. A form's field is read the same way. A header is the exception: one
+  that holds a single value sent twice is an invalid message by RFC 9110, and
+  is refused.
+- **Any scalar description**: `Wiretype.string`, `int`, `int64`, `number`,
+  `bool`, `uuid ()` (a `Uuidm.t`, as a row's), `date`, `instant` (a
+  `Ptime.t`), their bounded forms, `enum`, and `kind` for a type of your own.
+  Its problems are wiretype's, as a body's are; one of no scalar -- an
+  object, a list -- is refused when the app is made.
+- **Structured headers** have descriptions that parse them, in
+  `Spindle.Header`: `media_type`, `credentials`, `accept`, `weighted`,
+  `cache_control`, `forwarded`, and `structured_item`, `structured_list`,
+  `structured_dictionary`.
+- **A header sent on several lines** is read whole by `Header.joined`, its
+  lines joined by `, `, for a field HTTP defines as a list. To any other
+  reader it is malformed, a `400`: a value sent twice is no message HTTP
+  allows.
+
+**A cookie is declared once**, with its name and description. That one value reads
+it and sets it:
+
+```ocaml
+let visits = Spindle.Cookie.named "visits" Wiretype.int
+
+Spindle.Cookie.optional visits                   (* an input: int option *)
+Spindle.Cookie.make visits 3                     (* a cookie to set *)
+Spindle.Cookie.clear visits                      (* removes it *)
+```
+
+A handler sets a cookie by listing `Spindle.set_cookie` among its inputs and
+calling it ([how](bodies.md#setting-cookies-and-headers)). A
+cookie holds any text: `Kim Li` is written `Kim%20Li` and read back as it
+was. Signed and encrypted cookies and sessions are on [their own
+page](../guide/cookies.md).
+
+**Other built-ins**:
+
+- `Spindle.param`: a path parameter.
+- `Spindle.now`: the instant the request is answered at, a `Ptime.t`.
+- `Spindle.request`: the whole `Spindle.Request.t`.
+- `Spindle.request_id`: the id on every log line of this request.
+- `Spindle.peer`: the address that opened the connection, which is the
+  proxy when there is one.
+- `Spindle.client_ip`: who is asking. It is the peer, or, when the peer is a
+  proxy you told the server to trust, the address that proxy forwarded for
+  ([the client's IP address](../guide/cookies.md#the-clients-ip-address)).
+- `Spindle.set_cookie` and `Spindle.add_header`: functions that add a
+  cookie or a header to the answer.
+- `Spindle.client_gone`: a promise resolved once the client has gone, for a
+  long-running [event stream](../guide/sse.md).
+- `Spindle.body`, `Spindle.json`, `Spindle.body_stream` and
+  `Spindle.multipart`: the body, [read whole or as it
+  arrives](bodies.md#large-bodies).
+
+## How dependencies run
+
+- **The body is read last.** Everything else runs first, so a request
+  refused for a missing token never has its body read.
+- **A dependency runs once per request**, however many others use it: two
+  dependencies that both use `bearer` read the header once.
+- **Sharing works by identity.** Define a dependency once, `let current =
+  …`, and use that value everywhere. A function `let current () = …` called
+  twice makes two dependencies, which run twice. `Dep.uncached d` runs `d`
+  at every use on purpose.
+- **What the app holds is a resource**: read like any other dependency,
+  but supplied once, where the server starts ([below](#resources)).
+
+Reading what no built-in reads
+
+`Dep.of_request f` runs `f` on the `Spindle.Request.t`. Say what it reads
+with `~needs` (a `Custom` need names something the framework has no word
+for) and how it may refuse with `~refuses`, so the document can list it;
+without `~needs` it is opaque. `Dep.bind` is for a dependency that needs
+another's value to decide what to read next; it is opaque too.
+
+## Resources
+
+Every dependency above is request-wide: worked out from the request, once
+per request. A resource is app-wide: a database pool, a client, a
+[broadcast](../guide/sse.md#broadcasting-to-many-clients) hub, made once
+where the program starts. Name it with `Dep.of_resource`, read it like any
+other dependency, and supply it when the server starts:
+
+```ocaml
+let db : Spindle_sqlite.Pool.t Spindle.Dep.t = Spindle.Dep.of_resource "database"
+
+(let+ pool = db and+ id = Spindle.param order_id in ...)
+
+Spindle.serve env ~resources:[ Spindle.Dep.resource db pool ] routes
+```
+
+- **The routes stay a value.** They read the pool without holding it, so the
+  [command line](client-schemas.md) describes them with no
+  database, and a [test](../guide/testing.md) supplies its own.
+- **A missing resource stops the server.** A route that reads one
+  `~resources` does not hold is refused before the server listens, naming
+  the route and the resource; so is one supplied twice. One read inside
+  `Dep.bind` is found only as it runs: unsupplied, it is a `500`, logged
+  by name.
+- **It is no input.** A request does not carry it, so the API's document
+  and the client schemas never list it.
+- **Make it once, at the top level.** It has an identity, as every
+  dependency has: the value supplied is the value read.
+
+[Database](database.md) shows the whole shape, and [why a
+transaction is not a
+dependency](database.md#6-open-the-transaction-in-the-handler).

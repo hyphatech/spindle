@@ -1,0 +1,45 @@
+# spindle
+
+> The web framework for modern OCaml.
+
+## Tutorial
+
+- [Install](pages/install.md)
+- [Your first app](pages/tutorial/first-app.md)
+- [Routes](pages/tutorial/routes.md)
+- [Dependencies](pages/tutorial/dependencies.md)
+- [Request bodies, responses and errors](pages/tutorial/bodies.md)
+- [Logging](pages/tutorial/logging.md)
+- [Static files](pages/tutorial/static-files.md)
+- [Database](pages/tutorial/database.md)
+- [OpenAPI](pages/tutorial/openapi.md)
+- [Client schemas](pages/tutorial/client-schemas.md)
+
+## Guides
+
+- [HTML pages and templates](pages/guide/pages.md)
+- [Databases](pages/guide/databases.md)
+- [Cookies, sessions and CORS](pages/guide/cookies.md)
+- [OAuth bearer tokens](pages/guide/oauth.md)
+- [Access control](pages/guide/access.md)
+- [MCP servers](pages/guide/mcp.md)
+- [Middleware](pages/guide/middleware.md)
+- [Server-Sent Events (SSE)](pages/guide/sse.md)
+- [WebSockets](pages/guide/websockets.md)
+- [HTTP client](pages/guide/client.md)
+- [Background jobs](pages/guide/background.md)
+- [Rate limits](pages/guide/rate-limits.md)
+- [Compression](pages/guide/compression.md)
+- [Testing](pages/guide/testing.md)
+- [Server configuration and shutdown](pages/guide/serving.md)
+- [Multicore and shared state](pages/guide/domains.md)
+- [Health checks](pages/guide/health.md)
+- [Metrics](pages/guide/metrics.md)
+
+## Reference
+
+- [Reference](pages/reference.md)
+
+## Other pages
+
+- [Spindle](pages/index.md): The web framework for modern OCaml.
