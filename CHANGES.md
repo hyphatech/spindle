@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.15.1 (2026-11-22)
 
 - spindle installs its documentation for agents: each page of the site as
   Markdown, and `llms.txt`, in `$(opam var spindle:doc)`.
