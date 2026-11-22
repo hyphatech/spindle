@@ -5,7 +5,8 @@
   "devDependencies": {
     "@astrojs/starlight": "~0.42.6",
     "astro": "^7.3.3",
+    "starlight-hypha-agents": "github:hyphatech/starlight-hypha-agents#v0.2.0",
     "starlight-links-validator": "^0.27.0",
-    "starlight-theme-hypha": "github:hyphatech/starlight-theme-hypha#v0.6.3"
+    "starlight-theme-hypha": "github:hyphatech/starlight-theme-hypha#v0.8.0"
   }
 }

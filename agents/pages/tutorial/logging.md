@@ -1,0 +1,162 @@
+# Logging
+
+Spindle logs every request for you, and every line your code logs during a
+request carries that request's id, so one search finds everything it did.
+
+## Logging from your code
+
+Logging is [logs](https://erratique.ch/software/logs). Make a source per
+part of your app, and log with fields of your own:
+
+```ocaml title="billing.ml"
+(* A part of the application with a log source of its own, whose line
+   carries a field of the application's: logging serves it. *)
+
+(* A source per part of the application, so its level can be set alone:
+   APP_LOG=warn,shop.billing=debug. *)
+module Log = (val Logs.src_log (Logs.Src.create "shop.billing") : Logs.LOG)
+
+let pence = Spindle.Path.int "pence"
+
+let charge pence =
+  Log.info (fun m ->
+      m "charged" ~tags:(Spindle.Log.tags [ ("shop.pence", `Int pence) ]));
+  Ok "Charged."
+```
+
+Set the levels and the format from wherever you keep your settings -- here
+two environment variables. Spindle reads no environment variable itself:
+
+```ocaml title="logging.ml"
+(* Logging: the levels and the format read from where the application keeps
+   its settings, and a line of the application's own, which carries the id
+   of the request that caused it.
+
+     APP_LOG=debug dune exec examples/logging.exe
+     curl localhost:8080/charge/500 *)
+
+open Spindle.Syntax
+
+let routes =
+  [
+    Spindle.get
+      Spindle.Path.(s "charge" / Billing.pence)
+      Spindle.Returns.text
+      (let+ pence = Spindle.param Billing.pence in
+       Billing.charge pence);
+  ]
+
+(* The framework reads no environment variable: the application hands it
+   two strings, and either left unset is the default. *)
+let () =
+  match
+    Spindle.Log.configure ~levels:(Sys.getenv_opt "APP_LOG")
+      ~format:(Sys.getenv_opt "APP_LOG_FORMAT")
+  with
+  | Error why ->
+      prerr_endline why;
+      exit 1
+  | Ok () -> Eio_main.run @@ fun env -> Spindle.serve env routes
+```
+
+```sh
+APP_LOG='info,shop.billing=debug' APP_LOG_FORMAT=pretty dune exec ./bin/main.exe
+```
+
+```sh
+curl localhost:8080/charge/500
+```
+
+```
+10:24:06.913 info  shop.billing [trpw9jmqsz6a] charged  shop.pence=500
+10:24:06.913 info  spindle-http [trpw9jmqsz6a] GET /charge/500 200  http.request.method=GET  url.path=/charge/500  http.response.status_code=200  duration=259958  http.response.body.size=8  http.route=/charge/{pence}
+```
+
+Your line carries the request's id, `[trpw9jmqsz6a]`, without being handed
+it. The second line is the access line Spindle writes for every request:
+method, path, status, duration in nanoseconds, body size and route. When
+the answer is a refusal, the line also has `spindle.refusal.code` (say,
+`invalid`): search for that field to find every refused request.
+
+Lines go to stderr. The format is pretty on a terminal and JSON otherwise.
+The JSON keys are the ones Datadog and an OpenTelemetry Collector read
+without a mapping:
+
+```json
+{"timestamp":"2026-10-08T09:24:07.936Z","level":"info","logger.name":"spindle-http","message":"GET /charge/500 200","request_id":"yxh81c3jxdrr","trace_id":"d94e1ed026bb56ed4360738efdab369b","span_id":"aa5e83d9ed21a352","http.request.method":"GET","url.path":"/charge/500","http.response.status_code":200,"duration":199000,"http.response.body.size":8,"http.route":"/charge/{pence}"}
+```
+
+`Log.configure` returns an `Error` naming what it could not read, and this
+program prints it and exits:
+
+```console
+$ APP_LOG='info,shop=loud' dune exec ./bin/main.exe
+"loud" is not a log level
+```
+
+`Spindle.Log.setup` is the same without strings. A level is a
+`Logs.level option`, where `None` turns a source off:
+
+```ocaml
+Spindle.Log.setup ~level:(Some Logs.Info)
+  ~sources:[ ("shop.billing", Some Logs.Debug) ]
+  ()
+```
+
+It also takes `?format`, and `?out`, a function that receives each line in
+place of stderr: a test's way to keep them.
+
+## What each line contains
+
+- **The request id** is on every line the request causes -- yours, the
+  database's, a call to another server's -- and on fibers it forks.
+  `Spindle.blocking` takes it onto its systhread for you. For a domain or a
+  thread you start yourself, wrap the function in `Spindle.Log.carry`.
+- **The trace.** In JSON, every line logged during a request also has
+  `trace_id` and `span_id`; the pretty format shows only the request id. A
+  request joins the caller's W3C `traceparent`, or starts a trace, and
+  `Spindle_client` passes it on to the servers it calls.
+- **Field names**: put your own under a prefix (`shop.pence`), since keys
+  like `status`, `host` and `service` mean something to a collector.
+- **Failures**: Spindle logs what a handler raises with `error.kind` and
+  `error.stack`, never its message, which is whatever the raiser wrote -- a
+  card number, a token. Your own catch-all does the same with
+  `~tags:(Spindle.Log.tags (Spindle.Log.raised exn bt))`, taking
+  `bt = Printexc.get_raw_backtrace ()` first thing.
+- **Levels**: `error` is a bug, `warn` handled but degraded, `info` what
+  happened (the access log), `debug` how. A route polled every few seconds
+  can log its access line at `Debug`, as the health checks do:
+  `Spindle.get ~access_log:Logs.Debug …`.
+- **No secrets.** Spindle never logs a header value, a body, a query string
+  or a statement's parameters, at any level.
+
+## Tracing
+
+To send traces to an OpenTelemetry Collector, give `Spindle.serve` an
+exporter:
+
+```ocaml
+Spindle_client.run env @@ fun client ->
+Spindle_client.Otlp.run ~clock:(Eio.Stdenv.clock env)
+  ~endpoint:"http://collector:4318" ~service:"shop" client
+@@ fun trace -> Spindle.serve env ~trace routes
+```
+
+Then every request is a span. A request's span is named by its method and
+route (`GET /users/{id}`), a `Spindle_client` call's by its method (`GET`),
+and a Postgres statement's `postgresql`. None is ever named by a path, so a
+collector keeps one series per route, not one per URL. Add spans of your
+own with:
+
+```ocaml
+Spindle.Trace.span "price the order" (fun () -> price order)
+```
+
+- The exporter posts OTLP JSON to `/v1/traces` every five seconds, or as
+  soon as 512 spans wait. `?ratio` (default `1.0`) is the share of new
+  traces kept; a trace joined from a caller is kept when the caller kept it.
+- At most 2048 spans wait; past that, and when the collector fails, spans
+  are dropped and counted in a `warn` line.
+- Spans carry no secrets either: never a query string, header or
+  statement parameter.
+- To send spans elsewhere, build your own with `Spindle.Trace.exporter`.

@@ -1,5 +1,10 @@
 # Changes
 
+## Unreleased
+
+- spindle installs its documentation for agents: each page of the site as
+  Markdown, and `llms.txt`, in `$(opam var spindle:doc)`.
+
 ## 0.15.0 (2026-11-10)
 
 - Breaking: wiretype 0.7 is required. Its Melange printer names a list's

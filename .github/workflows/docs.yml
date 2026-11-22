@@ -1,28 +1,28 @@
-# The documentation site on GitHub Pages, rebuilt on every push to main:
+# The documentation site on GitHub Pages: built on every pull request, which
+# fails if agents/ is not what the pages write, and deployed from main.
 # odoc's reference from the .mli files, then Starlight's pages around it.
 name: docs
 
 on:
   push:
     branches: [main]
+  pull_request:
 
+# A build reads the repository and nothing more; the deploy job alone is
+# given the rights to publish.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
+# A newer push to a pull request replaces its build; main's deploys queue
+# and always finish.
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: pages-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-24.04
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/configure-pages@v6
       - uses: actions/checkout@v5
       - uses: ocaml/setup-ocaml@v3
         with:
@@ -38,8 +38,23 @@ jobs:
         # the token, past its limit for a runner's shared address.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The build writes agents/ from the pages: a page changed without it
+      # differs here.
+      - run: git add --intent-to-add agents/ && git diff --exit-code agents/
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _build/docs
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v6
       - uses: actions/deploy-pages@v5
         id: deployment
